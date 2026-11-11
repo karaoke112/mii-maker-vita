@@ -6,6 +6,8 @@
 
 #include <mii/mii_editor.h>
 
+#include <cmath>
+
 using namespace brls::literals;
 
 static const uint32_t kFavoriteSwatch[12] = {
@@ -256,7 +258,7 @@ brls::View* EditorActivity::createContentView()
 {
     auto* root = new brls::Box(brls::Axis::ROW);
 
-    auto* preview = new MiiPreview(&mii);
+    auto* preview = new MiiPreview(&mii, 256);
     preview->setWidth(270);
     preview->setMargins(16, 0, 16, 16);
     root->addView(preview);
@@ -283,6 +285,15 @@ brls::View* EditorActivity::createContentView()
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_S, brls::BRLS_KBD_MODIFIER_CTRL),
         [this](brls::View*) { return save(); });
     frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return close(); });
+    // L / R turn the preview, in the steps the 3D renderer caches well.
+    frame->registerAction("editor/turn_left"_i18n, brls::BUTTON_LB, [preview](brls::View*) {
+        preview->setYaw(std::fmax(-60.0f, preview->getYaw() - 20.0f));
+        return true;
+    }, false, true);
+    frame->registerAction("editor/turn_right"_i18n, brls::BUTTON_RB, [preview](brls::View*) {
+        preview->setYaw(std::fmin(60.0f, preview->getYaw() + 20.0f));
+        return true;
+    }, false, true);
     return frame;
 }
 

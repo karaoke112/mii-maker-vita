@@ -25,12 +25,13 @@ set(PROJECT_RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 add_subdirectory(${BOREALIS_LIBRARY} borealis)
 add_subdirectory(${REPO_ROOT}/libmii libmii)
+add_subdirectory(${REPO_ROOT}/libmii3d libmii3d)
 
 file(GLOB_RECURSE APP_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 program_target(${PROJECT_NAME} "${APP_SRC}")
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(${PROJECT_NAME} PRIVATE borealis mii)
+target_link_libraries(${PROJECT_NAME} PRIVATE borealis mii mii3d)
 
 if (PLATFORM_PSV)
     target_compile_definitions(${PROJECT_NAME} PRIVATE __PSV__)

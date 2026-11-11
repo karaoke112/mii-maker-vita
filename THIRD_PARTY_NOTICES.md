@@ -59,6 +59,50 @@ tables in `libmii/src/mii_editor.c` come from `src/FFLiColor.cpp` in
 <https://github.com/ariankordi/ffl>, which Arian Kordi released under the
 Unlicense (public domain).
 
+## Code and data in libmii3d
+
+### vee / vfl (MIT OR Apache-2.0)
+
+<https://github.com/j0lol/vee>, © Jo Null. The face-part layout constants and
+formulas (eye/eyebrow/mouth/mustache/mole positions, scales, rotation offset
+tables), the part placement offsets (nose, glasses, hair, beard) and the
+color modulation modes in `libmii3d/src/charmodel.c` and `raster.c` follow
+vee's MIT-licensed implementation. Used under the MIT license:
+
+> Copyright (c) Jo Null
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to
+> deal in the Software without restriction, including without limitation the
+> rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+> sell copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+> FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+> DEALINGS IN THE SOFTWARE.
+
+### zlib
+
+libmii3d links zlib (zlib license, © Jean-loup Gailly and Mark Adler) to
+inflate resource parts.
+
+### Not included: Nintendo's face resource
+
+`FFLResHigh.dat` and friends are Nintendo's copyrighted data. They are not in
+this repository or the `.vpk`; users provide their own (`*.dat` is in
+`.gitignore`). The FFRA layout was learned from the FFL decompilation's
+public headers (reference only, no code copied). The GX2 untiler was written
+from the documented tiling rules and only *checked* against ninTexUtils
+(GPL-3.0) outside this repository; no ninTexUtils code is included.
+
 ## Bundled with the app
 
 - **borealis** (`third_party/borealis`, git submodule): Apache License 2.0,
@@ -76,5 +120,6 @@ Unlicense (public domain).
 
 ## References only (no code copied)
 
-FFL decompilation (aboood40091/ffl, no license), libnx `mii.h`, 3dbrew,
-Wiibrew, HEYimHeroic/MiiDataFiles, vfl/vee, MiiKit, ogws.
+FFL decompilation (aboood40091/ffl, no license), ninTexUtils (GPL-3.0,
+used only to verify the untiler), libnx `mii.h`, 3dbrew,
+Wiibrew, HEYimHeroic/MiiDataFiles, MiiKit, ogws.

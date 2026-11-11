@@ -13,6 +13,10 @@
 │ mii_editor.h  Switch palette (100 colors, 10 skins) · Switch editor grid orders      │
 │ (planned)     Wii RFL format · random Mii generation · QR (Ver3 + AES-CCM)           │
 └──────────────────────────────────────────────────────────────────────────────────────┘
+┌──────── libmii3d/ (C99 + zlib) ─────────────────────────────────────────────────────┐
+│ FFRA resource reader · GX2 untiling · software rasterizer · head model              │
+│ input: the user's own FFLResHigh.dat   output: an RGBA image                        │
+└──────────────────────────────────────────────────────────────────────────────────────┘
          ▲ also linked by
    game ports / other homebrew (read the shared database, convert to what they need)
 ```
@@ -47,31 +51,22 @@ Conversion matrix:
 
 ## Renderer
 
-The editor currently shows `MiiPreview`, a 2D NanoVG stand-in that responds to
-every field (positions, sizes, colors), and part grids show numbers. The real
-renderer is the next major piece:
+Implemented in `libmii3d/`; details in [3D_RENDERING.md](3D_RENDERING.md).
+It draws from the Wii U face resource (`FFLResHigh.dat`), which users supply
+from their own console. Without it, `MiiPreview` falls back to a 2D NanoVG
+drawing that reacts to every field.
 
-1. **Resource loader** (C): parse `FFLResHigh.dat` / `AFLResHigh_2_3.dat`
-   (zlib-compressed shapes + textures). The permissively licensed
-   [vfl/vee](https://tangled.org/j0.lol/vee) reimplementation documents the
-   format; the unlicensed FFL decompilation can only be read for reference,
-   not copied.
-2. **Face texture pass**: draw eyes/brows/mouth/mustache/mole/makeup into the
-   face texture (render-to-texture on GXM).
-3. **Head pass**: shapes (faceline, hair, nose, beard, glasses) with a
-   Switch-style shading model, the 100-color palette from `mii_editor.h`.
-4. **Thumbnails**: render every part once at first launch into a cache in
-   `ux0:data/mii/cache/` so the grids show pictures instead of numbers.
+Rendering happens on the CPU (a software rasterizer) rather than through GXM
+shaders. The Vita has no free shader compiler: `.gxp` files need Sony's
+tools, or a runtime compiler extracted from the console. A head is a few
+thousand triangles, and the editor only re-renders on change, on a worker
+thread, quick pass first and smooth pass after. The result is uploaded as an
+ordinary NanoVG image, so it works with any borealis backend. A GXM backend
+could be added later behind the same API if profiling on hardware calls for it.
 
-Backend: GXM via the same window borealis creates (render the Mii into an
-offscreen color surface, then draw it as an NVG image), with shaders compiled
-offline to `.gxp`. (Alternative: borealis' GLES2 backend + PVR_PSP2, which is
-closer to the PC renderers but needs extra `.suprx` modules on the device.)
-Budget: a head is ~10 draw calls and a few hundred KB of textures, well within
-the Vita's SGX543MP4+ at 30 fps.
-
-If Arian Kordi's "Fusion" library ships with a C target and a permissive
-license as announced, it could replace steps 1–3.
+Next steps: part thumbnails for the editor grids (render each part once
+into `ux0:data/mii/cache/`), expressions, the body resource, and Miitomo's
+`AFLResHigh_2_3.dat` (linear textures, slightly different header).
 
 ## Ad-hoc trading
 
@@ -117,8 +112,8 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Research, libmii (Switch + Ver3 + NFDB), tests against MiiJS | done |
-| 1 | Editor app on borealis: library, all categories, save/export, Vita `.vpk` | done (2D stand-in preview) |
-| 2 | 3D renderer + part thumbnails from user-dumped resources | next |
+| 1 | Editor app on borealis: library, all categories, save/export, Vita `.vpk` | done |
+| 2 | 3D renderer from the user's own Wii U resource, with 2D fallback | done (heads); part thumbnails next |
 | 3 | Import: `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/`; Mii QR codes via the Vita camera (Ver3 AES-CCM; key supplied by the user) | planned |
 | 4 | Ad-hoc trading (`libmii-net`, `TradeActivity`) | planned |
 | 5 | Wii format + RFL shim helpers for game ports | planned |

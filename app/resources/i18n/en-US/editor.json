@@ -1,6 +1,8 @@
 {
   "title": "Edit Mii",
   "save": "Save",
+  "turn_left": "Turn",
+  "turn_right": "Turn",
   "invalid": "This Mii has an invalid value or an empty name.",
   "save_failed": "Could not save (is the database full?).",
   "discard": "Discard your changes?",
