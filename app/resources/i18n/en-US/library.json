@@ -1,0 +1,12 @@
+{
+  "title": "Your Miis",
+  "new_male": "Create (male base)",
+  "new_female": "Create (female base)",
+  "empty": "No Miis yet. Create one to get started!",
+  "delete": "Delete",
+  "delete_confirm": "Delete this Mii? This cannot be undone.",
+  "delete_failed": "Could not delete the Mii.",
+  "export": "Export",
+  "exported": "Exported to",
+  "export_failed": "Export failed."
+}
