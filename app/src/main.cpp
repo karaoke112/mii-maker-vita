@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "activities/library_activity.hpp"
+#include "head_renderer.hpp"
 #include "mii_library.hpp"
 
 using namespace brls::literals;
@@ -31,6 +32,9 @@ int main(int argc, char* argv[])
     brls::Application::setGlobalQuit(false);
 
     MiiLibrary::instance().load();
+    // 3D heads need the user's own Wii U face resource; without it the
+    // previews use the built-in 2D renderer.
+    HeadRenderer::instance().init(MiiLibrary::instance().dataDir());
 
     brls::Application::pushActivity(new LibraryActivity());
     while (brls::Application::mainLoop())

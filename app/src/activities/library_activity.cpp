@@ -1,6 +1,7 @@
 #include "activities/library_activity.hpp"
 
 #include "activities/editor_activity.hpp"
+#include "head_renderer.hpp"
 #include "mii_library.hpp"
 #include "views/mii_preview.hpp"
 
@@ -32,6 +33,14 @@ brls::View* LibraryActivity::createContentView()
             createButton = button;
     }
     content->addView(actions);
+
+    // Tell the user where the 3D face resource goes (or that it's in use).
+    auto* status = new brls::Label();
+    status->setText(HeadRenderer::instance().status());
+    status->setFontSize(16);
+    status->setTextColor(nvgRGB(110, 110, 125));
+    status->setMarginBottom(12);
+    content->addView(status);
 
     empty = new brls::Label();
     empty->setText("library/empty"_i18n);
@@ -95,7 +104,7 @@ void LibraryActivity::rebuild()
         card->setFocusable(true);
         card->setCornerRadius(18);
         card->setHighlightCornerRadius(20);
-        auto* preview = new MiiPreview(&miis[i]);
+        auto* preview = new MiiPreview(&miis[i], 160);
         preview->setDimensions(200, 250);
         card->addView(preview);
 

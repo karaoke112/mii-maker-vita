@@ -3,6 +3,7 @@
 #include <mii/mii_editor.h>
 
 #include <cmath>
+#include <cstring>
 
 static NVGcolor rgb(uint32_t c, float alpha = 1.0f)
 {
@@ -15,14 +16,37 @@ static const uint32_t kFavorite[12] = {
     0x3CAADE, 0xF55A7D, 0x7328AD, 0x483818, 0xE0E0E0, 0x181814,
 };
 
-MiiPreview::MiiPreview(const mii_charinfo_t* mii)
+MiiPreview::MiiPreview(const mii_charinfo_t* mii, int renderSize)
     : mii(mii)
+    , renderSize(renderSize)
 {
     this->setFocusable(false);
+    std::memset(&requested, 0, sizeof(requested));
 }
 
-// Feature positions are expressed relative to the default Mii (eye_y 12,
-// eyebrow_y 10, nose_y 9, mouth_y 13), one field step = `u`.
+MiiPreview::~MiiPreview()
+{
+    HeadRenderer::instance().forget(this);
+    if (nvgImage >= 0)
+        nvgDeleteImage(brls::Application::getNVGContext(), nvgImage);
+}
+
+void MiiPreview::request3D()
+{
+    HeadRenderer& hr = HeadRenderer::instance();
+    if (!hr.available())
+        return;
+    if (hasRequested && requestedYaw == yaw && std::memcmp(&requested, mii, sizeof(requested)) == 0)
+        return;
+    requested = *mii;
+    requestedYaw = yaw;
+    hasRequested = true;
+    hr.request(this, *mii, renderSize, yaw, [this](HeadRenderer::Image img, int) {
+        image = img;
+        imageDirty = true;
+    });
+}
+
 void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
     brls::FrameContext* ctx)
 {
@@ -38,7 +62,6 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     const float r = std::fmin(width * 0.30f, height * 0.17f);
     const float hy = y + height * 0.33f;
     const float jaw = 1.04f + (m.faceline_type % 4) * 0.04f; // a hint of face shape
-    const float u = r * 0.055f;
 
     // Body: height 0-127 and build 0-127 stretch it.
     const float bodyTop = hy + r * jaw * 0.95f;
@@ -48,6 +71,50 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     nvgRoundedRect(vg, cx - bodyW / 2, bodyTop, bodyW, bodyH, bodyW * 0.28f);
     nvgFillColor(vg, rgb(kFavorite[m.favorite_color % 12]));
     nvgFill(vg);
+
+    // Head: 3D when available, else the 2D stand-in
+    request3D();
+    if (image) {
+        if (nvgImage < 0 || nvgImageSize != renderSize) {
+            if (nvgImage >= 0)
+                nvgDeleteImage(vg, nvgImage);
+            nvgImage = nvgCreateImageRGBA(vg, renderSize, renderSize, 0, image->data());
+            nvgImageSize = renderSize;
+        } else if (imageDirty) {
+            nvgUpdateImage(vg, nvgImage, image->data());
+        }
+        imageDirty = false;
+    }
+    if (nvgImage >= 0) {
+        const float side = r * 3.7f;
+        const float ix = cx - side / 2, iy = hy - side * 0.53f;
+        nvgBeginPath(vg);
+        nvgRect(vg, ix, iy, side, side);
+        nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, nvgImage, 1.0f));
+        nvgFill(vg);
+    } else {
+        drawFallbackHead(vg, cx, hy, r, jaw);
+    }
+
+    // Name
+    char name[64];
+    mii_name_get_utf8(&m, name, sizeof(name));
+    nvgFontSize(vg, 22);
+    nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+    nvgFillColor(vg, nvgRGB(60, 60, 70));
+    nvgText(vg, cx, y + height - 12, name, nullptr);
+}
+
+// 2D stand-in. Feature positions are relative to the default Mii (eye_y 12,
+// eyebrow_y 10, nose_y 9, mouth_y 13); one field step = `u`.
+void MiiPreview::drawFallbackHead(NVGcontext* vg, float cx, float hy, float r, float jaw)
+{
+    const mii_charinfo_t& m = *mii;
+    const float u = r * 0.055f;
+    // a box around the head, for clipping the hair and beard
+    const float x = cx - r * 2.0f, width = r * 4.0f;
+    const float y = hy - r * 2.5f, height = r * 5.0f;
 
     // Head
     nvgBeginPath(vg);
@@ -190,12 +257,4 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         nvgFill(vg);
     }
 
-    // Name
-    char name[64];
-    mii_name_get_utf8(&m, name, sizeof(name));
-    nvgFontSize(vg, 22);
-    nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
-    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-    nvgFillColor(vg, nvgRGB(60, 60, 70));
-    nvgText(vg, cx, y + height - 12, name, nullptr);
 }
