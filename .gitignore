@@ -1,0 +1,7 @@
+build/
+build-*/
+mii-data/
+*.vpk
+*.self
+node_modules/
+.DS_Store
