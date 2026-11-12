@@ -28,6 +28,7 @@ void GpuRenderer::release(const void*) { }
 #include <psp2/kernel/sysmem.h>
 #include <psp2/shacccg.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -629,6 +630,84 @@ bool GpuRenderer::Impl::selfTest()
         log("test 2 failed");
         return false;
     }
+    // Checks of the things a whole Mii uses that the triangles above do not;
+    // they only log (test 3 decides), to show where a difference comes from.
+    auto check = [&](const char* name, int x, int y, int r, int g, int b) {
+        const bool good = near(x, y, r, g, b);
+        log("  %s at (%d,%d): %s, want (%d,%d,%d) %s", name, x, y, px(x, y).c_str(), r, g, b, good ? "ok" : "FAILED");
+    };
+    {
+        // 2a: big w, as real vertices have (x, y, z, w all times 330)
+        float big[3 * kFloats];
+        std::memcpy(big, tri, sizeof(big));
+        for (int i = 0; i < 3; i++)
+            for (int k = 0; k < 4; k++)
+                big[i * kFloats + k] *= 330.0f;
+        mii3d_draw_t d = flat(1.0f, 0.0f, 0.0f, 0);
+        d.vertices = big;
+        scene(t, sr, 0x0000FF, [&] { draw(&d); });
+        log("test 2a (w = 330):");
+        check("top-left", 4, 4, 255, 0, 0);
+        check("bottom-left", 4, N - 5, 0, 0, 255);
+        // 2b: depth test and write on
+        mii3d_draw_t e = flat(1.0f, 0.0f, 0.0f, 0);
+        e.depth_test = e.depth_write = 1;
+        scene(t, sr, 0x0000FF, [&] { draw(&e); });
+        log("test 2b (depth test):");
+        check("top-left", 4, 4, 255, 0, 0);
+        // 2c: a 2x2 texture (red, green / blue, white) on the whole target
+        static uint8_t texels[16] = { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255 };
+        mii3d_image_t img;
+        std::memset(&img, 0, sizeof(img));
+        img.width = img.height = 2;
+        img.channels = 4;
+        img.pixels = texels;
+        img.serial = 0xFFFFFF01u;
+        float quad[4 * kFloats];
+        std::memset(quad, 0, sizeof(quad));
+        const float qc[4][4] = { { -1, 1, 0, 0 }, { 1, 1, 1, 0 }, { -1, -1, 0, 1 }, { 1, -1, 1, 1 } };
+        for (int i = 0; i < 4; i++) {
+            float* v = quad + i * kFloats;
+            v[0] = qc[i][0];
+            v[1] = qc[i][1];
+            v[2] = 0.5f;
+            v[3] = 1.0f;
+            v[4] = qc[i][2];
+            v[5] = qc[i][3];
+            v[6] = 1.0f;
+        }
+        const uint16_t qi[6] = { 0, 1, 2, 2, 1, 3 };
+        mii3d_draw_t q;
+        std::memset(&q, 0, sizeof(q));
+        q.vertices = quad;
+        q.vertex_count = 4;
+        q.indices = qi;
+        q.index_count = 6;
+        q.texture = &img;
+        q.mode = MII3D_MOD_DIRECT;
+        scene(t, sr, 0x000000, [&] { draw(&q); });
+        log("test 2c (texture):");
+        check("top-left", N / 4, N / 4, 255, 0, 0);
+        check("top-right", 3 * N / 4, N / 4, 0, 255, 0);
+        check("bottom-left", N / 4, 3 * N / 4, 0, 0, 255);
+        check("bottom-right", 3 * N / 4, 3 * N / 4, 255, 255, 255);
+        // 2d: lighting terms (hl 0.5, add red 0.1, rim green 0.1 on gray)
+        float lit[3 * kFloats];
+        std::memcpy(lit, tri, sizeof(lit));
+        for (int i = 0; i < 3; i++) {
+            lit[i * kFloats + 6] = 0.5f;
+            lit[i * kFloats + 7] = 0.1f;  // add r
+            lit[i * kFloats + 13] = 0.1f; // rim g
+        }
+        mii3d_draw_t l = flat(0.5f, 0.5f, 0.5f, 1);
+        l.vertices = lit;
+        scene(t, sr, 0x000000, [&] { draw(&l); });
+        const float lin = std::pow(0.5f, 2.2f) * 0.5f;
+        auto srgb = [](float v) { return (int)std::lround(std::pow(std::min(1.0f, v), 1.0f / 2.2f) * 255.0f); };
+        log("test 2d (lighting terms):");
+        check("top-left", 4, 4, srgb(lin + 0.1f), srgb(lin + 0.1f), srgb(lin));
+    }
+
     // 3: a whole Mii against the CPU renderer
     const int M = 128;
     SizeResources* sr2 = resourcesFor(M);
