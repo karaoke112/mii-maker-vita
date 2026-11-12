@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "mii_qr.hpp"
 #include "activities/library_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
@@ -21,6 +22,7 @@ int main(int argc, char* argv[])
 
     paths::prepare();
     Settings::get().load();
+    qr::loadKeys();
     ui::applyTheme(Settings::get().theme);
 
     if (!brls::Application::init()) {

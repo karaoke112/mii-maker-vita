@@ -25,6 +25,16 @@ corrected), and to generate the reference test vectors in
 > ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 > IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+### Mii QR code format (`libmii/src/mii_qr.c`)
+
+The layout of Mii QR codes is as documented by the Mii tools community:
+Arian Kordi's mii-tomo-dachi-topia-qr-tool, kazuki-4ys' MiiInfoEditorCTR
+and MiiJS (KestronProgramming fork, whose two Switch 2 sample codes are the
+test vectors in `libmii/tests/test_mii.c`). The AES and CCM code is this
+project's own. Nintendo's two Mii QR keys are **not** included: users
+provide their own copy (`ux0:data/mii-maker-vita/dat/qrkey.txt`); the code
+keeps only a check value of each (the first 8 bytes of AES(key, zeros)).
+
 ### Ryujinx (MIT)
 
 The CoreData bit layout, StoreData/NFDB checksum rules and the two base
@@ -117,6 +127,15 @@ from the documented tiling rules and only *checked* against ninTexUtils
   © borealis contributors. `app/resources/i18n/en-US/hints.json` and
   `app/resources/img/sys/cursor.png` are copied from it. borealis'
   own `resources/font/` (Nintendo system fonts) is **not** used or shipped.
+- **QR Code generator library** (`third_party/qrcodegen/`): MIT License,
+  © Project Nayuki (<https://www.nayuki.io/page/qr-code-generator-library>);
+  the license is in the file headers.
+- **quirc** (`third_party/quirc/`, QR code recognition): ISC License,
+  © 2010-2012 Daniel Beer; license text in `third_party/quirc/LICENSE`.
+- **stb_image_write** (`third_party/stb/`, saves QR code pictures): public
+  domain or MIT (the reader's choice), Sean Barrett; terms at the end of the
+  file. (Pictures are read with the stb_image that borealis' NanoVG
+  includes.)
 - **Material Icons** (`app/resources/material/`): Apache License 2.0,
   © Google; license text alongside.
 - **Poppins** (`app/resources/font/font.ttf`, the UI font): SIL Open Font

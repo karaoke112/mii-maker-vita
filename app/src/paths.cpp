@@ -69,6 +69,7 @@ void prepare()
     makeDir(miiDir());
     makeDir(miiDir() + "/export");
     makeDir(miiDir() + "/import");
+    makeDir(miiDir() + "/qr");
     makeDir(appDir());
     makeDir(datDir());
     makeDir(cacheDir());

@@ -7,3 +7,5 @@ mii-data/
 *.self
 node_modules/
 .DS_Store
+# Nintendo's Mii QR keys must never be committed either
+qrkey.txt

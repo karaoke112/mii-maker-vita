@@ -21,8 +21,9 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
 ## What works
 
 - **libmii** (`libmii/`, portable C99): Switch CharInfo / CoreData / StoreData,
-  the Switch Mii database (NFDB), and 3DS/Wii U/amiibo Ver3StoreData, all with
-  CRCs and validation. Also the Switch palette and the Switch editor's grid
+  the Switch Mii database (NFDB), 3DS/Wii U/amiibo Ver3StoreData and Mii QR
+  code contents (including the Switch 2 extension), all with CRCs and
+  validation. Also the Switch palette and the Switch editor's grid
   order. Checked byte-for-byte against [MiiJS](https://github.com/Stewared/MiiJS)
   on hundreds of real Mii files.
 - **Editor app** (`app/`, C++ on [borealis](https://github.com/xfangfang/borealis)):
@@ -30,9 +31,15 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   category menu, nickname and Done button; each category opens a page with
   Types / Position / Color tabs (L / R) and picture tiles; Style, Body and
   Favorite Color are single prompt pages. The right stick or a finger drag
-  turns the Mii. "Add Mii" starts from scratch or imports `.charinfo` /
-  `.nfsd` / `.ffsd` files from `ux0:data/mii/import/`; "Send Mii" exports
-  them to `ux0:data/mii/export/`. Miis are saved to
+  turns the Mii. "Add Mii" starts from scratch, offers ten random
+  look-alikes, scans a **Mii QR code** with the back camera (3DS, Wii U,
+  Switch 2 and Tomodachi Life codes), or imports `.charinfo` / `.nfsd` /
+  `.ffsd` files and QR code pictures from `ux0:data/mii/import/`; "Send Mii"
+  exports them to `ux0:data/mii/export/` or makes a QR code (Switch 2
+  format, which keeps Switch-only colors; 3DS and Wii U read it too), shown
+  on screen and saved to `ux0:data/mii/qr/`. QR codes need your own copy of
+  the Mii QR key (not included) in `ux0:data/mii-maker-vita/dat/qrkey.txt`:
+  32 hex digits, optionally followed by the Switch 2 key on the next line. Miis are saved to
   `ux0:data/mii/database.nfdb` (shared with other apps; the app's own files
   go in `ux0:data/mii-maker-vita/`). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,

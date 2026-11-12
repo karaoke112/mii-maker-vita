@@ -18,11 +18,12 @@ class LibraryActivity : public brls::Activity
     void rebuild();
     void importMiis();
     void exportMii(int index);
+    void addScanned(const mii_charinfo_t& mii);
     void showAddMenu();
     void showSendMenu();
     void showSettings();
     void rebuildForTheme();
-    enum class Pick { NONE, EXPORT };
+    enum class Pick { NONE, EXPORT, QR };
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
 

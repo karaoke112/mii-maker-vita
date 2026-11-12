@@ -44,7 +44,8 @@ typedef enum mii_result {
     MII_ERR_INVALID   = -4, /* a field is out of range (see mii_verify)      */
     MII_ERR_MAGIC     = -5, /* database magic / version mismatch             */
     MII_ERR_FULL      = -6, /* database has no free slot                     */
-    MII_ERR_NOT_FOUND = -7
+    MII_ERR_NOT_FOUND = -7,
+    MII_ERR_NO_KEY    = -8  /* Mii QR code key not provided (mii_qr_add_key) */
 } mii_result_t;
 
 const char *mii_result_string(mii_result_t r);
@@ -256,6 +257,44 @@ mii_result_t mii_ver3_encode(const mii_charinfo_t *ci, const mii_ver3_info_t *in
 mii_result_t mii_ver3_decode(mii_charinfo_t *ci, mii_ver3_info_t *info,
                              const uint8_t *data, size_t size,
                              const mii_create_id_t *new_id);
+
+/* ------------------------------------------------------------------------- */
+/* Mii QR codes (3DS / Wii U / Switch 2): the bytes a QR code carries         */
+/* ------------------------------------------------------------------------- */
+
+#define MII_QR_PAYLOAD_MAX 0x90 /* Switch 2 codes; 3DS / Wii U ones are 112 */
+#define MII_QR_EXT_SIZE    8    /* the Switch 2 extension's fields          */
+
+/* Mii QR codes are sealed with two AES-128 keys of Nintendo's, which are not
+ * included: provide them first. mii_qr_add_key() recognises which key it is
+ * given (by a check value) and returns MII_QR_KEY_3DS, MII_QR_KEY_SWITCH2 or
+ * 0 (not a Mii QR key). mii_qr_add_keys_text() finds keys written as 32 hex
+ * digits (spaces and 0x prefixes allowed) in a text file's contents and
+ * returns the keys found. Without the 3DS key, the functions below return
+ * MII_ERR_NO_KEY; without the Switch 2 key, codes are made in the 3DS
+ * format and the Switch 2 extension of scanned codes is ignored. */
+#define MII_QR_KEY_3DS     1
+#define MII_QR_KEY_SWITCH2 2
+int mii_qr_add_key(const uint8_t key[16]);
+int mii_qr_add_keys_text(const char *text);
+int mii_qr_keys(void); /* the keys provided so far */
+
+/* A Mii as QR code bytes. switch2: also store the Switch colors and glasses
+ * that Ver3 cannot (0x90 bytes; consoles that do not know the extension
+ * read the first 112). */
+mii_result_t mii_qr_encode(const mii_charinfo_t *ci, const mii_ver3_info_t *info, int switch2,
+                           uint8_t out[MII_QR_PAYLOAD_MAX], size_t *out_size);
+/* Reads QR code bytes (112-byte codes, Switch 2 codes, and the longer
+ * Tomodachi Life ones, whose extra data is ignored). MII_ERR_CRC: not a
+ * Mii QR code, or damaged. info and new_id as for mii_ver3_decode. */
+mii_result_t mii_qr_decode(mii_charinfo_t *ci, mii_ver3_info_t *info, const uint8_t *data, size_t size,
+                           const mii_create_id_t *new_id);
+/* The layers underneath: sealing / opening a Ver3StoreData (and the
+ * Switch 2 extension: ext NULL for none). */
+mii_result_t mii_qr_wrap(const uint8_t storedata[MII_VER3_STOREDATA_SIZE], const uint8_t *ext,
+                         uint8_t out[MII_QR_PAYLOAD_MAX], size_t *out_size);
+mii_result_t mii_qr_unwrap(const uint8_t *data, size_t size, uint8_t storedata[MII_VER3_STOREDATA_SIZE],
+                           uint8_t ext[MII_QR_EXT_SIZE], int *has_ext);
 
 /* Palette conversion used by the two functions above. */
 uint8_t mii_ver3_hair_color_to_common(uint8_t ver3);    /* also eyebrow/beard */

@@ -1,5 +1,7 @@
 #include "mii_library.hpp"
 
+#include "mii_qr.hpp"
+
 #include <borealis/core/logger.hpp>
 
 #include <algorithm>
@@ -143,12 +145,8 @@ bool MiiLibrary::remove(int index)
     return mii_nfdb_remove(&db, index) == MII_OK && save();
 }
 
-bool MiiLibrary::exportMii(int index, std::string* outPath)
+std::string MiiLibrary::fileName(const mii_charinfo_t& ci)
 {
-    mii_charinfo_t ci;
-    if (!get(index, &ci))
-        return false;
-
     char id[9];
     std::snprintf(id, sizeof(id), "%02x%02x%02x%02x", ci.create_id.bytes[0], ci.create_id.bytes[1],
         ci.create_id.bytes[2], ci.create_id.bytes[3]);
@@ -162,7 +160,16 @@ bool MiiLibrary::exportMii(int index, std::string* outPath)
     }
     while (!safe.empty() && (safe.back() == ' ' || safe.back() == '.'))
         safe.pop_back();
-    const std::string base = dir + "/export/" + (safe.empty() ? std::string("Mii") : safe) + "_" + id;
+    return (safe.empty() ? std::string("Mii") : safe) + "_" + id;
+}
+
+bool MiiLibrary::exportMii(int index, std::string* outPath)
+{
+    mii_charinfo_t ci;
+    if (!get(index, &ci))
+        return false;
+
+    const std::string base = dir + "/export/" + fileName(ci);
 
     uint8_t buf[MII_VER3_STOREDATA_SIZE];
     bool ok = true;
@@ -199,12 +206,17 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
     bool changed = false;
     for (const std::string& name : names) {
         const std::string ext = lowerExtension(name);
-        if (ext != "charinfo" && ext != "nfsd" && ext != "ffsd")
+        const bool image = ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp";
+        if (ext != "charinfo" && ext != "nfsd" && ext != "ffsd" && !image)
             continue;
         std::vector<uint8_t> data;
         mii_charinfo_t ci;
         mii_result_t r = MII_ERR_SIZE;
-        if (readFile(in + "/" + name, &data)) {
+        if (image) {
+            // a picture of a Mii QR code (3DS, Wii U, Switch 2, this app)
+            if (qr::scanImageFile(in + "/" + name, &ci))
+                r = MII_OK;
+        } else if (readFile(in + "/" + name, &data)) {
             if (ext == "charinfo")
                 r = mii_charinfo_decode(&ci, data.data(), data.size());
             else if (ext == "nfsd")

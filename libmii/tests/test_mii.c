@@ -459,6 +459,122 @@ static void test_random(void)
     CHECK(memcmp(&a, &b, sizeof(a)) != 0);
 }
 
+static void hex_to_bytes(const char *hex, uint8_t *out, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        unsigned v = 0;
+        sscanf(hex + 2 * i, "%2x", &v);
+        out[i] = (uint8_t)v;
+    }
+}
+
+/* Two QR codes from a Switch 2 (MiiJS' test data): the CCM layers, the key,
+ * the extension and the Ver3 conversion all have to be right to read them
+ * and to make the same bytes again. */
+static void test_qr(void)
+{
+    /* Without keys nothing can be sealed or opened. */
+    {
+        uint8_t code[MII_QR_PAYLOAD_MAX], sd[MII_VER3_STOREDATA_SIZE];
+        size_t n = 0;
+        memset(code, 0, sizeof(code));
+        mii_charinfo_t ci;
+        mii_charinfo_init_default(&ci, 0);
+        if (!mii_qr_keys()) {
+            CHECK_EQ(mii_qr_encode(&ci, NULL, 1, code, &n), MII_ERR_NO_KEY);
+            CHECK_EQ(mii_qr_unwrap(code, sizeof(code), sd, NULL, NULL), MII_ERR_NO_KEY);
+        }
+        uint8_t not_a_key[16] = { 1, 2, 3 };
+        CHECK_EQ(mii_qr_add_key(not_a_key), 0);
+    }
+    /* The keys are Nintendo's and not in this repository: the vectors run
+     * when MII_QR_KEY_FILE names a text file holding them (hex). */
+    const char *key_file = getenv("MII_QR_KEY_FILE");
+    FILE *kf = key_file ? fopen(key_file, "rb") : NULL;
+    if (!kf) {
+        printf("test_qr: MII_QR_KEY_FILE not set, QR code vectors skipped\n");
+        return;
+    }
+    char text[1024];
+    const size_t got = fread(text, 1, sizeof(text) - 1, kf);
+    fclose(kf);
+    text[got] = 0;
+    CHECK_EQ(mii_qr_add_keys_text(text), MII_QR_KEY_3DS | MII_QR_KEY_SWITCH2);
+
+    static const struct {
+        const char *hex, *name, *ext;
+    } codes[] = {
+        { "9acbcaed435de122a160e11918d71dd49e703c9dfbf0a3492174a12c2d28cbdd"
+          "93afcc791524d533b1f2afdeab29797320710ee9f86edeb8d67dc0629b2c23a9"
+          "c213fd280a2fd938af8ca4470c449a0600240d793010852f394a0e1a3fffb04f6"
+          "a21663f88e08e05e798d674f4e91118119f72aa1baf1948105c938cded39ce1"
+          "451eb5ce4e3fb62a8e6efcf270b7c071", "Madison", "00070c0713080800" },
+        { "990c215284bc75cbc8fbd716b00a713350d0767684dcf8f5643dd466db1e2fe7"
+          "460c624ae03782fbe38a29096b7af86cc26868b5b402a04f61b274a98435bb0e"
+          "60b4877701c246ab2c7be9e61840eeaecc71063188c59dd6dbfb4eece5870eec"
+          "7084e645e0ac3d998bd0e13305d7e5d01177a672ce81216abba1ce93a8372316"
+          "b26dee1f8ad5ae264d8413556f796de7", "Aubrey", "00060c0713080800" },
+    };
+    for (size_t k = 0; k < sizeof(codes) / sizeof(codes[0]); k++) {
+        uint8_t code[MII_QR_PAYLOAD_MAX], sd[MII_VER3_STOREDATA_SIZE], ext[MII_QR_EXT_SIZE], want[MII_QR_EXT_SIZE];
+        CHECK_EQ(strlen(codes[k].hex), 2 * sizeof(code));
+        hex_to_bytes(codes[k].hex, code, sizeof(code));
+        hex_to_bytes(codes[k].ext, want, sizeof(want));
+        int has_ext = 0;
+        CHECK_EQ(mii_qr_unwrap(code, sizeof(code), sd, ext, &has_ext), MII_OK);
+        CHECK_EQ(has_ext, 1);
+        CHECK(memcmp(ext, want, sizeof(want)) == 0);
+        CHECK_EQ(mii_crc16(sd, sizeof(sd), 0), 0);
+        uint8_t again[MII_QR_PAYLOAD_MAX];
+        size_t n = 0;
+        CHECK_EQ(mii_qr_wrap(sd, ext, again, &n), MII_OK);
+        CHECK_EQ(n, sizeof(code));
+        CHECK(memcmp(again, code, sizeof(code)) == 0);
+        /* the first 112 bytes alone are a 3DS-style code */
+        CHECK_EQ(mii_qr_unwrap(code, 112, sd, ext, &has_ext), MII_OK);
+        CHECK_EQ(has_ext, 0);
+
+        mii_charinfo_t ci;
+        CHECK_EQ(mii_qr_decode(&ci, NULL, code, sizeof(code), NULL), MII_OK);
+        char name[32];
+        mii_name_get_utf8(&ci, name, sizeof(name));
+        CHECK(strcmp(name, codes[k].name) == 0);
+        CHECK_EQ(ci.hair_color, want[1]);
+        CHECK_EQ(ci.eye_color, want[2]);
+        CHECK_EQ(ci.mouth_color, want[4]);
+
+        /* tampering is caught */
+        code[40] ^= 1;
+        CHECK_EQ(mii_qr_unwrap(code, sizeof(code), sd, ext, &has_ext), MII_ERR_CRC);
+    }
+
+    /* a Switch-only color survives a Switch 2 code, and is rounded to the
+     * Ver3 palette in a 3DS one */
+    mii_charinfo_t a, b;
+    mii_charinfo_init_default(&a, 1);
+    mii_name_set_utf8(&a, "QR test");
+    a.hair_color = 57;
+    a.eye_color = 70;
+    a.glass_type = 15;
+    a.glass_color = 33;
+    uint8_t code[MII_QR_PAYLOAD_MAX];
+    size_t n = 0;
+    CHECK_EQ(mii_qr_encode(&a, NULL, 1, code, &n), MII_OK);
+    CHECK_EQ(n, MII_QR_PAYLOAD_MAX);
+    CHECK_EQ(mii_qr_decode(&b, NULL, code, n, NULL), MII_OK);
+    CHECK_EQ(b.hair_color, 57);
+    CHECK_EQ(b.eye_color, 70);
+    CHECK_EQ(b.glass_type, 15);
+    CHECK_EQ(b.glass_color, 33);
+    CHECK_EQ(mii_qr_encode(&a, NULL, 0, code, &n), MII_OK);
+    CHECK_EQ(n, 112);
+    CHECK_EQ(mii_qr_decode(&b, NULL, code, n, NULL), MII_OK);
+    CHECK_EQ(b.hair_color, mii_ver3_hair_color_to_common(mii_common_to_ver3_hair_color(57)));
+    char name[32];
+    mii_name_get_utf8(&b, name, sizeof(name));
+    CHECK(strcmp(name, "QR test") == 0);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 3 && !strcmp(argv[1], "--gen-vectors"))
@@ -474,6 +590,7 @@ int main(int argc, char **argv)
     test_random();
     test_switch_roundtrips();
     test_ver3();
+    test_qr();
     test_nfdb();
     test_editor_data();
 #ifdef VECTOR_DIR

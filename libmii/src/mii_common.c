@@ -11,6 +11,7 @@ const char *mii_result_string(mii_result_t r)
     case MII_ERR_MAGIC:     return "bad magic or version";
     case MII_ERR_FULL:      return "database full";
     case MII_ERR_NOT_FOUND: return "not found";
+    case MII_ERR_NO_KEY:    return "key not provided";
     }
     return "unknown error";
 }

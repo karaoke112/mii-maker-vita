@@ -7,7 +7,9 @@
 //   ux0:data/mii/                  the Miis, shared with other apps and game
 //       database.nfdb (+ .bak)     ports (see docs/SHARED_DATABASE.md)
 //       export/                    Mii files written by "Export"
-//       import/                    Mii files to add with "Import"
+//       import/                    Mii files (and Mii QR code pictures) to
+//                                  add with "Import"
+//       qr/                        QR code pictures made by "Create QR Code"
 //   ux0:data/mii-maker-vita/       this app's own files
 //       author_id.bin              this console's Mii author id
 //       cache/                     rendered grid icons (safe to delete)

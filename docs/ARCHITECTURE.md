@@ -11,7 +11,8 @@
 ┌────────▼──────── libmii/ (C99, no I/O, no malloc) ───────────────────────────────────┐
 │ mii.h         CharInfo · CoreData · StoreData · NFDB · Ver3StoreData · CRC16         │
 │ mii_editor.h  Switch palette (100 colors, 10 skins) · Switch editor grid orders      │
-│ (planned)     Wii RFL format · random Mii generation · QR (Ver3 + AES-CCM)           │
+│ mii_qr.c      Mii QR codes: AES-CCM, Switch 2 extension (keys from the user)         │
+│ (planned)     Wii RFL format                                                         │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ┌──────── libmii3d/ (C99 + zlib) ─────────────────────────────────────────────────────┐
 │ FFRA resource reader · GX2 untiling · software rasterizer · head model              │
@@ -75,25 +76,27 @@ Next steps: expressions.
 Goal: scan the Mii QR codes that 3DS, Wii U, Miitomo and Tomodachi Life
 print, and create QR codes those consoles can scan, both on the Vita.
 
-- **Payload**: a QR holds a Mii in the 3DS/Wii U (Ver3) format, which libmii
-  already reads and writes, encrypted with AES-128-CCM (an 8-byte nonce in
-  the clear, then the ciphertext and its tag; exact layout to be confirmed
-  against MiiJS while implementing). The key is Nintendo's "Mii QR key";
-  like MiiPort, the app will ask users to provide it in
-  `ux0:data/mii-maker-vita/qrkey.txt` rather than shipping it. Reference: jaames'
-  [Mii QR gist](https://gist.github.com/jaames/96ce8daa11b61b758b6b0227b55f9f78)
-  and MiiJS' `miiCrypto.js`.
-- **libmii-qr** (C): AES-128 + CCM (small public-domain/MIT AES core),
-  `mii_qr_decrypt()` / `mii_qr_encrypt()` with test vectors made with MiiJS.
-- **Scanning**: `sceCamera` frames (640x480 YUV) into
-  [quirc](https://github.com/dlbeer/quirc) (ISC, C, built for exactly this),
-  run on a worker thread; a `ScanActivity` shows the camera with a frame
-  guide and imports what it finds (Switch colors restored from Ver3 by
-  libmii's tables).
-- **Creating**: [Nayuki's QR Code generator](https://github.com/nayuki/QR-Code-generator)
-  (MIT, has a C version) builds the matrix; the app draws it with the Mii's
-  rendered head in the middle like the consoles do, and can save it as a
-  PNG to `ux0:data/mii/export/` for sharing.
+Done (phase 3b):
+
+- **Payload** (`libmii/src/mii_qr.c`): 112 bytes for 3DS / Wii U: the Mii
+  id's 8 bytes (also the AES-CCM nonce), then the rest of the Ver3StoreData
+  encrypted (CCM over those 88 bytes plus 8 zeros, whose ciphertext is
+  dropped), then the 16-byte tag. Switch 2 codes (0x90 bytes) add 0x11 and
+  a second CCM-sealed block with the Switch colors and glasses Ver3 cannot
+  hold (as in an amiibo's StoreData extension). Longer Tomodachi Life codes
+  are read for their first 112 bytes. Our own AES-128 and CCM; checked
+  against two real Switch 2 codes (MiiJS' test data).
+- **Keys**: Nintendo's, not included. Like MiiPort, the app reads the
+  user's copy from `ux0:data/mii-maker-vita/dat/qrkey.txt` (any layout of
+  32 hex digits per key); libmii recognises each key by a check value.
+- **Scanning** (`QrScanActivity`): the back camera (`sceCamera`, 640x480
+  ABGR) on a worker thread into [quirc](https://github.com/dlbeer/quirc)
+  (ISC); frames that find nothing are tried again with a local threshold
+  (four variants, one per frame). Pictures of QR codes in the import folder
+  go through the same scanner, which is how the desktop build is tested.
+- **Creating** (`QrShowActivity`): [Nayuki's QR Code generator](https://github.com/nayuki/QR-Code-generator)
+  (MIT) builds a Switch 2 code (3DS-format without the Switch 2 key),
+  shown beside the Mii and saved as a PNG in `ux0:data/mii/qr/`.
 - JavaScript libraries such as nimiq/qr-scanner and qr.js (MIT) do the same
   in browsers; they are useful references but cannot run on the Vita.
 - Related later: Mii Studio codes (the hex strings Nintendo's website uses;
@@ -150,7 +153,7 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | 2c | Body from `FFLBodyRes.dat` (when provided) | done |
 | 2d | Cache rendered icons on the memory card (`ux0:data/mii-maker-vita/cache/`) | done |
 | 3 | Import `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/` | done |
-| 3b | **QR codes**: scan Mii QR codes with the Vita camera and create them (see below) | planned |
+| 3b | **QR codes**: scan Mii QR codes with the Vita camera and create them (see above) | done |
 | 4 | Ad-hoc trading (`libmii-net`, `TradeActivity`) | planned |
 | 5 | Wii format + RFL shim helpers for game ports | planned |
 | 6 | Polish: random Mii ("look-alike") generator from nn::mii's tables, more languages, touch gestures, sounds | planned |
