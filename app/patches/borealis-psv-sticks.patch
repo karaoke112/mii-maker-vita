@@ -1,0 +1,31 @@
+diff --git a/library/lib/platforms/psv/psv_input.cpp b/library/lib/platforms/psv/psv_input.cpp
+index 2eb9f144..4d80ee84 100644
+--- a/library/lib/platforms/psv/psv_input.cpp
++++ b/library/lib/platforms/psv/psv_input.cpp
+@@ -92,15 +92,17 @@ void PsvInputManager::updateControllerState(ControllerState* state, int controll
+     state->buttons[BUTTON_X] = pad.buttons & SCE_CTRL_SQUARE;
+     state->buttons[BUTTON_Y] = pad.buttons & SCE_CTRL_TRIANGLE;
+ 
+-    state->axes[LEFT_X]  = pad.lx / 255.0f - 1.0f;
+-    state->axes[LEFT_Y]  = pad.ly / 255.0f - 1.0f;
+-    state->axes[RIGHT_X] = pad.rx / 255.0f - 1.0f;
+-    state->axes[RIGHT_Y] = pad.ry / 255.0f - 1.0f;
+-
+-    state->buttons[BUTTON_NAV_UP]    = pad.ly < 0x20 || pad.ry < 0x20 || state->buttons[BUTTON_UP];
+-    state->buttons[BUTTON_NAV_RIGHT] = pad.lx > 0xe0 || pad.rx > 0xe0 || state->buttons[BUTTON_RIGHT];
+-    state->buttons[BUTTON_NAV_DOWN]  = pad.ly > 0xe0 || pad.ry > 0xe0 || state->buttons[BUTTON_DOWN];
+-    state->buttons[BUTTON_NAV_LEFT]  = pad.lx < 0x20 || pad.rx < 0x20 || state->buttons[BUTTON_LEFT];
++    // sticks report 0..255 with the center at 128: map to -1..1
++    state->axes[LEFT_X]  = pad.lx / 127.5f - 1.0f;
++    state->axes[LEFT_Y]  = pad.ly / 127.5f - 1.0f;
++    state->axes[RIGHT_X] = pad.rx / 127.5f - 1.0f;
++    state->axes[RIGHT_Y] = pad.ry / 127.5f - 1.0f;
++
++    // only the left stick navigates; the right one is left to the app
++    state->buttons[BUTTON_NAV_UP]    = pad.ly < 0x20 || state->buttons[BUTTON_UP];
++    state->buttons[BUTTON_NAV_RIGHT] = pad.lx > 0xe0 || state->buttons[BUTTON_RIGHT];
++    state->buttons[BUTTON_NAV_DOWN]  = pad.ly > 0xe0 || state->buttons[BUTTON_DOWN];
++    state->buttons[BUTTON_NAV_LEFT]  = pad.lx < 0x20 || state->buttons[BUTTON_LEFT];
+ }
+ 
+ bool PsvInputManager::getKeyboardKeyState(BrlsKeyboardScancode key)

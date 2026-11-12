@@ -32,6 +32,14 @@ brls::View* LibraryActivity::createContentView()
         if (!createButton)
             createButton = button;
     }
+    auto* import = new brls::Button();
+    import->setText("library/import"_i18n);
+    import->setWidth(200);
+    import->registerClickAction([this](brls::View*) {
+        importMiis();
+        return true;
+    });
+    actions->addView(import);
     content->addView(actions);
 
     // Tell the user where the 3D face resource goes (or that it's in use).
@@ -72,7 +80,8 @@ void LibraryActivity::onContentAvailable()
 
 void LibraryActivity::openEditor(const mii_charinfo_t& start)
 {
-    brls::Application::pushActivity(new EditorActivity(start, [this] { rebuild(); }));
+    // no cross-fade: the old screen should not linger behind the new one
+    brls::Application::pushActivity(new EditorActivity(start, [this] { rebuild(); }), brls::TransitionAnimation::NONE);
 }
 
 void LibraryActivity::rebuild()
@@ -113,6 +122,7 @@ void LibraryActivity::rebuild()
             openEditor(miis[index]);
             return true;
         });
+        card->updateActionHint(brls::BUTTON_A, "library/edit"_i18n);
         card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
         card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
             auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
@@ -136,4 +146,23 @@ void LibraryActivity::rebuild()
         });
         row->addView(card);
     }
+}
+
+void LibraryActivity::importMiis()
+{
+    MiiLibrary& lib = MiiLibrary::instance();
+    const MiiLibrary::ImportResult r = lib.importFolder();
+    std::string msg;
+    if (r.imported == 0 && r.failed == 0 && !r.full)
+        msg = "library/import_none"_i18n + " " + lib.importDir() + "/";
+    else {
+        msg = std::to_string(r.imported) + " " + "library/import_done"_i18n;
+        if (r.failed)
+            msg += ", " + std::to_string(r.failed) + " " + "library/import_failed"_i18n;
+        if (r.full)
+            msg += ". " + "library/import_full"_i18n;
+    }
+    brls::Application::notify(msg);
+    if (r.imported)
+        brls::sync([this] { rebuild(); });
 }

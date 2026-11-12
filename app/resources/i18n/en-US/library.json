@@ -8,5 +8,11 @@
   "delete_failed": "Could not delete the Mii.",
   "export": "Export",
   "exported": "Exported to",
-  "export_failed": "Export failed."
+  "export_failed": "Export failed.",
+  "import": "Import",
+  "edit": "Edit",
+  "import_none": "No Mii files (.charinfo, .nfsd, .ffsd) found in",
+  "import_done": "Mii(s) imported",
+  "import_failed": "file(s) could not be read",
+  "import_full": "The database is full (100 Miis)"
 }

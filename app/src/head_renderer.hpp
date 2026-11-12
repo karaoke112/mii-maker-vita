@@ -7,6 +7,7 @@
 #include <deque>
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -16,21 +17,24 @@
 struct mii3d_res;
 struct mii3d_renderer;
 
-// Renders Mii heads in 3D on a worker thread, using a face resource the
-// user provides (see docs/3D_RENDERING.md), first found of:
+// Renders Miis in 3D on worker threads, using resource files the user
+// provides (see docs/3D_RENDERING.md), in ux0:data/mii-maker-vita/dat/; the
+// first face resource found of:
 //
-// (in ux0:data/mii-maker-vita/dat/)
-//   <data dir>/AFLResHigh_2_3.dat   Miitomo: all 20 Switch glasses styles
-//   <data dir>/FFLResHigh.dat       Wii U
-//   <data dir>/FFLResMiddle.dat     Wii U, lower resolution
+//   AFLResHigh_2_3.dat   Miitomo: all 20 Switch glasses styles
+//   FFLResHigh.dat       Wii U
+//   FFLResMiddle.dat     Wii U, lower resolution
 //
-// plus, optionally, <data dir>/FFLBodyRes.dat for whole-Mii views.
+// plus, optionally, FFLBodyRes.dat for whole-Mii views.
 //
-// Without one, available() is false and previews show where to put it.
+// Without a face resource, available() is false and previews show where to
+// put it.
 class HeadRenderer
 {
   public:
     using Image = std::shared_ptr<const std::vector<uint8_t>>; // size*size*4 RGBA
+    // `size` is the image's side, which can be smaller than asked for in a
+    // preview's first, quick pass.
     using Callback = std::function<void(Image image, int size)>;
 
     // What to draw: a head (icon < 0) framed by zoom/centerY, or a part
@@ -44,22 +48,23 @@ class HeadRenderer
         int icon = -1;
         // the whole Mii (when FFLBodyRes.dat is installed; the head otherwise)
         bool fullBody = false;
-        // icons: queued behind previews, single quick pass only
+        // icons: queued behind previews, one pass, kept on the memory card
         bool lowPriority = false;
     };
 
     static HeadRenderer& instance();
 
-    // Looks for the resource file and starts the worker. Safe to call again
-    // (e.g. after the user copies the file).
-    void init(const std::string& dataDir);
+    // Looks for the resource files in `datDir` and starts the workers;
+    // rendered icons are kept in `cacheDir`.
+    void init(const std::string& datDir, const std::string& cacheDir);
     bool available() const { return res != nullptr; }
     bool hasBody() const { return bodyRes != nullptr; }
     const std::string& status() const { return statusText; }
 
-    // Asks for a render; the callback runs later on the UI thread. Heads come
-    // first as a quick image and then again smoother (supersampled).
-    // A newer request from the same owner replaces older queued work.
+    // Asks for a render; the callback runs later on the UI thread. Previews
+    // come first as a quick image and then again sharper. A newer request
+    // from the same owner replaces older work: an older image is never
+    // delivered after a newer one.
     void request(const void* owner, const Spec& spec, Callback cb);
     // Drops queued work for `owner` and guarantees its callbacks never run.
     void forget(const void* owner);
@@ -67,13 +72,16 @@ class HeadRenderer
   private:
     HeadRenderer() = default;
     ~HeadRenderer();
-    void worker();
-    void loadBody(const std::string& dataDir);
+    void worker(mii3d_renderer* renderer);
+    void loadBody(const std::string& datDir);
+    bool loadIcon(uint64_t key, int size, std::vector<uint8_t>* out);
+    void saveIcon(uint64_t key, const std::vector<uint8_t>& pixels);
 
     struct Job {
         const void* owner;
+        uint64_t generation;
         Spec spec;
-        int supersample;
+        int pass;
         Callback cb;
     };
 
@@ -81,19 +89,23 @@ class HeadRenderer
     mii3d_res* res = nullptr;
     std::vector<uint8_t> bodyFile;
     mii3d_res* bodyRes = nullptr;
-    mii3d_renderer* renderer = nullptr;
+    std::vector<mii3d_renderer*> renderers; // one per worker
     std::string statusText;
+    std::string cacheDir;
+    uint64_t resourceSalt = 0; // which resource files the disk cache belongs to
 
     std::mutex mutex;
     std::condition_variable wake;
     std::deque<Job> high, low; // previews, then grid icons
-    std::thread thread;
+    std::vector<std::thread> threads;
     bool stopping = false;
 
     // Finished images, most recent first (LRU, so revisiting a screen does
     // not render everything again).
     std::list<std::pair<uint64_t, Image>> cache;
     size_t cacheBytes = 0;
-    // Owners that are alive; only touched on the UI thread.
-    std::vector<const void*> live;
+    // Owners that are alive, with their newest request; only touched on
+    // the UI thread.
+    std::map<const void*, uint64_t> live;
+    uint64_t nextGeneration = 1;
 };

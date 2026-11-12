@@ -47,7 +47,7 @@ struct mii3d_renderer {
     uint8_t *ss_color;
     int ss_size;
     /* the textures above are reused while the Mii is unchanged */
-    mii_charinfo_t composed_for;
+    uint8_t composed_for[32]; /* face_key() of the composed Mii */
     int composed_valid, composed_has_faceline;
     m3_vertex *verts;
     int verts_cap;
@@ -374,6 +374,23 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
     }
 }
 
+/* The fields the face and faceline textures depend on: Miis that differ
+ * only in hair, nose, glasses, face shape or body reuse the textures
+ * (this is what makes a grid of hair or nose icons cheap). */
+static void face_key(const mii_charinfo_t *ci, uint8_t out[32])
+{
+    const uint8_t k[] = {
+        ci->eye_type, ci->eye_color, ci->eye_scale, ci->eye_aspect, ci->eye_rotate, ci->eye_x, ci->eye_y,
+        ci->eyebrow_type, ci->eyebrow_color, ci->eyebrow_scale, ci->eyebrow_aspect, ci->eyebrow_rotate,
+        ci->eyebrow_x, ci->eyebrow_y,
+        ci->mouth_type, ci->mouth_color, ci->mouth_scale, ci->mouth_aspect, ci->mouth_y,
+        ci->mustache_type, ci->mustache_scale, ci->mustache_y, ci->beard_type, ci->beard_color,
+        ci->mole_type, ci->mole_scale, ci->mole_x, ci->mole_y,
+        ci->faceline_color, ci->faceline_wrinkle, ci->faceline_make, ci->gender,
+    };
+    memcpy(out, k, 32);
+}
+
 /* ---- faceline texture: skin, wrinkles, makeup, texture beards ----------- */
 
 static int compose_faceline(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_target *t)
@@ -395,6 +412,7 @@ static int compose_faceline(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_ta
             memset(&m, 0, sizeof(m));
             m.tex = tex;
             m.mode = M3_MOD_ALPHA;
+            m.mix_rgb = 1;
             m3_rgb(m.c[0], mii_faceline_color_rgb(ci->faceline_color), 1.0f);
             for (int i = 0; i < 3; i++)
                 m.c[0][i] *= 0.55f; /* wrinkles: a darker shade of the skin */
@@ -407,6 +425,7 @@ static int compose_faceline(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_ta
             memset(&m, 0, sizeof(m));
             m.tex = tex;
             m.mode = M3_MOD_DIRECT;
+            m.mix_rgb = 1;
             m3_draw(t, quad, idx, 6, &m);
         }
     }
@@ -416,6 +435,7 @@ static int compose_faceline(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_ta
             memset(&m, 0, sizeof(m));
             m.tex = tex;
             m.mode = M3_MOD_ALPHA;
+            m.mix_rgb = 1;
             common(m.c[0], ci->beard_color);
             m3_draw(t, quad, idx, 6, &m);
         }
@@ -440,6 +460,7 @@ typedef struct camera {
     /* where the current model sits: the head on the body's neck, or the
      * body scaled for height and build */
     float mscale[3], moffset[3];
+    int front; /* within 60 degrees of facing the camera */
     float eye_dist;
     float f, aspect, znear, zfar;
     float light[3], half[3];   /* view space */
@@ -462,6 +483,7 @@ static void setup_camera(camera *c, const mii3d_view_t *view, int w, int h)
         c->mscale[k] = 1.0f;
         c->moffset[k] = 0.0f;
     }
+    c->front = cosf(yaw) * cosf(pitch) >= 0.5f;
     c->pivot[0] = 0.0f; c->pivot[1] = 33.0f + view->center_y; c->pivot[2] = 0.0f;
     c->eye_dist = 330.0f;
     c->f = (view->zoom > 0 ? view->zoom : 1.0f) / tanf(8.4f * (float)M_PI / 180.0f);
@@ -536,9 +558,27 @@ static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const plac
     }
 }
 
-static void draw_mesh(mii3d_renderer_t *r, m3_target *t, const camera *c, const mii3d_mesh_t *mesh,
-                      const placement *pl, const m3_material *mat, const m3_shading *sh)
+/* Back faces are skipped for the closed shapes when the Mii faces the
+ * camera (within 60 degrees): from there they are hidden anyway, and icons
+ * draw about half the triangles. Seen from further round, the open backs
+ * of the face and hair shapes show their inside, so both sides are drawn. */
+static int cull_for(const mii3d_renderer_t *r, const camera *c, const mii3d_mesh_t *mesh, const placement *pl)
 {
+    if (!c->front)
+        return 0;
+    static const int cullable[] = { MS_FACELINE, MS_HAIR, MS_FOREHEAD, MS_NOSE, MS_BEARD };
+    for (size_t k = 0; k < sizeof(cullable) / sizeof(cullable[0]); k++)
+        if (mesh == &r->mesh[cullable[k]].mesh)
+            return pl->scale[0] < 0 ? 1 : -1; /* mirrored hair flips the winding */
+    return 0;
+}
+
+static void draw_mesh(mii3d_renderer_t *r, m3_target *t, const camera *c, const mii3d_mesh_t *mesh,
+                      const placement *pl, const m3_material *mat_in, const m3_shading *sh)
+{
+    m3_material mm = *mat_in;
+    const m3_material *mat = &mm;
+    mm.cull = cull_for(r, c, mesh, pl);
     m3_vertex *v = ensure_verts(r, mesh->vertex_count);
     if (!v)
         return;
@@ -678,13 +718,14 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
     if (!ensure_image(&r->face_tex, fs, fs) || !ensure_image(&r->faceline_tex, fs / 2, fs))
         return MII3D_ERR_MEMORY;
 
-    if (!r->composed_valid || memcmp(&r->composed_for, ci, sizeof(*ci)) != 0 ||
-        r->face_tex.width != fs) {
+    uint8_t key[sizeof(r->composed_for)];
+    face_key(ci, key);
+    if (!r->composed_valid || memcmp(r->composed_for, key, sizeof(key)) != 0 || r->face_tex.width != fs) {
         m3_target face = { fs, fs, r->face_tex.pixels, NULL };
         compose_face(r, ci, &face, FACE_ALL);
         m3_target fl = { fs / 2, fs, r->faceline_tex.pixels, NULL };
         r->composed_has_faceline = compose_faceline(r, ci, &fl);
-        r->composed_for = *ci;
+        memcpy(r->composed_for, key, sizeof(key));
         r->composed_valid = 1;
     }
     const int has_faceline_tex = r->composed_has_faceline;
@@ -882,7 +923,8 @@ static void crop_to_icon(const uint8_t *src, int res, uint8_t *dst, int size)
 mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
                                       uint8_t *rgba, int size)
 {
-    enum { RES = 512 };
+    /* compose at 384 for icons up to ~170 px (about half the pixels of 512) */
+    const int RES = size <= 170 ? 384 : 512;
     if (!r || !mii || !rgba || size <= 0)
         return MII3D_ERR_ARGUMENT;
     uint8_t *tmp = (uint8_t *)malloc((size_t)RES * RES * 4);

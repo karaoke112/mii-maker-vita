@@ -148,6 +148,7 @@ brls::View* EditorActivity::createContentView()
     std::shared_ptr<EditorSession> s = session;
     const int n = (int)(sizeof(kMenu) / sizeof(kMenu[0]));
     MenuRow* star = nullptr;
+    std::vector<MenuRow*> rows; // in menu order: two per line
     for (int i = 0; i < n; i += 2) {
         auto* line = new brls::Box(brls::Axis::ROW);
         for (int j = i; j < i + 2 && j < n; j++) {
@@ -165,6 +166,7 @@ brls::View* EditorActivity::createContentView()
             if (e.category == Category::FAVORITE_COLOR)
                 star = row;
             line->addView(row);
+            rows.push_back(row);
         }
         menu->addView(line);
     }
@@ -199,6 +201,14 @@ brls::View* EditorActivity::createContentView()
         return true;
     });
     menu->addView(nameRow);
+    // Up / down stay in the same column (borealis would otherwise return
+    // to whichever column of a line was focused last).
+    for (size_t k = 0; k < rows.size(); k++) {
+        if (k >= 2)
+            rows[k]->setCustomNavigationRoute(brls::FocusDirection::UP, rows[k - 2]);
+        rows[k]->setCustomNavigationRoute(brls::FocusDirection::DOWN, k + 2 < rows.size() ? rows[k + 2] : nameRow);
+    }
+    nameRow->setCustomNavigationRoute(brls::FocusDirection::UP, rows[rows.size() - 2]);
 
     auto* doneLine = new brls::Box(brls::Axis::ROW);
     doneLine->setJustifyContent(brls::JustifyContent::CENTER);
@@ -222,11 +232,11 @@ brls::View* EditorActivity::createContentView()
     frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return close(); });
     // L / R turn the Mii (the right stick does too, smoothly).
     frame->registerAction("editor/rotate"_i18n, brls::BUTTON_RB, [s](brls::View*) {
-        s->yaw = std::fmin(60.0f, s->yaw + 20.0f);
+        s->yaw = wrapYaw(s->yaw + 20.0f);
         return true;
     }, false, true);
     frame->registerAction("editor/rotate"_i18n, brls::BUTTON_LB, [s](brls::View*) {
-        s->yaw = std::fmax(-60.0f, s->yaw - 20.0f);
+        s->yaw = wrapYaw(s->yaw - 20.0f);
         return true;
     }, true, true);
     return frame;
@@ -252,7 +262,7 @@ bool EditorActivity::save()
     }
     session->dirty = false;
     auto cb = onSaved;
-    brls::Application::popActivity(brls::TransitionAnimation::FADE, [cb] {
+    brls::Application::popActivity(brls::TransitionAnimation::NONE, [cb] {
         if (cb)
             cb();
     });
@@ -262,12 +272,12 @@ bool EditorActivity::save()
 bool EditorActivity::close()
 {
     if (!session->dirty) {
-        brls::Application::popActivity();
+        brls::Application::popActivity(brls::TransitionAnimation::NONE);
         return true;
     }
     auto* dialog = new brls::Dialog("editor/discard"_i18n);
     dialog->addButton("hints/cancel"_i18n, [] {});
-    dialog->addButton("editor/discard_yes"_i18n, [] { brls::Application::popActivity(); });
+    dialog->addButton("editor/discard_yes"_i18n, [] { brls::Application::popActivity(brls::TransitionAnimation::NONE); });
     dialog->open();
     return true;
 }

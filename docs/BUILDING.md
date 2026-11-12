@@ -68,5 +68,5 @@ For 3D Miis, copy your `.dat` files into `build/desktop/data/mii-maker-vita/dat/
 - Button glyph font (from PromptFont): see the comment at the top of
   `app/tools/make_button_font.py` (`npm pack promptfont`, then run it).
 - Icons, app icon and LiveArea images (from Material Symbols, MDI,
-  game-icons.net, Tabler): see the top of `app/tools/make_icons.py`
+  Health Icons, Tabler): see the top of `app/tools/make_icons.py`
   (`npm pack @iconify-json/<set>` for the four sets, then run it).

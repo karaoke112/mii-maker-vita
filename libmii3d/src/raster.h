@@ -45,6 +45,12 @@ typedef struct m3_material {
     int lit;                    /* apply vertex lighting (3D passes) */
     int faceline;               /* opaque; texture alpha masks add (see above) */
     float sss_blend;            /* the material's SSS/specular blend factor */
+    /* blend over the target's color even where its alpha is 0, and let
+     * alpha only accumulate coverage (faceline layers over the skin) */
+    int mix_rgb;
+    /* skip triangles facing away: +1 or -1 picks which winding is the
+     * front (mirrored placements flip it), 0 draws both sides */
+    int cull;
 } m3_material;
 
 void m3_clear(m3_target *t, uint32_t argb);

@@ -33,6 +33,12 @@ const std::string& datDir()
     return d;
 }
 
+const std::string& cacheDir()
+{
+    static const std::string d = appDir() + "/cache";
+    return d;
+}
+
 static void makeDir(const std::string& path)
 {
     if (mkdir(path.c_str(), 0777) != 0 && errno != EEXIST)
@@ -62,8 +68,10 @@ void prepare()
     makeDir(kRoot);
     makeDir(miiDir());
     makeDir(miiDir() + "/export");
+    makeDir(miiDir() + "/import");
     makeDir(appDir());
     makeDir(datDir());
+    makeDir(cacheDir());
 
     moveIfPresent(miiDir() + "/author_id.bin", appDir() + "/author_id.bin");
     for (const char* name : { "AFLResHigh_2_3.dat", "AFLResHigh.dat", "FFLResHigh.dat", "FFLResMiddle.dat",

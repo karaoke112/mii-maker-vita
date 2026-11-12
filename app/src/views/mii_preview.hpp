@@ -53,4 +53,8 @@ class MiiPreview : public brls::View
     bool imageDirty = false;
     int nvgImage = -1;
     int nvgImageSize = 0;
+    int imageSize = 0; // side of `image` (a quick pass is smaller)
 };
+
+// Keeps an angle in [-180, 180).
+float wrapYaw(float degrees);

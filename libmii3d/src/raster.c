@@ -128,73 +128,125 @@ static inline float edge(const sv *a, const sv *b, float px, float py)
 static void draw_triangle(m3_target *t, const sv *a, const sv *b, const sv *c, const m3_material *m)
 {
     float area = edge(a, b, c->x, c->y);
-    if (fabsf(area) < 1e-8f)
+    if (fabsf(area) < 1e-8f || (m->cull && area * (float)m->cull < 0))
         return;
     if (area < 0) { /* keep a consistent orientation; no culling */
         const sv *tmp = b; b = c; c = tmp;
         area = -area;
     }
-    int minx = (int)floorf(fminf(a->x, fminf(b->x, c->x)));
-    int maxx = (int)ceilf(fmaxf(a->x, fmaxf(b->x, c->x)));
     int miny = (int)floorf(fminf(a->y, fminf(b->y, c->y)));
     int maxy = (int)ceilf(fmaxf(a->y, fmaxf(b->y, c->y)));
-    if (minx < 0) minx = 0;
+    const float minxf = fminf(a->x, fminf(b->x, c->x)), maxxf = fmaxf(a->x, fmaxf(b->x, c->x));
     if (miny < 0) miny = 0;
-    if (maxx > t->width - 1) maxx = t->width - 1;
     if (maxy > t->height - 1) maxy = t->height - 1;
     const float inv = 1.0f / area;
 
+    /* w_i(px, py) = A_i * px + B_i * py + C_i (the edge functions, scaled
+     * by 1/area so they are the barycentric weights) */
+    const sv *e0a = b, *e0b = c, *e1a = c, *e1b = a, *e2a = a, *e2b = b;
+    const float A0 = -(e0b->y - e0a->y) * inv, B0 = (e0b->x - e0a->x) * inv;
+    const float A1 = -(e1b->y - e1a->y) * inv, B1 = (e1b->x - e1a->x) * inv;
+    const float A2 = -(e2b->y - e2a->y) * inv, B2 = (e2b->x - e2a->x) * inv;
+    const float C0 = -(A0 * e0a->x + B0 * e0a->y), C1 = -(A1 * e1a->x + B1 * e1a->y), C2 = -(A2 * e2a->x + B2 * e2a->y);
+
+    /* untextured lit meshes: the lighting is linear in the interpolated
+     * terms, so it is computed per vertex and the colors interpolated */
+    const int gouraud = (m->lit && !m->faceline) && (!m->tex || m->mode == M3_MOD_NONE);
+    float vc[3][3] = { { 0 } };
+    if (gouraud) {
+        const sv *vs[3] = { a, b, c };
+        for (int k = 0; k < 3; k++)
+            for (int i = 0; i < 3; i++)
+                vc[k][i] = to_linear(m->base[i]) * vs[k]->hl + vs[k]->add[i] + vs[k]->rim[i];
+        if (m->base[3] <= 0.004f)
+            return;
+    }
+
     for (int y = miny; y <= maxy; y++) {
         const float py = y + 0.5f;
-        for (int x = minx; x <= maxx; x++) {
+        /* the span of pixel centers inside all three edges on this row */
+        float lo = minxf - 1.0f, hi = maxxf + 1.0f;
+        const float As[3] = { A0, A1, A2 }, Rs[3] = { B0 * py + C0, B1 * py + C1, B2 * py + C2 };
+        int empty = 0;
+        for (int k = 0; k < 3; k++) {
+            if (As[k] > 1e-12f) {
+                const float x = -Rs[k] / As[k];
+                if (x > lo) lo = x;
+            } else if (As[k] < -1e-12f) {
+                const float x = -Rs[k] / As[k];
+                if (x < hi) hi = x;
+            } else if (Rs[k] < 0) {
+                empty = 1;
+            }
+        }
+        if (empty)
+            continue;
+        int x0 = (int)ceilf(lo - 0.5f), x1 = (int)floorf(hi - 0.5f);
+        if (x0 < 0) x0 = 0;
+        if (x1 > t->width - 1) x1 = t->width - 1;
+        for (int x = x0; x <= x1; x++) {
             const float px = x + 0.5f;
-            float w0 = edge(b, c, px, py), w1 = edge(c, a, px, py), w2 = edge(a, b, px, py);
-            if (w0 < 0 || w1 < 0 || w2 < 0)
+            const float w0 = A0 * px + Rs[0], w1 = A1 * px + Rs[1], w2 = A2 * px + Rs[2];
+            if (w0 < 0 || w1 < 0 || w2 < 0) /* rounding at the span ends */
                 continue;
-            w0 *= inv; w1 *= inv; w2 *= inv;
             const size_t idx = (size_t)y * t->width + x;
             const float z = w0 * a->z + w1 * b->z + w2 * c->z;
             if (t->depth && m->depth_test && z - m->depth_bias > t->depth[idx])
                 continue;
-            const float iw = w0 * a->iw + w1 * b->iw + w2 * c->iw;
-            const float pw = 1.0f / iw;
-            const float u = (w0 * a->uw + w1 * b->uw + w2 * c->uw) * pw;
-            const float v = (w0 * a->vw + w1 * b->vw + w2 * c->vw) * pw;
             float col[4];
-            shade_fragment(m, u, v, col);
-            if (m->faceline) {
-                /* faceline: always opaque; feature texels mute spec/SSS */
-                const float k = 1.0f - col[3] * m->sss_blend;
-                const float hl = w0 * a->hl + w1 * b->hl + w2 * c->hl;
-                for (int i = 0; i < 3; i++) {
-                    const float add = w0 * a->add[i] + w1 * b->add[i] + w2 * c->add[i];
-                    const float rim = w0 * a->rim[i] + w1 * b->rim[i] + w2 * c->rim[i];
-                    col[i] = to_linear(col[i]) * hl + add * k + rim;
-                }
-                col[3] = 1.0f;
-            } else if (m->lit) {
-                if (col[3] <= 0.004f)
+            if (gouraud) {
+                for (int i = 0; i < 3; i++)
+                    col[i] = w0 * vc[0][i] + w1 * vc[1][i] + w2 * vc[2][i];
+                col[3] = m->base[3];
+            } else {
+                const float iw = w0 * a->iw + w1 * b->iw + w2 * c->iw;
+                const float pw = 1.0f / iw;
+                const float u = (w0 * a->uw + w1 * b->uw + w2 * c->uw) * pw;
+                const float v = (w0 * a->vw + w1 * b->vw + w2 * c->vw) * pw;
+                shade_fragment(m, u, v, col);
+                if (m->faceline) {
+                    /* faceline: always opaque; feature texels mute spec/SSS */
+                    const float k = 1.0f - col[3] * m->sss_blend;
+                    const float hl = w0 * a->hl + w1 * b->hl + w2 * c->hl;
+                    for (int i = 0; i < 3; i++) {
+                        const float add = w0 * a->add[i] + w1 * b->add[i] + w2 * c->add[i];
+                        const float rim = w0 * a->rim[i] + w1 * b->rim[i] + w2 * c->rim[i];
+                        col[i] = to_linear(col[i]) * hl + add * k + rim;
+                    }
+                    col[3] = 1.0f;
+                } else if (m->lit) {
+                    if (col[3] <= 0.004f)
+                        continue;
+                    const float hl = w0 * a->hl + w1 * b->hl + w2 * c->hl;
+                    for (int i = 0; i < 3; i++) {
+                        const float add = w0 * a->add[i] + w1 * b->add[i] + w2 * c->add[i];
+                        const float rim = w0 * a->rim[i] + w1 * b->rim[i] + w2 * c->rim[i];
+                        col[i] = to_linear(col[i]) * hl + add + rim;
+                    }
+                } else if (col[3] <= 0.004f) {
                     continue;
-                const float hl = w0 * a->hl + w1 * b->hl + w2 * c->hl;
-                for (int i = 0; i < 3; i++) {
-                    const float add = w0 * a->add[i] + w1 * b->add[i] + w2 * c->add[i];
-                    const float rim = w0 * a->rim[i] + w1 * b->rim[i] + w2 * c->rim[i];
-                    col[i] = to_linear(col[i]) * hl + add + rim;
                 }
-            } else if (col[3] <= 0.004f) {
-                continue;
             }
             uint8_t *p = t->rgba + 4 * idx;
-            const float sa = col[3], da = p[3] / 255.0f;
-            const float oa = sa + da * (1.0f - sa);
-            for (int i = 0; i < 3; i++) {
-                /* lit colors are linear; unlit (2D passes) stay sRGB */
-                const float s = (m->lit || m->faceline) ? to_srgb8(col[i]) / 255.0f : clampf(col[i], 0.0f, 1.0f);
-                const float d = p[i] / 255.0f;
-                const float o = oa > 0 ? (s * sa + d * da * (1.0f - sa)) / oa : 0.0f;
-                p[i] = (uint8_t)(clampf(o, 0.0f, 1.0f) * 255.0f + 0.5f);
+            const int linear = m->lit || m->faceline; /* lit colors are linear; 2D passes stay sRGB */
+            const float sa = col[3];
+            if (sa >= 0.999f) { /* opaque: no blending */
+                for (int i = 0; i < 3; i++)
+                    p[i] = linear ? to_srgb8(col[i]) : (uint8_t)(clampf(col[i], 0.0f, 1.0f) * 255.0f + 0.5f);
+                p[3] = 255;
+            } else {
+                const float da = p[3] / 255.0f;
+                const float oa = sa + da * (1.0f - sa);
+                for (int i = 0; i < 3; i++) {
+                    const float s = linear ? to_srgb8(col[i]) / 255.0f : clampf(col[i], 0.0f, 1.0f);
+                    const float d = p[i] / 255.0f;
+                    const float o = m->mix_rgb ? s * sa + d * (1.0f - sa)
+                                  : oa > 0     ? (s * sa + d * da * (1.0f - sa)) / oa
+                                               : 0.0f;
+                    p[i] = (uint8_t)(clampf(o, 0.0f, 1.0f) * 255.0f + 0.5f);
+                }
+                p[3] = (uint8_t)(clampf(oa, 0.0f, 1.0f) * 255.0f + 0.5f);
             }
-            p[3] = (uint8_t)(clampf(oa, 0.0f, 1.0f) * 255.0f + 0.5f);
             if (t->depth && m->depth_write && sa > 0.5f)
                 t->depth[idx] = z;
         }

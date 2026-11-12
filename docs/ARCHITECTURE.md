@@ -66,7 +66,7 @@ ordinary NanoVG image, so it works with any borealis backend. A GXM backend
 could be added later behind the same API if profiling on hardware calls for it.
 
 Whole Miis come from the optional `FFLBodyRes.dat` (see 3D_RENDERING.md).
-Next steps: saving rendered grid icons to `ux0:data/mii-maker-vita/cache/`, expressions.
+Next steps: expressions.
 
 ## QR codes
 
@@ -146,9 +146,10 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | 2 | 3D renderer from the user's own resource (Wii U or Miitomo), Switch lighting | done (heads) |
 | 2b | Rendered style icons in every part grid | done |
 | 2c | Body from `FFLBodyRes.dat` (when provided) | done |
-| 2d | Cache rendered icons on disk | next |
-| 3 | Import `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/` | planned |
+| 2d | Cache rendered icons on the memory card (`ux0:data/mii-maker-vita/cache/`) | done |
+| 3 | Import `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/` | done |
 | 3b | **QR codes**: scan Mii QR codes with the Vita camera and create them (see below) | planned |
 | 4 | Ad-hoc trading (`libmii-net`, `TradeActivity`) | planned |
 | 5 | Wii format + RFL shim helpers for game ports | planned |
 | 6 | Polish: random Mii ("look-alike") generator from nn::mii's tables, more languages, touch gestures, sounds | planned |
+| 6b | **Dark mode**: a dark theme (borealis has a dark variant; the editor's colors need dark counterparts), following the system setting or a toggle | planned |

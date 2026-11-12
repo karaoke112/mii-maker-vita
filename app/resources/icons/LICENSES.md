@@ -12,7 +12,7 @@ images (`app/sce_sys/livearea/contents/`), with text set in M PLUS Rounded 1c.
 | hair.png | face_6 (outline) | Material Symbols, Google | Apache-2.0 |
 | eyebrows.png | eyebrow (outline) | Material Symbols, Google | Apache-2.0 |
 | eyes.png | visibility (outline) | Material Symbols, Google | Apache-2.0 |
-| nose.png | Nose front | game-icons.net, Delapouite | CC BY 3.0 |
+| nose.png | nose (outline) | Health Icons, Resolve to Save Lives | CC0-1.0 |
 | mouth.png | lips (outline) | Material Symbols, Google | Apache-2.0 |
 | facial_hair.png | mustache | Material Design Icons, Pictogrammers | Apache-2.0 |
 | mole.png | circle-dot | Tabler Icons, Paweł Kuna | MIT |
@@ -34,10 +34,8 @@ images (`app/sce_sys/livearea/contents/`), with text set in M PLUS Rounded 1c.
   Apache License 2.0 (`Apache-2.0.txt`).
 - Material Design Icons: <https://pictogrammers.com/library/mdi/>, icons
   under the Apache License 2.0 (`MDI-LICENSE.txt`, `Apache-2.0.txt`).
-- game-icons.net: "Nose front" by Delapouite (<https://delapouite.com>),
-  from <https://game-icons.net>, licensed under Creative Commons
-  Attribution 3.0 (<https://creativecommons.org/licenses/by/3.0/>).
-  Rasterized; otherwise unchanged.
+- Health Icons: <https://healthicons.org>, icons dedicated to the public
+  domain under CC0 1.0 (`HealthIcons-LICENSE.txt`).
 - Tabler Icons: <https://tabler.io/icons>, MIT License (`Tabler-LICENSE.txt`).
 
 Button glyphs are not here: they are in `app/resources/font/icon.ttf`, from

@@ -9,7 +9,8 @@ This page is the contract.
 ux0:data/mii/
 ├── database.nfdb       the Miis (Switch NFDB format, 6808 bytes)
 ├── database.nfdb.bak   previous version, written before each save
-└── export/             files written by "Export" (.charinfo/.nfsd/.ffsd)
+├── export/             files written by "Export": <name>_<id>.charinfo/.nfsd/.ffsd
+└── import/             Mii files to add with "Import" (moved to import/imported/ once added)
 ```
 
 Mii Maker Vita's own files are kept apart, in `ux0:data/mii-maker-vita/`

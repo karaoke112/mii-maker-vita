@@ -2,7 +2,10 @@
 
 #include <borealis/core/logger.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
+#include <dirent.h>
 #include <cstdio>
 #include <cstring>
 #include <random>
@@ -149,7 +152,17 @@ bool MiiLibrary::exportMii(int index, std::string* outPath)
     char id[9];
     std::snprintf(id, sizeof(id), "%02x%02x%02x%02x", ci.create_id.bytes[0], ci.create_id.bytes[1],
         ci.create_id.bytes[2], ci.create_id.bytes[3]);
-    const std::string base = dir + "/export/" + id;
+    // <name>_<id>: characters a memory card cannot hold become "_"
+    char name[64];
+    mii_name_get_utf8(&ci, name, sizeof(name));
+    std::string safe;
+    for (const char* p = name; *p; p++) {
+        const unsigned char ch = (unsigned char)*p;
+        safe += (ch < 0x20 || std::strchr("\\/:*?\"<>|", ch)) ? '_' : (char)ch;
+    }
+    while (!safe.empty() && (safe.back() == ' ' || safe.back() == '.'))
+        safe.pop_back();
+    const std::string base = dir + "/export/" + (safe.empty() ? std::string("Mii") : safe) + "_" + id;
 
     uint8_t buf[MII_VER3_STOREDATA_SIZE];
     bool ok = true;
@@ -159,4 +172,64 @@ bool MiiLibrary::exportMii(int index, std::string* outPath)
     if (outPath)
         *outPath = base;
     return ok;
+}
+
+static std::string lowerExtension(const std::string& name)
+{
+    const size_t dot = name.rfind('.');
+    std::string ext = dot == std::string::npos ? "" : name.substr(dot + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return ext;
+}
+
+MiiLibrary::ImportResult MiiLibrary::importFolder()
+{
+    ImportResult result;
+    const std::string in = importDir(), done = in + "/imported";
+    mkdir(done.c_str(), 0777);
+    DIR* d = opendir(in.c_str());
+    if (!d)
+        return result;
+    std::vector<std::string> names;
+    while (struct dirent* e = readdir(d))
+        names.push_back(e->d_name);
+    closedir(d);
+    std::sort(names.begin(), names.end());
+
+    bool changed = false;
+    for (const std::string& name : names) {
+        const std::string ext = lowerExtension(name);
+        if (ext != "charinfo" && ext != "nfsd" && ext != "ffsd")
+            continue;
+        std::vector<uint8_t> data;
+        mii_charinfo_t ci;
+        mii_result_t r = MII_ERR_SIZE;
+        if (readFile(in + "/" + name, &data)) {
+            if (ext == "charinfo")
+                r = mii_charinfo_decode(&ci, data.data(), data.size());
+            else if (ext == "nfsd")
+                r = mii_storedata_decode(&ci, data.data(), data.size(), nullptr);
+            else
+                r = mii_ver3_decode(&ci, nullptr, data.data(), data.size(), nullptr);
+        }
+        if (r != MII_OK || mii_verify(&ci, 0) != MII_FIELD_COUNT) {
+            brls::Logger::warning("import {}: not a valid Mii file", name);
+            result.failed++;
+            continue;
+        }
+        if (!mii_create_id_is_valid(&ci.create_id))
+            newCreateId(&ci.create_id); // Ver3 files carry no create id
+        if (mii_nfdb_put(&db, &ci, authorId) < 0) {
+            result.full = true;
+            break;
+        }
+        changed = true;
+        result.imported++;
+        const std::string from = in + "/" + name, to = done + "/" + name;
+        std::remove(to.c_str());
+        std::rename(from.c_str(), to.c_str());
+    }
+    if (changed && !save())
+        brls::Logger::error("import: could not save the database");
+    return result;
 }

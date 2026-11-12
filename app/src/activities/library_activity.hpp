@@ -15,6 +15,7 @@ class LibraryActivity : public brls::Activity
 
   private:
     void rebuild();
+    void importMiis();
     void openEditor(const mii_charinfo_t& start);
 
     brls::Box* grid = nullptr;

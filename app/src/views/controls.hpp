@@ -66,7 +66,7 @@ class FieldSlider : public brls::Box
         std::function<void()> onChange);
 
   private:
-    brls::Slider* makeSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange);
+    brls::View* makeSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange);
 };
 
 // The row of tabs across the top of a category page, with the L and R
