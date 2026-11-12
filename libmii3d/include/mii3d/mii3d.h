@@ -209,6 +209,9 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
  * the same in every lip color), so icons can be shared. Only mouths are
  * checked; other parts answer 1. */
 int mii3d_part_shows_color(mii3d_renderer_t *r, mii3d_icon_part_t part, int type);
+/* Whether a hairstyle comes with a hat or hair accessory (drawn in the
+ * favorite color). */
+int mii3d_hair_has_hat(mii3d_renderer_t *r, int hair_type);
 
 /* Renders only the composited face texture (eyes, brows, mouth, ...) at
  * size x size, mostly for debugging and part thumbnails. */

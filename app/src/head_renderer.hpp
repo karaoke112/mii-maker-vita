@@ -66,6 +66,8 @@ class HeadRenderer
     // Icons load in order of priority (lower first; the grids use the
     // distance from the cursor), then in the order asked. UI thread.
     void setPriority(const void* owner, int priority);
+    bool gpuActive() const { return gpuOn; }
+    bool hairHasHat(int type) const { return type >= 0 && type < (int)hatHair.size() && hatHair[type]; }
     bool mouthShowsColor(int type) const { return type < 0 || type >= (int)mouthColor.size() || mouthColor[type]; }
 
     // Looks for the resource files in `datDir` and starts the workers;
@@ -137,7 +139,7 @@ class HeadRenderer
     std::atomic<int> lastUs[3] = { { 0 }, { 0 }, { 0 } };
     std::map<const void*, Job> gpuPending; // UI thread only
     bool gpuOn = false;
-    std::vector<bool> mouthColor;
+    std::vector<bool> mouthColor, hatHair;
     std::map<const void*, int> priority; // guarded by `mutex`
     Job takeBest(std::deque<Job>& q); // with `mutex` held
 };

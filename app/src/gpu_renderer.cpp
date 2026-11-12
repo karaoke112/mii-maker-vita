@@ -201,6 +201,9 @@ struct GpuRenderer::Impl {
     bool drawFailed = false;
 
     int stride = kFloats * 4; // bytes per vertex in GPU memory (52, or 64 padded)
+    // previews clear to the page color with alpha 0: transparent around the
+    // Mii (so the stage's glow shows), edges blended toward the page color
+    float clearAlpha = 1.0f;
     bool useFx = true;
 
     bool compile(const char* src, SceShaccCgTargetProfile profile, std::vector<uint8_t>* out);
@@ -540,7 +543,7 @@ bool GpuRenderer::Impl::scene(Target* t, SizeResources* sr, uint32_t background,
         return false;
     }
     gxmClearColor(((background >> 16) & 0xFF) / 255.0f, ((background >> 8) & 0xFF) / 255.0f,
-        (background & 0xFF) / 255.0f, 1.0f);
+        (background & 0xFF) / 255.0f, clearAlpha);
     gxmClear();
     sceGxmSetVertexProgram(ctx, prog.vert);
     sceGxmSetFragmentProgram(ctx, prog.frag);
@@ -997,10 +1000,14 @@ bool GpuRenderer::init(const mii3d_res* face, const mii3d_res* body, const std::
             impl->destroyPrograms();
             continue;
         }
-        if (impl->selfTest()) {
+        // The self-test (drawing known shapes and a Mii, comparing with the
+        // CPU renderer) costs startup time; it runs only when asked for, by
+        // creating ux0:data/mii-maker-vita/gpu_selftest.
+        struct stat flag;
+        if (stat("ux0:data/mii-maker-vita/gpu_selftest", &flag) != 0 || impl->selfTest()) {
             ok = true;
             why = "GPU";
-            log("self-test passed: GPU rendering on");
+            log("GPU rendering on");
             return true;
         }
         impl->destroyPrograms();
@@ -1035,6 +1042,7 @@ int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, 
     view.full_body = fullBody;
 
     mii3d_result_t r = MII3D_OK;
+    g.clearAlpha = 0.0f;
     const bool drawn = g.scene(t, sr, background,
         [&] { r = mii3d_render_head_draws(g.renderer, &mii, &view, size, size, drawCallback, &g); });
     if (!drawn || r != MII3D_OK) {

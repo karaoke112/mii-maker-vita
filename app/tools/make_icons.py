@@ -150,6 +150,10 @@ def main():
     bg.paste(face3, (320, 90), face3)
     text(d, (420, 320), "Mii Maker Vita", 56, (30, 30, 30))
     save_indexed(bg, os.path.join(APP, "sce_sys", "livearea", "contents", "bg.png"))
+    # Boot splash (960x544), shown while the app loads: the same picture.
+    pic0 = Image.new("RGB", (960, 544), LIGHT)
+    pic0.paste(bg, (60, 22))
+    save_indexed(pic0, os.path.join(APP, "sce_sys", "pic0.png"))
     start = Image.new("RGB", (280, 158), ACCENT)
     d = ImageDraw.Draw(start)
     text(d, (140, 52), "Mii Maker Vita", 30, (255, 255, 255))

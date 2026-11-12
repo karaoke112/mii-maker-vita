@@ -2,6 +2,8 @@
 
 #include <borealis.hpp>
 
+#include "head_renderer.hpp"
+
 #include <string>
 
 // The editor's icons: PNG masks in resources/icons/ built by
@@ -18,7 +20,12 @@ class IconView : public brls::View
 {
   public:
     IconView(std::string name, float size, NVGcolor color);
+    ~IconView() override;
     void setColor(NVGcolor c) { color = c; }
+    // Shows a rendered Mii part instead (as a mask in the icon's color)
+    // once the face resource has drawn it; the named icon until then, or
+    // without a resource.
+    void setRendered(const HeadRenderer::Spec& spec, float zoom = 1.0f);
     void setOverlay(std::string name, NVGcolor c)
     {
         overlay = std::move(name);
@@ -28,6 +35,12 @@ class IconView : public brls::View
         brls::FrameContext* ctx) override;
 
   private:
+    HeadRenderer::Spec rendered;
+    bool wantsRender = false, requested = false;
+    HeadRenderer::Image renderedImage;
+    int renderedSize = 0;
+    int renderedNvg = -1;
+    float renderedZoom = 1.0f;
     std::string name;
     NVGcolor color;
     std::string overlay;

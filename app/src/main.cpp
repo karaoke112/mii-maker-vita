@@ -47,7 +47,8 @@ int main(int argc, char* argv[])
     HeadRenderer::instance().init(paths::datDir(), paths::cacheDir(), paths::appDir() + "/gpu.log", Settings::get().gpu);
     music::Player::instance().play((music::Track)Settings::get().music);
 
-    brls::Application::pushActivity(new LibraryActivity());
+    // no fade-in: the first frame follows the boot splash directly
+    brls::Application::pushActivity(new LibraryActivity(), brls::TransitionAnimation::NONE);
     while (brls::Application::mainLoop())
         HeadRenderer::instance().pumpGpu(); // GPU previews, between frames
     return EXIT_SUCCESS;

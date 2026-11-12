@@ -177,6 +177,15 @@ brls::View* EditorActivity::createContentView()
             });
             if (e.category == Category::FAVORITE_COLOR)
                 star = row;
+            if (e.category == Category::NOSE) {
+                // the default Mii's nose, as the Switch 2 shows it
+                HeadRenderer::Spec spec;
+                mii_charinfo_init_default(&spec.mii, 0);
+                spec.icon = MII3D_ICON_NOSE;
+                spec.size = 96;
+                spec.lowPriority = true;
+                row->iconView()->setRendered(spec, 2.0f);
+            }
             line->addView(row);
             rows.push_back(row);
         }
@@ -345,6 +354,8 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
         return head(1.12f, 2.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t& c) {
             m.hair_type = v;
             m.hair_flip = c.hair_flip;
+            if (HeadRenderer::instance().hairHasHat(v))
+                m.favorite_color = c.favorite_color; // hats are in the favorite color
         });
     case MII_FIELD_FACELINE_TYPE:
         return head(1.0f, 0.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) {
@@ -423,8 +434,10 @@ static OptionGrid* partsGrid(EditorSession* s, mii_field_t field, mii_grid_kind_
     o.iconOf = iconFor(field);
     if (field == MII_FIELD_EYE_TYPE || field == MII_FIELD_EYEBROW_TYPE)
         o.iconScale = 0.86f;
+    if (field == MII_FIELD_EYEBROW_TYPE)
+        o.noneValue = 23; // no eyebrows
     if (field == MII_FIELD_GLASS_TYPE) {
-        o.noneIcon = true;
+        o.noneValue = 0;
         o.iconScale = 1.0f;
     }
     return new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
@@ -683,7 +696,7 @@ void CategoryActivity::addTabs()
                 OptionGrid::Options o;
                 o.columns = 3;
                 o.iconOf = iconFor(MII_FIELD_MUSTACHE_TYPE);
-                o.noneIcon = true;
+                o.noneValue = 0;
                 o.iconScale = 0.6f;
                 b->addView(new OptionGrid(&s->mii, MII_FIELD_MUSTACHE_TYPE,
                     OptionGrid::range(MII_FIELD_MUSTACHE_TYPE), o, [s] { s->dirty = true; }));
@@ -753,11 +766,21 @@ void CategoryActivity::addTabs()
                 b->addView(makePrompt("editor/prompt/body"_i18n));
                 auto icon = [](const char* name) { return new IconView(name, 56, ui::textDim()); };
                 auto changed = [s] { s->dirty = true; };
-                b->addView(makeSectionTitle("editor/height"_i18n));
+                // the section titles carry the current values
+                auto titled = [&](const std::string& text, mii_field_t f) {
+                    auto* row = new brls::Box(brls::Axis::ROW);
+                    row->setAlignItems(brls::AlignItems::CENTER);
+                    row->addView(makeSectionTitle(text));
+                    auto* value = new FieldValue(&s->mii, f, 48);
+                    value->setMarginLeft(12);
+                    row->addView(value);
+                    return row;
+                };
+                b->addView(titled("editor/height"_i18n, MII_FIELD_HEIGHT));
                 auto* height = new FieldSlider(&s->mii, MII_FIELD_HEIGHT, icon("shorter"), icon("taller"), changed);
                 height->setWidth(600);
                 b->addView(height);
-                b->addView(makeSectionTitle("editor/build"_i18n));
+                b->addView(titled("editor/build"_i18n, MII_FIELD_BUILD));
                 auto* build = new FieldSlider(&s->mii, MII_FIELD_BUILD, icon("thinner"), icon("wider"), changed);
                 build->setWidth(600);
                 b->addView(build);

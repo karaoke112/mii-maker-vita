@@ -63,6 +63,7 @@ brls::View* StartActivity::createContentView()
         tile->setFocusable(true);
         auto* preview = new MiiPreview(&choices[i], lookalike ? 192 : 256);
         preview->setStage(true);
+        preview->setCompact(true);
         preview->setInteractive(false);
         preview->setBackdrop(ui::tile());
         preview->setFraming(lookalike ? MiiPreview::Framing::BUST : MiiPreview::Framing::FULL_BODY);

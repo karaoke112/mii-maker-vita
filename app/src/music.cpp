@@ -4,9 +4,12 @@
 
 #include <borealis/core/logger.hpp>
 
+#include <cstdio>
 #include <cstdlib>
-#include <pthread.h>
 #include <cstring>
+#if !defined(__PSV__)
+#include <pthread.h>
+#endif
 #include <sys/stat.h>
 #include <vector>
 
@@ -22,6 +25,7 @@
 
 #if defined(__PSV__)
 #include <psp2/audioout.h>
+#include <psp2/kernel/threadmgr.h>
 #endif
 
 namespace music {
@@ -64,8 +68,25 @@ static bool comment(const stb_vorbis_comment& c, const char* key, uint64_t* out)
 
 bool LoopingStream::open(const std::string& file)
 {
+    // read it all up front: decoding then never waits on the memory card,
+    // which the icon cache keeps busy
+    FILE* f = std::fopen(file.c_str(), "rb");
+    if (!f)
+        return false;
+    std::fseek(f, 0, SEEK_END);
+    const long size = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    if (size <= 0) {
+        std::fclose(f);
+        return false;
+    }
+    data.resize((size_t)size);
+    const size_t got = std::fread(data.data(), 1, data.size(), f);
+    std::fclose(f);
+    if (got != data.size())
+        return false;
     int err = 0;
-    v = stb_vorbis_open_filename(file.c_str(), &err, nullptr);
+    v = stb_vorbis_open_memory(data.data(), (int)data.size(), &err, nullptr);
     if (!v)
         return false;
     const stb_vorbis_info info = stb_vorbis_get_info(v);
@@ -129,7 +150,12 @@ void Player::stop()
 {
     running = false;
     if (started) {
+#if defined(__PSV__)
+        sceKernelWaitThreadEnd((SceUID)worker, nullptr, nullptr);
+        sceKernelDeleteThread((SceUID)worker);
+#else
         pthread_join((pthread_t)worker, nullptr);
+#endif
         started = false;
     }
     track = Track::NONE;
@@ -149,16 +175,22 @@ bool Player::play(Track t, std::string* error)
     }
     track = t;
 #if defined(__PSV__)
-    // the decoder wants more stack than a default thread may have
+    // A native thread at the highest user priority, so icon rendering and
+    // the disk cache never hold the next buffer back; the decoder wants a
+    // bigger stack than the default.
     running = true;
     playing = file;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 256 * 1024);
-    pthread_t thread;
-    started = pthread_create(&thread, &attr, &Player::entry, this) == 0;
-    pthread_attr_destroy(&attr);
-    worker = (unsigned long)thread;
+    const SceUID id = sceKernelCreateThread("music", &Player::entry, 0x40, 256 * 1024, 0, 0, nullptr);
+    started = false;
+    if (id >= 0) {
+        Player* self = this;
+        if (sceKernelStartThread(id, sizeof(self), &self) >= 0) {
+            worker = (unsigned long)id;
+            started = true;
+        } else {
+            sceKernelDeleteThread(id);
+        }
+    }
     if (!started)
         running = false;
 #else
@@ -167,11 +199,13 @@ bool Player::play(Track t, std::string* error)
     return true;
 }
 
-void* Player::entry(void* self)
+int Player::entry(unsigned int size, void* arg)
 {
-    Player* p = static_cast<Player*>(self);
+    if (size < sizeof(Player*))
+        return 0;
+    Player* p = *static_cast<Player**>(arg);
     p->run(p->playing);
-    return nullptr;
+    return 0;
 }
 
 void Player::run(std::string file)
@@ -190,15 +224,18 @@ void Player::run(std::string file)
     }
     int volume[2] = { SCE_AUDIO_OUT_MAX_VOL * 7 / 10, SCE_AUDIO_OUT_MAX_VOL * 7 / 10 };
     sceAudioOutSetVolume(port, (SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH), volume);
-    // two buffers: one plays while the next is decoded
-    std::vector<int16_t> buffers[2] = { std::vector<int16_t>(grain * 2), std::vector<int16_t>(grain * 2) };
+    // a ring of buffers: one plays while the next is decoded
+    const int kBuffers = 3;
+    std::vector<int16_t> buffers[kBuffers];
+    for (auto& b : buffers)
+        b.assign(grain * 2, 0);
     int which = 0;
     while (running) {
         std::vector<int16_t>& b = buffers[which];
         if (stream.read(b.data(), grain) < grain)
             std::memset(b.data(), 0, b.size() * sizeof(int16_t));
         sceAudioOutOutput(port, b.data()); // waits for the previous buffer
-        which ^= 1;
+        which = (which + 1) % kBuffers;
     }
     sceAudioOutOutput(port, nullptr); // let the last buffer finish
     sceAudioOutReleasePort(port);

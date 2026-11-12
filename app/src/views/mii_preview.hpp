@@ -52,6 +52,9 @@ class MiiPreview : public brls::View
     // (until then, the head).
     enum class Framing { BUST, FULL_BODY };
     void setFraming(Framing f) { framing = f; }
+    // Small stages (the look-alike tiles): the plain bust framing, kept
+    // inside the view, no glow.
+    void setCompact(bool on) { compact = on; }
     // SELECT in the editor shows render times on the stage.
     inline static bool showTimings = false;
 
@@ -73,6 +76,17 @@ class MiiPreview : public brls::View
     inline static std::map<const void*, int> shareCount;
     inline static std::map<const void*, uint64_t> shareEpochs;
     inline static std::map<const void*, std::pair<HeadRenderer::Image, int>> shareImages; // CPU renders
+    // the stage's framing, eased toward its target (shared between screens,
+    // so going to and from the Body page glides)
+    struct Frame {
+        float pivot = 0, zoom = 0; // camera height (model units), zoom
+        bool set = false;
+    };
+    Frame frame;
+    inline static std::map<const void*, Frame> shareFrames;
+    Frame& frameRef() { return shareKey ? shareFrames[shareKey] : frame; }
+    void stageTarget(float* pivot, float* zoom) const;
+    void easeFrame(float dt);
     float& yawRef() { return yawSource ? *yawSource : yaw; }
     float& pitchRef() { return pitchSource ? *pitchSource : pitch; }
     void pollStick();
@@ -85,6 +99,7 @@ class MiiPreview : public brls::View
     float* pitchSource = nullptr;
     bool* frontSource = nullptr;
     bool stage = false;
+    bool compact = false;
     bool interactive = true;
     float extraZoom = 1.0f;
     Framing framing = Framing::BUST;
@@ -95,6 +110,8 @@ class MiiPreview : public brls::View
     mii_charinfo_t requested;
     float requestedYaw = 0.0f;
     float requestedPitch = 0.0f;
+    float requestedPivot = 0.0f, requestedZoom = 0.0f;
+    brls::Time lastEase = 0;
     bool hasRequested = false;
 
     // newest finished render, and the NanoVG image showing it

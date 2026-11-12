@@ -33,8 +33,8 @@ typedef struct tex_slot { int index; mii3d_image_t img; int ok; } tex_slot;
 typedef struct mesh_slot { int index; mii3d_mesh_t mesh; int ok; } mesh_slot;
 
 enum { SLOT_EYE, SLOT_EYEBROW, SLOT_MOUTH, SLOT_MUSTACHE, SLOT_MOLE, SLOT_GLASS, SLOT_NOSELINE,
-       SLOT_WRINKLE, SLOT_MAKEUP, SLOT_BEARD, SLOT_TEX_COUNT };
-enum { MS_FACELINE, MS_MASK, MS_HAIR, MS_FOREHEAD, MS_NOSE, MS_NOSELINE, MS_BEARD, MS_GLASS, MS_COUNT };
+       SLOT_WRINKLE, SLOT_MAKEUP, SLOT_BEARD, SLOT_CAP, SLOT_TEX_COUNT };
+enum { MS_FACELINE, MS_MASK, MS_HAIR, MS_FOREHEAD, MS_NOSE, MS_NOSELINE, MS_BEARD, MS_GLASS, MS_HAT, MS_COUNT };
 
 struct mii3d_renderer {
     const mii3d_res_t *res;
@@ -65,10 +65,12 @@ struct mii3d_renderer {
 static const mii3d_tex_kind_t k_slot_kind[SLOT_TEX_COUNT] = {
     MII3D_TEX_EYE, MII3D_TEX_EYEBROW, MII3D_TEX_MOUTH, MII3D_TEX_MUSTACHE, MII3D_TEX_MOLE,
     MII3D_TEX_GLASS, MII3D_TEX_NOSELINE, MII3D_TEX_FACELINE, MII3D_TEX_MAKEUP, MII3D_TEX_BEARD,
+    MII3D_TEX_CAP,
 };
 static const mii3d_shape_kind_t k_mesh_kind[MS_COUNT] = {
     MII3D_SHAPE_FACELINE, MII3D_SHAPE_MASK, MII3D_SHAPE_HAIR_NORMAL, MII3D_SHAPE_FOREHEAD_NORMAL,
     MII3D_SHAPE_NOSE, MII3D_SHAPE_NOSELINE, MII3D_SHAPE_BEARD, MII3D_SHAPE_GLASS,
+    MII3D_SHAPE_HAT_NORMAL,
 };
 
 static const mii3d_image_t *get_tex(mii3d_renderer_t *r, int slot, int index)
@@ -847,6 +849,22 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
         m.depth_test = m.depth_write = 1;
         draw_mesh(r, &t, &cam, hair, &hair_pl, &m, &k_mat_hair[ci->hair_color % 100]);
     }
+    /* hats: some hairstyles come with one (caps, beanies, headbands), in the
+     * favorite color, shaded by the hat's texture */
+    const mii3d_mesh_t *hat = get_mesh(r, MS_HAT, ci->hair_type);
+    if (hat && hat->vertex_count > 0) {
+        memset(&m, 0, sizeof(m));
+        m3_rgb(m.base, mii_favorite_color_rgb(ci->favorite_color), 1.0f);
+        const mii3d_image_t *cap = hat->uvs ? get_tex(r, SLOT_CAP, ci->hair_type) : NULL;
+        if (cap) {
+            m.tex = cap;
+            m.mode = M3_MOD_LUM;
+            memcpy(m.c[0], m.base, sizeof(m.c[0]));
+        }
+        m.lit = 1;
+        m.depth_test = m.depth_write = 1;
+        draw_mesh(r, &t, &cam, hat, &hair_pl, &m, &k_mat_hair[ci->hair_color % 100]);
+    }
 
     /* beard shape (types 1-3) */
     if (ci->beard_type >= 1 && ci->beard_type <= 3) {
@@ -989,6 +1007,14 @@ static void crop_to_icon(const uint8_t *src, int res, uint8_t *dst, int size, fl
     }
 }
 
+int mii3d_hair_has_hat(mii3d_renderer_t *r, int hair_type)
+{
+    if (!r)
+        return 0;
+    const mii3d_mesh_t *hat = get_mesh(r, MS_HAT, hair_type);
+    return hat && hat->vertex_count > 0;
+}
+
 int mii3d_part_shows_color(mii3d_renderer_t *r, mii3d_icon_part_t part, int type)
 {
     if (!r || part != MII3D_ICON_MOUTH)
@@ -1056,10 +1082,11 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
 #define NV(X, Y, U, V) { .x = X, .y = Y, .z = 0, .w = 1, .u = U, .v = V, .hl = 1, .add = { 0, 0, 0 }, .rim = { 0, 0, 0 } }
         static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
         if (mii->nose_type == 11) {
-            /* this texture leaves an empty band between the lines and the
-             * nostrils (on the face the mesh closes it): close it here, the
-             * part below row 192 drawn 24 rows (of 256) higher */
-            const float cut = 192.0f / 256.0f, ycut = 1.0f - 2.0f * cut, up = 2.0f * 24.0f / 256.0f;
+            /* this texture keeps the nostrils far below the lines (on the
+             * face the mesh brings them up): as the Switch 2 shows it, the
+             * part below row 192 is drawn 64 rows (of 256) higher, the
+             * nostrils between the splayed ends of the lines */
+            const float cut = 192.0f / 256.0f, ycut = 1.0f - 2.0f * cut, up = 2.0f * 64.0f / 256.0f;
             const m3_vertex top[4] = { NV(-1, ycut, 0, cut), NV(1, ycut, 1, cut), NV(1, 1, 1, 0), NV(-1, 1, 0, 0) };
             const m3_vertex low[4] = { NV(-1, -1 + up, 0, 1), NV(1, -1 + up, 1, 1), NV(1, ycut + up, 1, cut),
                                        NV(-1, ycut + up, 0, cut) };

@@ -7,7 +7,9 @@
 // editor. Colors are read when drawing, so switching applies at once.
 namespace ui {
 
-enum class Theme { LIGHT, DARK };
+// DARK: dark with green highlights; DARK_BLUE: dark with the light theme's blue
+enum class Theme { LIGHT, DARK, DARK_BLUE };
+inline bool isDark(Theme t) { return t != Theme::LIGHT; }
 
 // Sets borealis' colors and metrics for `theme`. Call once before
 // brls::Application::init() (it also prepares both borealis themes) and

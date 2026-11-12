@@ -87,6 +87,8 @@ brls::View* LibraryActivity::createContentView()
     status->setFontSize(16);
     status->setTextColor(ui::textDim());
     status->setMarginBottom(12);
+    // debug information: SELECT shows it (with the render times)
+    status->setVisibility(MiiPreview::showTimings ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     content->addView(status);
 
     empty = new brls::Label();
@@ -107,12 +109,19 @@ brls::View* LibraryActivity::createContentView()
     // the last activity would leave borealis with input blocked). The app is
     // closed from the system (PS button), like other Vita apps.
     frame->registerAction("settings/title"_i18n, brls::BUTTON_START, [this](brls::View*) {
-        showSettings();
+        if (held < 0) // not while a Mii is held
+            showSettings();
         return true;
     });
+    frame->registerAction("", brls::BUTTON_BACK, [status](brls::View*) {
+        MiiPreview::showTimings = !MiiPreview::showTimings;
+        status->setVisibility(MiiPreview::showTimings ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+        return true;
+    }, true);
     // desktop builds: P (keyboards have no START)
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_P), [this](brls::View*) {
-        showSettings();
+        if (held < 0)
+            showSettings();
         return true;
     });
     // desktop builds: T works as Triangle (pick up / swap)
@@ -293,6 +302,9 @@ void LibraryActivity::startHold(int index)
         floating->setDimensions(200, 250);
     }
     thumbs[index]->setVisibility(brls::Visibility::INVISIBLE); // its place is empty while held
+    // the lifted card has its own outline; the one under it is covered
+    for (brls::View* c : cards)
+        c->setHideHighlight(true);
     static_cast<MiiCard*>(cards[index])->empty = true;
     showHeldAt(index);
     for (size_t i = 0; i < cards.size(); i++)
@@ -341,8 +353,10 @@ void LibraryActivity::endHold(bool place)
 {
     const int from = held, to = heldAt;
     held = heldAt = -1;
-    for (brls::View* c : cards)
+    for (brls::View* c : cards) {
         static_cast<MiiCard*>(c)->overlay = nullptr;
+        c->setHideHighlight(false);
+    }
     if (from >= 0 && from < (int)thumbs.size()) {
         thumbs[from]->setVisibility(brls::Visibility::VISIBLE);
         static_cast<MiiCard*>(cards[from])->empty = false;
@@ -543,23 +557,28 @@ class SkinTonePicker : public brls::Activity
     mii_charinfo_t mii;
 };
 
-void LibraryActivity::showSettings()
+void LibraryActivity::showSettings(int focus)
 {
     PopupMenu::Item theme;
     theme.text = [] {
         return "settings/theme"_i18n + ": " +
-            (Settings::get().theme == ui::Theme::DARK ? "settings/dark"_i18n : "settings/light"_i18n);
+            (Settings::get().theme == ui::Theme::DARK        ? "settings/dark"_i18n
+                    : Settings::get().theme == ui::Theme::DARK_BLUE ? "settings/dark2"_i18n
+                                                                    : "settings/light"_i18n);
     };
     // Picking it closes the menu; the screen is then rebuilt in the new
     // theme and the menu opens again, so everything switches at once.
     theme.action = [this] {
         Settings& s = Settings::get();
-        s.theme = s.theme == ui::Theme::DARK ? ui::Theme::LIGHT : ui::Theme::DARK;
+        // light, dark 1, dark 2, light...
+        s.theme = s.theme == ui::Theme::LIGHT ? ui::Theme::DARK
+            : s.theme == ui::Theme::DARK      ? ui::Theme::DARK_BLUE
+                                              : ui::Theme::LIGHT;
         s.save();
         ui::applyTheme(s.theme);
         ui::applyVariant();
         rebuildForTheme();
-        showSettings();
+        showSettings(1); // back on the theme row
     };
     PopupMenu::Item renderer;
     renderer.text = [] {
@@ -599,6 +618,6 @@ void LibraryActivity::showSettings()
     PopupMenu::Item skin = PopupMenu::item("settings/skin"_i18n, [] {
         brls::Application::pushActivity(new SkinTonePicker(), brls::TransitionAnimation::NONE);
     });
-    brls::Application::pushActivity(new PopupMenu("settings/title"_i18n, { theme, renderer, qrFormat, skin, musicItem }),
+    brls::Application::pushActivity(new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, qrFormat, renderer }, focus),
         brls::TransitionAnimation::NONE);
 }
