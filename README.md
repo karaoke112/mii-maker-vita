@@ -41,7 +41,9 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   the Mii QR key (not included) in `ux0:data/mii-maker-vita/dat/qrkey.txt`:
   32 hex digits, optionally followed by the Switch 2 key on the next line.
   **Send to / Receive from Another Vita** trades Miis over ad-hoc wireless
-  (the receiver is asked before each Mii is saved). Miis are saved to
+  (the receiver is asked before each Mii is saved).
+  In the list, Triangle picks a Mii up to move it (Cross places it,
+  Triangle swaps it with the Mii under the cursor, Circle puts it back). Miis are saved to
   `ux0:data/mii/database.nfdb` (shared with other apps; the app's own files
   go in `ux0:data/mii-maker-vita/`). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,

@@ -34,6 +34,8 @@ void Settings::load()
             theme = !std::strcmp(value, "dark") ? ui::Theme::DARK : ui::Theme::LIGHT;
         else if (!std::strcmp(key, "renderer"))
             gpu = std::strcmp(value, "software") != 0;
+        else if (!std::strcmp(key, "qr"))
+            qrSwitch2 = std::strcmp(value, "3ds") != 0;
     }
     std::fclose(f);
 }
@@ -45,5 +47,6 @@ void Settings::save() const
         return;
     std::fprintf(f, "theme=%s\n", theme == ui::Theme::DARK ? "dark" : "light");
     std::fprintf(f, "renderer=%s\n", gpu ? "gpu" : "software");
+    std::fprintf(f, "qr=%s\n", qrSwitch2 ? "switch2" : "3ds");
     std::fclose(f);
 }

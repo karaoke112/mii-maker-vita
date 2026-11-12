@@ -1,6 +1,8 @@
 #include "mii_qr.hpp"
 
+#include "mii_library.hpp"
 #include "paths.hpp"
+#include "settings.hpp"
 
 #include <borealis/core/logger.hpp>
 
@@ -49,7 +51,9 @@ bool make(const mii_charinfo_t& mii, Code* out)
 {
     uint8_t payload[MII_QR_PAYLOAD_MAX];
     size_t size = 0;
-    if (mii_qr_encode(&mii, nullptr, 1, payload, &size) != MII_OK)
+    mii_ver3_info_t info;
+    MiiLibrary::instance().ver3Info(mii, &info);
+    if (mii_qr_encode(&mii, &info, Settings::get().qrSwitch2 ? 1 : 0, payload, &size) != MII_OK)
         return false;
     std::vector<uint8_t> data(qrcodegen_BUFFER_LEN_MAX), temp(qrcodegen_BUFFER_LEN_MAX);
     std::memcpy(data.data(), payload, size);

@@ -27,6 +27,10 @@ class MiiLibrary
     // if the Mii has none. Saves to disk. Returns the index or -1.
     int put(mii_charinfo_t* ci);
     bool remove(int index);
+    // Reordering (saved): `move` takes a Mii out and puts it back at `to`;
+    // `swap` exchanges two.
+    bool move(int from, int to);
+    bool swap(int a, int b);
     // Writes .charinfo, .nfsd and .ffsd copies to <data>/export/, named
     // <nickname>_<first 4 bytes of the create id in hex>.
     bool exportMii(int index, std::string* outPath);
@@ -48,6 +52,11 @@ class MiiLibrary
     std::string importDir() const { return dir + "/import"; }
 
     void newCreateId(mii_create_id_t* id) const;
+    // The 3DS / Wii U header for a Mii leaving this console (QR codes,
+    // .ffsd files): a normal, valid Mii made on a "3DS-compatible" device
+    // (as the Switch 2 writes it; a 3DS refuses origin 4), with an id that
+    // stays the same for the same Mii and this console's system id / MAC.
+    void ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const;
     const std::string& dataDir() const { return dir; }
 
   private:
