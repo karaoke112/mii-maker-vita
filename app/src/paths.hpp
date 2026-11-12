@@ -7,8 +7,10 @@
 //   ux0:data/mii/                  the Miis, shared with other apps and game
 //       database.nfdb (+ .bak)     ports (see docs/SHARED_DATABASE.md)
 //       export/                    Mii files written by "Export"
+//       import/                    Mii files to add with "Import"
 //   ux0:data/mii-maker-vita/       this app's own files
 //       author_id.bin              this console's Mii author id
+//       cache/                     rendered grid icons (safe to delete)
 //       dat/                       the user's resource files: AFLResHigh_2_3.dat,
 //                                  FFLResHigh.dat, FFLResMiddle.dat, FFLBodyRes.dat
 namespace paths {
@@ -16,6 +18,7 @@ namespace paths {
 const std::string& miiDir();
 const std::string& appDir();
 const std::string& datDir();
+const std::string& cacheDir(); // rendered icons; safe to delete
 
 // Creates the folders above, and moves files an older version kept in
 // ux0:data/mii/ (author_id.bin, *.dat) to their new places.

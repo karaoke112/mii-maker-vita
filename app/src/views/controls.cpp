@@ -3,6 +3,7 @@
 #include "ui_theme.hpp"
 #include "views/icon.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -181,6 +182,17 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
         row->addView(cell);
         cells.push_back(cell);
     }
+    // Up / down go to the tile in the same column (the last one of a
+    // shorter row), not to whichever tile of that row was focused last.
+    const int cols = opt.columns, count = (int)cells.size();
+    for (int i = 0; i < count; i++) {
+        const int col = i % cols, rowStart = i - col;
+        if (rowStart > 0)
+            cells[i]->setCustomNavigationRoute(brls::FocusDirection::UP, cells[rowStart - cols + col]);
+        if (rowStart + cols < count)
+            cells[i]->setCustomNavigationRoute(brls::FocusDirection::DOWN,
+                cells[std::min(rowStart + cols + col, count - 1)]);
+    }
     refresh();
 }
 
@@ -203,21 +215,124 @@ brls::View* OptionGrid::getDefaultFocus()
 
 // ---- FieldSlider -------------------------------------------------------
 
-brls::Slider* FieldSlider::makeSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange)
+// A slider over a whole-number field: each press of left / right moves one
+// step; holding speeds up so the whole range takes about a second; touch
+// drags it. The value always snaps to whole steps.
+class UnitSlider : public brls::Box
 {
-    const int lo = mii_field_min(field), hi = mii_field_max(field);
-    auto* slider = new brls::Slider();
-    slider->setGrow(1);
-    slider->setStep(1.0f / (float)(hi - lo));
-    slider->setProgress((float)(mii_field_get(mii, field) - lo) / (float)(hi - lo));
-    slider->getProgressEvent()->subscribe([mii, field, lo, hi, onChange](float progress) {
-        const int v = lo + (int)std::lround(progress * (float)(hi - lo));
+  public:
+    UnitSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange)
+        : mii(mii)
+        , field(field)
+        , lo(mii_field_min(field))
+        , hi(mii_field_max(field))
+        , onChange(std::move(onChange))
+    {
+        this->setHeight(48);
+        this->setFocusable(true);
+        this->setHideHighlight(true); // the knob shows focus
+        // left / right adjust the value instead of moving focus
+        for (brls::ControllerButton b : { brls::BUTTON_NAV_LEFT, brls::BUTTON_NAV_RIGHT })
+            this->registerAction("", b, [](brls::View*) { return true; }, true, true, brls::SOUND_NONE);
+        this->addGestureRecognizer(new brls::PanGestureRecognizer(
+            [this](brls::PanGestureStatus status, brls::Sound*) {
+                brls::Application::giveFocus(this);
+                setFromX(status.position.x);
+            },
+            brls::PanAxis::HORIZONTAL));
+        this->addGestureRecognizer(new brls::TapGestureRecognizer(
+            [this](brls::TapGestureStatus status, brls::Sound*) { setFromX(status.position.x); }));
+    }
+
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override
+    {
+        if (this->isFocused())
+            poll();
+        const float t = hi > lo ? (float)(mii_field_get(mii, field) - lo) / (float)(hi - lo) : 0.0f;
+        const float x0 = x + kKnob, x1 = x + width - kKnob, cy = y + height / 2;
+        const float kx = x0 + (x1 - x0) * t;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x0, cy - 3.5f, x1 - x0, 7, 3.5f);
+        nvgFillColor(vg, nvgRGB(205, 205, 205));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x0, cy - 3.5f, kx - x0, 7, 3.5f);
+        nvgFillColor(vg, ui::kAccent);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgCircle(vg, kx, cy, kKnob - 4);
+        nvgFillColor(vg, nvgRGB(255, 255, 255));
+        nvgFill(vg);
+        nvgStrokeWidth(vg, this->isFocused() ? 4.0f : 2.0f);
+        nvgStrokeColor(vg, this->isFocused() ? ui::kAccent : nvgRGB(190, 190, 190));
+        nvgStroke(vg);
+    }
+
+  private:
+    static constexpr float kKnob = 22.0f;
+
+    void set(int v)
+    {
+        v = std::max(lo, std::min(hi, v));
         if (v == mii_field_get(mii, field))
             return;
         mii_field_set(mii, field, v);
         if (onChange)
             onChange();
-    });
+    }
+
+    void setFromX(float px)
+    {
+        const float x0 = this->getX() + kKnob, x1 = this->getX() + this->getWidth() - kKnob;
+        const float t = x1 > x0 ? (px - x0) / (x1 - x0) : 0.0f;
+        set(lo + (int)std::lround(std::max(0.0f, std::min(1.0f, t)) * (float)(hi - lo)));
+    }
+
+    void poll()
+    {
+        const auto& st = brls::Application::getControllerState();
+        const int dir = (st.buttons[brls::BUTTON_NAV_RIGHT] ? 1 : 0) - (st.buttons[brls::BUTTON_NAV_LEFT] ? 1 : 0);
+        const brls::Time now = brls::getCPUTimeUsec();
+        if (dir == 0) {
+            heldDir = 0;
+            return;
+        }
+        if (dir != heldDir) { // a new press: one step
+            heldDir = dir;
+            heldSince = lastTick = now;
+            carry = 0.0f;
+            set(mii_field_get(mii, field) + dir);
+            return;
+        }
+        const float held = (float)(now - heldSince) / 1e6f;
+        const float dt = (float)(now - lastTick) / 1e6f;
+        lastTick = now;
+        if (held < 0.3f)
+            return;
+        // held: about one second end to end, at least 10 steps a second
+        const float speed = std::max(10.0f, (float)(hi - lo) / 1.0f);
+        carry += speed * dt;
+        const int steps = (int)carry;
+        if (steps > 0) {
+            carry -= (float)steps;
+            set(mii_field_get(mii, field) + dir * steps);
+        }
+    }
+
+    mii_charinfo_t* mii;
+    mii_field_t field;
+    int lo, hi;
+    std::function<void()> onChange;
+    int heldDir = 0;
+    brls::Time heldSince = 0, lastTick = 0;
+    float carry = 0.0f;
+};
+
+brls::View* FieldSlider::makeSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange)
+{
+    auto* slider = new UnitSlider(mii, field, std::move(onChange));
+    slider->setGrow(1);
     return slider;
 }
 

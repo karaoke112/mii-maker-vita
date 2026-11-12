@@ -33,7 +33,7 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   menu) turns the Mii. Saves Miis to `ux0:data/mii/database.nfdb` (shared
   with other apps; the app's own files go in `ux0:data/mii-maker-vita/`); export
   `.charinfo` / `.nfsd` / `.ffsd`, delete. Icons come from openly licensed,
-  human-made sets (Material Symbols, Material Design Icons, game-icons.net,
+  human-made sets (Material Symbols, Material Design Icons, Health Icons,
   Tabler) and the button glyphs from PromptFont. Builds to a `.vpk` (it has not been run on real
   Vita hardware yet).
 - **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face

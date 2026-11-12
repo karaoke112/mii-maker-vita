@@ -9,11 +9,11 @@ licence; keep it in sync with ICONS.
 Sets (Iconify's JSON packages of the upstream sets):
   ms   Material Symbols, Google, Apache-2.0            @iconify-json/material-symbols
   mdi  Material Design Icons, Pictogrammers, Apache-2.0 @iconify-json/mdi
-  gi   game-icons.net, CC BY 3.0 (author per icon)     @iconify-json/game-icons
+  he   Health Icons, Resolve to Save Lives, CC0-1.0    @iconify-json/healthicons
   tb   Tabler Icons, Paweł Kuna, MIT                   @iconify-json/tabler
 
     pip install cairosvg pillow
-    for p in material-symbols mdi game-icons tabler; do
+    for p in material-symbols mdi healthicons tabler; do
         npm pack @iconify-json/$p && mkdir -p $p && tar xzf iconify-json-$p-*.tgz -C $p
     done
     python3 app/tools/make_icons.py .       # the folder holding those four
@@ -31,7 +31,7 @@ APP = os.path.join(HERE, "..")
 OUT = os.path.join(APP, "resources", "icons")
 FONT = os.path.join(APP, "resources", "font", "font.ttf")
 
-SETS = {"ms": "material-symbols", "mdi": "mdi", "gi": "game-icons", "tb": "tabler"}
+SETS = {"ms": "material-symbols", "mdi": "mdi", "he": "healthicons", "tb": "tabler"}
 
 # app name -> (icon, size in px)
 ICONS = {
@@ -40,7 +40,7 @@ ICONS = {
     "hair": ("ms:face-6-outline", 128),
     "eyebrows": ("ms:eyebrow-outline", 128),
     "eyes": ("ms:visibility-outline", 128),
-    "nose": ("gi:nose-front", 128),
+    "nose": ("he:nose-outline", 128),
     "mouth": ("ms:lips-outline", 128),
     "facial_hair": ("mdi:mustache", 128),
     "mole": ("tb:circle-dot", 128),

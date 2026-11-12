@@ -6,7 +6,7 @@
 
 // The editor's icons: PNG masks in resources/icons/ built by
 // app/tools/make_icons.py from published icon sets (Material Symbols,
-// Material Design Icons, game-icons.net, Tabler; see
+// Material Design Icons, Health Icons, Tabler; see
 // resources/icons/LICENSES.md). They are white, so any color can be applied.
 
 // Draws icon `name` (e.g. "face") in the square (x, y, size), in `color`.

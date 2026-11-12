@@ -51,10 +51,21 @@ void MiiPreview::request3D()
         spec.zoom = 0.8f; // room for long hair
         spec.centerY = -4.0f;
     }
-    hr.request(this, spec, [this](HeadRenderer::Image img, int) {
+    hr.request(this, spec, [this](HeadRenderer::Image img, int size) {
         image = img;
+        imageSize = size;
         imageDirty = true;
     });
+}
+
+float wrapYaw(float degrees)
+{
+    degrees = std::fmod(degrees, 360.0f);
+    if (degrees >= 180.0f)
+        degrees -= 360.0f;
+    if (degrees < -180.0f)
+        degrees += 360.0f;
+    return degrees;
 }
 
 void MiiPreview::pollStick()
@@ -63,8 +74,13 @@ void MiiPreview::pollStick()
     const float dt = lastPoll ? std::fmin(0.1f, (float)(now - lastPoll) / 1e6f) : 0.0f;
     lastPoll = now;
     const float ax = brls::Application::getControllerState().axes[brls::RIGHT_X];
-    if (std::fabs(ax) > 0.3f)
-        yawRef() = std::fmax(-70.0f, std::fmin(70.0f, yawRef() + ax * 120.0f * dt));
+    // a dead zone for resting sticks, then up to half a turn per second;
+    // no limit: the Mii turns all the way round
+    const float dead = 0.25f;
+    if (std::fabs(ax) > dead) {
+        const float amount = (std::fabs(ax) - dead) / (1.0f - dead);
+        yawRef() = wrapYaw(yawRef() + (ax > 0 ? 1.0f : -1.0f) * amount * 180.0f * dt);
+    }
 }
 
 void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
@@ -97,11 +113,11 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     } else {
         request3D();
         if (image) {
-            if (nvgImage < 0 || nvgImageSize != renderSize) {
+            if (nvgImage < 0 || nvgImageSize != imageSize) {
                 if (nvgImage >= 0)
                     nvgDeleteImage(vg, nvgImage);
-                nvgImage = nvgCreateImageRGBA(vg, renderSize, renderSize, 0, image->data());
-                nvgImageSize = renderSize;
+                nvgImage = nvgCreateImageRGBA(vg, imageSize, imageSize, 0, image->data());
+                nvgImageSize = imageSize;
             } else if (imageDirty) {
                 nvgUpdateImage(vg, nvgImage, image->data());
             }

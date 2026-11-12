@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
     MiiLibrary::instance().load();
     // 3D heads need a face resource the user provides; without it the
     // previews say where to put it.
-    HeadRenderer::instance().init(paths::datDir());
+    HeadRenderer::instance().init(paths::datDir(), paths::cacheDir());
 
     brls::Application::pushActivity(new LibraryActivity());
     while (brls::Application::mainLoop())

@@ -11,6 +11,20 @@ set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(BOREALIS_DIR ${REPO_ROOT}/third_party/borealis)
 set(BOREALIS_LIBRARY ${BOREALIS_DIR}/library)
 
+# Small fixes to borealis, applied to the submodule's working tree (once;
+# a patch that is already in is detected by applying it in reverse).
+foreach (patch ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-psv-sticks.patch)
+    execute_process(COMMAND git apply --reverse --check ${patch}
+        WORKING_DIRECTORY ${BOREALIS_DIR} RESULT_VARIABLE already OUTPUT_QUIET ERROR_QUIET)
+    if (NOT already EQUAL 0)
+        execute_process(COMMAND git apply ${patch} WORKING_DIRECTORY ${BOREALIS_DIR} RESULT_VARIABLE failed)
+        if (failed)
+            message(FATAL_ERROR "Could not apply ${patch} to borealis")
+        endif ()
+        message(STATUS "Applied ${patch}")
+    endif ()
+endforeach ()
+
 include(${BOREALIS_LIBRARY}/cmake/commonOption.cmake)
 include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
 
