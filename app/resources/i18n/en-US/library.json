@@ -25,5 +25,7 @@
   "pick_export": "Choose a Mii to export (B: cancel)",
   "pick_qr": "Choose a Mii for its QR code (B: cancel)",
   "qr": "QR Code",
+  "pick_send": "Choose a Mii to send (B: cancel)",
+  "send_this": "Send",
   "coming_soon": "Coming soon!"
 }

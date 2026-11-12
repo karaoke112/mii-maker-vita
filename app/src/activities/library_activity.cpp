@@ -2,6 +2,7 @@
 
 #include "activities/editor_activity.hpp"
 #include "activities/qr_activity.hpp"
+#include "activities/trade_activity.hpp"
 #include "activities/start_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
@@ -155,6 +156,10 @@ void LibraryActivity::rebuild()
             if (pick == Pick::EXPORT) {
                 exportMii(index);
                 setPick(Pick::NONE);
+            } else if (pick == Pick::SEND) {
+                const mii_charinfo_t mii = miis[index];
+                setPick(Pick::NONE);
+                brls::Application::pushActivity(new TradeActivity(mii), brls::TransitionAnimation::NONE);
             } else if (pick == Pick::QR) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
@@ -166,6 +171,7 @@ void LibraryActivity::rebuild()
         });
         card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
                 : pick == Pick::QR                                      ? "library/qr"_i18n
+                : pick == Pick::SEND                                    ? "library/send_this"_i18n
                                                                         : "library/edit"_i18n);
         card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
         card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
@@ -236,6 +242,7 @@ void LibraryActivity::setPick(Pick mode)
     pick = mode;
     pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
             : mode == Pick::QR              ? "library/pick_qr"_i18n
+            : mode == Pick::SEND            ? "library/pick_send"_i18n
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     brls::View* focus = brls::Application::getCurrentFocus();
@@ -254,11 +261,6 @@ static void needKey()
     auto* dialog = new brls::Dialog("qr/need_key"_i18n + "\n\n" + qr::keyPath());
     dialog->addButton("hints/ok"_i18n, [] {});
     dialog->open();
-}
-
-static void comingSoon()
-{
-    brls::Application::notify("library/coming_soon"_i18n);
 }
 
 void LibraryActivity::showAddMenu()
@@ -281,7 +283,10 @@ void LibraryActivity::showAddMenu()
             brls::Application::pushActivity(new QrScanActivity([this](const mii_charinfo_t& mii) { addScanned(mii); }),
                 brls::TransitionAnimation::NONE);
         }),
-        PopupMenu::item("library/add_receive"_i18n, comingSoon),
+        PopupMenu::item("library/add_receive"_i18n, [this] {
+            brls::Application::pushActivity(new TradeActivity([this] { stale = true; }),
+                brls::TransitionAnimation::NONE);
+        }),
     };
     brls::Application::pushActivity(new PopupMenu("library/add"_i18n, items), brls::TransitionAnimation::NONE);
 }
@@ -301,7 +306,7 @@ void LibraryActivity::showSendMenu()
             }
             setPick(Pick::QR);
         }),
-        PopupMenu::item("library/send_vita"_i18n, comingSoon),
+        PopupMenu::item("library/send_vita"_i18n, [this] { setPick(Pick::SEND); }),
     };
     brls::Application::pushActivity(new PopupMenu("library/send"_i18n, items), brls::TransitionAnimation::NONE);
 }

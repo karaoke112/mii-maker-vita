@@ -106,19 +106,28 @@ Done (phase 3b):
 ## Ad-hoc trading
 
 Goal: two Vitas in the same room swap Miis with no access point.
+First version done (phase 4), not yet tried on two Vitas:
 
-- **Discovery:** `sceNetAdhocMatching` in P2P mode with a fixed app-specific
-  port; the "hello" payload carries the player's nickname and how many Miis
-  they offer.
-- **Transfer:** each Mii is sent as its 68-byte StoreData; a message is
-  `{ magic 'MIIX', version, count, StoreData[count] }`, with a CRC16 over the
-  whole message. Receivers re-check every StoreData's data CRC, then re-sign
-  the device CRC with their own author ID when saving.
-- **Conflicts:** same create ID ⇒ "update this Mii?" prompt; database full
-  (100) ⇒ refuse with a message.
-- **Code layout:** `libmii-net/` (C) with a transport interface, so the same
-  protocol can later run over UDP on a normal Wi-Fi network (and be tested on
-  a PC). The UI is a `TradeActivity` listing nearby players.
+- **Joining** (`trade::Link`, `app/src/trade.cpp`): the PSP-compatible
+  ad-hoc stack the Vita offers (`ScePspnetAdhoc`): `sceNetAdhocInit`,
+  `sceNetAdhocctlInit` with the app's id (`MIIV00001`), then the system's
+  network dialog in `SCE_NETCHECK_DIALOG_MODE_PSP_ADHOC_CONN` mode, which
+  borealis' frame loop already drives (`sceCommonDialogUpdate`). The same
+  sequence is known to work on hardware in vitaQuake (studied, not copied:
+  it is GPL).
+- **Transport:** PDP datagrams on port 0x4D49, all sent to the broadcast
+  address; desktop builds use UDP multicast on 127.0.0.1 instead, so two
+  copies of the app trade with each other for testing.
+- **Protocol** (`trade::Session`): messages `"MIIT"`, version, type, sender
+  session id, recipient session id (0 = all), offer id, fields, CRC16.
+  HELLO once a second (name, whether this console is receiving); OFFER
+  repeated every 0.4 s until answered (sender name + the Mii's CharInfo, so
+  it keeps its create id and replaces an older copy instead of making a
+  second one); ACCEPT / DECLINE sent three times, and repeated if the offer
+  comes again. A sender gives up after a minute.
+- **Screens** (`TradeActivity`): Receive from Another Vita waits and asks
+  before saving each Mii (with a preview); Send to Another Vita lists the
+  receiving Vitas by user name.
 
 ## Games
 
@@ -154,7 +163,7 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | 2d | Cache rendered icons on the memory card (`ux0:data/mii-maker-vita/cache/`) | done |
 | 3 | Import `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/` | done |
 | 3b | **QR codes**: scan Mii QR codes with the Vita camera and create them (see above) | done |
-| 4 | Ad-hoc trading (`libmii-net`, `TradeActivity`) | planned |
+| 4 | Ad-hoc trading (`trade.cpp`, `TradeActivity`) | first version (needs testing on two Vitas) |
 | 5 | Wii format + RFL shim helpers for game ports | planned |
 | 6 | Polish: random Mii ("look-alike") generator from nn::mii's tables, more languages, touch gestures, sounds | planned |
 | 6b | Dark mode (Settings: START in the library), saved in `ux0:data/mii-maker-vita/settings.txt` | done |
