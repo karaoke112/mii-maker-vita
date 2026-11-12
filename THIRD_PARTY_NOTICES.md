@@ -119,9 +119,14 @@ from the documented tiling rules and only *checked* against ninTexUtils
   own `resources/font/` (Nintendo system fonts) is **not** used or shipped.
 - **Material Icons** (`app/resources/material/`): Apache License 2.0,
   © Google; license text alongside.
-- **M PLUS Rounded 1c** (`app/resources/font/font.ttf`): SIL Open Font
+- **Poppins** (`app/resources/font/font.ttf`, the UI font): SIL Open Font
+  License 1.1, © 2020 The Poppins Project Authors
+  (<https://github.com/itfoundry/Poppins>); license text in
+  `app/resources/font/Poppins-OFL.txt`.
+- **M PLUS Rounded 1c** (`app/resources/font/mplus-rounded-1c.ttf`, the
+  fallback for characters Poppins lacks, such as Japanese): SIL Open Font
   License 1.1, © 2016 The Rounded M+ Project Authors; license text in
-  `app/resources/font/OFL.txt`.
+  `app/resources/font/MPLUS-OFL.txt`.
 - **Button glyph font** (`app/resources/font/icon.ttf`): a subset of
   **PromptFont** by Yukari Hafner (<https://shinmera.com/projects/promptfont>),
   SIL Open Font License 1.1, © 2018-2026 Yukari Hafner, © 2011-2016 Severin

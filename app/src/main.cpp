@@ -29,6 +29,11 @@ int main(int argc, char* argv[])
     }
     brls::Application::createWindow("app/title"_i18n);
     ui::applyVariant();
+    // The UI font is Poppins (font/font.ttf); characters it lacks, such as
+    // Japanese in Mii names, come from M PLUS Rounded 1c.
+    if (brls::Application::loadFontFromFile("mplus", std::string(BRLS_RESOURCES) + "font/mplus-rounded-1c.ttf"))
+        nvgAddFallbackFontId(brls::Application::getNVGContext(), brls::Application::getFont(brls::FONT_REGULAR),
+            brls::Application::getFont("mplus"));
     // START opens settings in the library and saves in the editor; the app is
     // closed with the PS button.
     brls::Application::setGlobalQuit(false);

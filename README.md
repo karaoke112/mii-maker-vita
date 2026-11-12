@@ -75,7 +75,7 @@ docs/                research, architecture, shared database, building
 Not affiliated with or endorsed by Nintendo. "Mii" and "Nintendo Switch" are
 trademarks of Nintendo. This repository and the `.vpk` contain no Nintendo
 code, artwork, fonts or sounds: icons and button glyphs come from openly
-licensed sets made by people (see the notices), and the font is M PLUS
-Rounded 1c (SIL OFL). The 3D renderer uses the face and
+licensed sets made by people (see the notices), and the fonts are Poppins and
+M PLUS Rounded 1c (SIL OFL). The 3D renderer uses the face and
 body resource files each user copies from hardware or software they own. Third-party code and
 data: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
