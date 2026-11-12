@@ -15,6 +15,7 @@ class IconView;
 struct EditorSession {
     mii_charinfo_t mii;
     float yaw = 0.0f;
+    float pitch = 0.0f; // a small tilt, right stick up / down
     bool dirty = false;
 };
 

@@ -199,6 +199,7 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
 void OptionGrid::refresh()
 {
     const uint8_t current = mii_field_get(mii, field);
+    shown = current;
     for (size_t i = 0; i < cells.size(); i++)
         cells[i]->setSelected(values[i] == current);
 }

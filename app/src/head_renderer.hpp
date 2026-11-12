@@ -45,6 +45,7 @@ class HeadRenderer
         mii_charinfo_t mii;
         int size = 256;
         float yaw = 0.0f;
+        float pitch = 0.0f; // tilt (positive: looking down at the Mii)
         float zoom = 1.0f;
         float centerY = 0.0f;
         int icon = -1;

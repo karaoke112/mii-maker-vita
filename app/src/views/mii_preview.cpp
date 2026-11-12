@@ -36,15 +36,19 @@ void MiiPreview::request3D()
         return;
     // whole steps, so turning reuses cached renders
     const float yaw = std::round(yawRef() / 5.0f) * 5.0f;
-    if (hasRequested && requestedYaw == yaw && std::memcmp(&requested, mii, sizeof(requested)) == 0)
+    const float pitch = std::round(pitchRef() / 2.5f) * 2.5f;
+    if (hasRequested && requestedYaw == yaw && requestedPitch == pitch &&
+        std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
     requested = *mii;
     requestedYaw = yaw;
+    requestedPitch = pitch;
     hasRequested = true;
     HeadRenderer::Spec spec;
     spec.mii = *mii;
     spec.size = renderSize;
     spec.yaw = yaw;
+    spec.pitch = pitch;
     requestedBust = false;
     if (stage && hr.hasBody()) {
         spec.fullBody = true;
@@ -95,13 +99,20 @@ void MiiPreview::pollStick()
     const brls::Time now = brls::getCPUTimeUsec();
     const float dt = lastPoll ? std::fmin(0.1f, (float)(now - lastPoll) / 1e6f) : 0.0f;
     lastPoll = now;
-    const float ax = brls::Application::getControllerState().axes[brls::RIGHT_X];
+    const brls::ControllerState& state = brls::Application::getControllerState();
+    const float ax = state.axes[brls::RIGHT_X], ay = state.axes[brls::RIGHT_Y];
     // a dead zone for resting sticks, then up to half a turn per second;
     // no limit: the Mii turns all the way round
     const float dead = 0.25f;
     if (std::fabs(ax) > dead) {
         const float amount = (std::fabs(ax) - dead) / (1.0f - dead);
         yawRef() = wrapYaw(yawRef() + (ax > 0 ? 1.0f : -1.0f) * amount * 180.0f * dt);
+    }
+    // up / down tilts it a little (stick down: the Mii looks down)
+    if (std::fabs(ay) > dead) {
+        const float amount = (std::fabs(ay) - dead) / (1.0f - dead);
+        const float p = pitchRef() + (ay > 0 ? 1.0f : -1.0f) * amount * 60.0f * dt;
+        pitchRef() = std::fmax(-kMaxPitch, std::fmin(kMaxPitch, p));
     }
 }
 

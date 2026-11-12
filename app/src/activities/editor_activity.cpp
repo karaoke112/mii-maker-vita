@@ -38,6 +38,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     preview->setStage(true);
     preview->setFraming(framing);
     preview->setYawSource(&s.yaw);
+    preview->setPitchSource(&s.pitch);
     preview->setWidth(520);
     preview->setGrow(0);
     root->addView(preview);
@@ -47,6 +48,15 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
 
     auto* frame = new brls::AppletFrame(root);
     frame->setHeaderVisibility(brls::Visibility::GONE);
+    // The right stick turns and tilts the Mii (MiiPreview reads it); this
+    // action only puts its hint in the bar. Triangle faces it forward again.
+    frame->registerAction("editor/rotate"_i18n, brls::BUTTON_RSB, [](brls::View*) { return true; });
+    EditorSession* sp = &s;
+    frame->registerAction("editor/reset_position"_i18n, brls::BUTTON_Y, [sp](brls::View*) {
+        sp->yaw = 0.0f;
+        sp->pitch = 0.0f;
+        return true;
+    });
     if (previewOut)
         *previewOut = preview;
     return frame;
@@ -335,8 +345,6 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
             m.faceline_make = v;
             m.hair_type = 30;
         });
-    case MII_FIELD_NOSE_TYPE:
-        return head(3.0f, -9.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) { m.nose_type = v; });
     case MII_FIELD_BEARD_TYPE:
         return head(1.7f, -14.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) {
             m.beard_type = v;
@@ -355,6 +363,7 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
     case MII_FIELD_MOUTH_TYPE:    return part(MII3D_ICON_MOUTH, field);
     case MII_FIELD_MUSTACHE_TYPE: return part(MII3D_ICON_MUSTACHE, field);
     case MII_FIELD_GLASS_TYPE:    return part(MII3D_ICON_GLASSES, field);
+    case MII_FIELD_NOSE_TYPE:     return part(MII3D_ICON_NOSE, field);
     default:                      return nullptr;
     }
 }
@@ -408,21 +417,132 @@ static OptionGrid* rangeGrid(EditorSession* s, mii_field_t field, int cols)
     return new OptionGrid(&s->mii, field, OptionGrid::range(field), o, [s] { s->dirty = true; });
 }
 
-static OptionGrid* colorGrid(EditorSession* s, mii_field_t field)
+// The colors a part offers first, as on the Switch 2 (the ones the 3DS /
+// Wii U palette has); "Show More" opens the whole palette.
+static std::vector<uint8_t> defaultColors(mii_field_t field, int* columns)
 {
-    int cols;
-    std::vector<uint8_t> items = gridItems(MII_GRID_COMMON_COLOR, &cols);
-    OptionGrid::Options o;
-    o.columns = cols;
-    o.cell = 56;
-    o.gap = 8;
-    o.colorOf = [](uint8_t v) { return mii_common_color_rgb(v); };
-    return new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
+    switch (field) {
+    case MII_FIELD_EYE_COLOR:
+        *columns = 3;
+        return { 8, 9, 10, 11, 12, 13 };
+    case MII_FIELD_GLASS_COLOR:
+        *columns = 3;
+        return { 8, 14, 15, 16, 17, 18 };
+    case MII_FIELD_MOUTH_COLOR:
+        *columns = 5;
+        return { 19, 20, 21, 22, 23 };
+    default: // hair, eyebrows, beard
+        *columns = 4;
+        return { 8, 1, 2, 3, 4, 5, 6, 7 };
+    }
 }
 
-static brls::View* colorPage(EditorSession* s, mii_field_t field)
+// The whole palette (10 x 10), on a page of its own; picking a color goes
+// back to the short list.
+class PaletteActivity : public brls::Activity
 {
-    return page([=](brls::Box* box) { box->addView(colorGrid(s, field)); }, true);
+  public:
+    PaletteActivity(std::shared_ptr<EditorSession> session, mii_field_t field)
+        : session(std::move(session))
+        , field(field)
+    {
+    }
+
+    brls::View* createContentView() override
+    {
+        std::shared_ptr<EditorSession> s = session;
+        int cols;
+        std::vector<uint8_t> items = gridItems(MII_GRID_COMMON_COLOR, &cols);
+        OptionGrid::Options o;
+        o.columns = cols;
+        o.cell = 50;
+        o.gap = 10;
+        o.colorOf = [](uint8_t v) { return mii_common_color_rgb(v); };
+        auto* grid = new OptionGrid(&s->mii, field, items, o, [s] {
+            s->dirty = true;
+            brls::sync([] { brls::Application::popActivity(brls::TransitionAnimation::NONE); });
+        });
+        auto* box = new brls::Box(brls::Axis::COLUMN);
+        box->setAlignItems(brls::AlignItems::CENTER);
+        box->setJustifyContent(brls::JustifyContent::CENTER);
+        box->addView(grid);
+        brls::AppletFrame* frame = editorFrame(*s, box, nullptr);
+        frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
+            brls::Application::popActivity(brls::TransitionAnimation::NONE);
+            return true;
+        });
+        return frame;
+    }
+
+  private:
+    std::shared_ptr<EditorSession> session;
+    mii_field_t field;
+};
+
+// "Show More": an outlined button with a small swatch of the palette.
+class ShowMoreButton : public brls::Box
+{
+  public:
+    ShowMoreButton()
+        : brls::Box(brls::Axis::ROW)
+    {
+        this->setDimensions(360, 74);
+        this->setAlignItems(brls::AlignItems::CENTER);
+        this->setFocusable(true);
+        this->setHighlightCornerRadius(6);
+        this->setMarginTop(22);
+        auto* label = new brls::Label();
+        label->setText("editor/show_more"_i18n);
+        label->setFontSize(24);
+        label->setGrow(1);
+        label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+        label->setMarginLeft(56);
+        label->setMarginRight(16);
+        this->addView(label);
+        this->addGestureRecognizer(new brls::TapGestureRecognizer(this));
+    }
+
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override
+    {
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x + 1, y + 1, width - 2, height - 2, 6);
+        nvgStrokeColor(vg, ui::textDim());
+        nvgStrokeWidth(vg, 2.0f);
+        nvgStroke(vg);
+        // a 3 x 3 swatch, like the Switch 2's
+        static const uint8_t swatch[9] = { 20, 45, 36, 48, 51, 64, 1, 85, 87 };
+        const float sq = 13.0f, x0 = x + 22, y0 = y + (height - 3 * sq) / 2;
+        for (int i = 0; i < 9; i++) {
+            const uint32_t c = mii_common_color_rgb(swatch[i]);
+            nvgBeginPath(vg);
+            nvgRect(vg, x0 + (i % 3) * sq, y0 + (i / 3) * sq, sq, sq);
+            nvgFillColor(vg, rgb(c));
+            nvgFill(vg);
+        }
+        brls::Box::draw(vg, x, y, width, height, style, ctx);
+    }
+};
+
+static brls::View* colorPage(std::shared_ptr<EditorSession> session, mii_field_t field)
+{
+    EditorSession* s = session.get();
+    return page([=](brls::Box* box) {
+        int cols;
+        std::vector<uint8_t> items = defaultColors(field, &cols);
+        OptionGrid::Options o;
+        o.columns = cols;
+        o.cell = 80;
+        o.gap = 10;
+        o.colorOf = [](uint8_t v) { return mii_common_color_rgb(v); };
+        box->addView(new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; }));
+        auto* more = new ShowMoreButton();
+        more->registerClickAction([session, field](brls::View*) {
+            brls::Application::pushActivity(new PaletteActivity(session, field), brls::TransitionAnimation::NONE);
+            return true;
+        });
+        box->addView(more);
+    }, false);
 }
 
 struct SliderSpec {
@@ -453,6 +573,7 @@ CategoryActivity::CategoryActivity(std::shared_ptr<EditorSession> session, Categ
 void CategoryActivity::addTabs()
 {
     EditorSession* s = session.get();
+    std::shared_ptr<EditorSession> ss = session;
     auto types = "editor/tabs/types"_i18n;
     auto position = "editor/tabs/position"_i18n;
     auto color = "editor/tabs/color"_i18n;
@@ -485,11 +606,7 @@ void CategoryActivity::addTabs()
         tabs.push_back({ types, [s] {
             return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_HAIR_TYPE, MII_GRID_HAIR)); }, true);
         } });
-        tabs.push_back({ color, [s] {
-            return page([s](brls::Box* b) {
-                b->addView(colorGrid(s, MII_FIELD_HAIR_COLOR));
-            }, true);
-        } });
+        tabs.push_back({ color, [ss] { return colorPage(ss, MII_FIELD_HAIR_COLOR); } });
         break;
 
     case Category::EYEBROWS:
@@ -497,13 +614,13 @@ void CategoryActivity::addTabs()
             return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_EYEBROW_TYPE, MII_GRID_EYEBROW)); }, true);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_EYEBROW_SCALE, "editor/size" },
-                                       { MII_FIELD_EYEBROW_ASPECT, "editor/thickness" },
-                                       { MII_FIELD_EYEBROW_ROTATE, "editor/rotation" },
+            return positionPage(s, { { MII_FIELD_EYEBROW_Y, "editor/height" },
                                        { MII_FIELD_EYEBROW_X, "editor/spacing" },
-                                       { MII_FIELD_EYEBROW_Y, "editor/height" } });
+                                       { MII_FIELD_EYEBROW_ROTATE, "editor/rotation" },
+                                       { MII_FIELD_EYEBROW_SCALE, "editor/size" },
+                                       { MII_FIELD_EYEBROW_ASPECT, "editor/thickness" } });
         } });
-        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_EYEBROW_COLOR); } });
+        tabs.push_back({ color, [ss] { return colorPage(ss, MII_FIELD_EYEBROW_COLOR); } });
         break;
 
     case Category::EYES:
@@ -511,13 +628,13 @@ void CategoryActivity::addTabs()
             return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_EYE_TYPE, MII_GRID_EYE)); }, true);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_EYE_SCALE, "editor/size" },
-                                       { MII_FIELD_EYE_ASPECT, "editor/squash" },
-                                       { MII_FIELD_EYE_ROTATE, "editor/rotation" },
+            return positionPage(s, { { MII_FIELD_EYE_Y, "editor/height" },
                                        { MII_FIELD_EYE_X, "editor/spacing" },
-                                       { MII_FIELD_EYE_Y, "editor/height" } });
+                                       { MII_FIELD_EYE_ROTATE, "editor/rotation" },
+                                       { MII_FIELD_EYE_SCALE, "editor/size" },
+                                       { MII_FIELD_EYE_ASPECT, "editor/squash" } });
         } });
-        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_EYE_COLOR); } });
+        tabs.push_back({ color, [ss] { return colorPage(ss, MII_FIELD_EYE_COLOR); } });
         break;
 
     case Category::NOSE:
@@ -525,7 +642,7 @@ void CategoryActivity::addTabs()
             return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_NOSE_TYPE, MII_GRID_NOSE)); }, false);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_NOSE_SCALE, "editor/size" }, { MII_FIELD_NOSE_Y, "editor/height" } });
+            return positionPage(s, { { MII_FIELD_NOSE_Y, "editor/height" }, { MII_FIELD_NOSE_SCALE, "editor/size" } });
         } });
         break;
 
@@ -534,11 +651,11 @@ void CategoryActivity::addTabs()
             return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_MOUTH_TYPE, MII_GRID_MOUTH)); }, true);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_MOUTH_SCALE, "editor/size" },
-                                       { MII_FIELD_MOUTH_ASPECT, "editor/thickness" },
-                                       { MII_FIELD_MOUTH_Y, "editor/height" } });
+            return positionPage(s, { { MII_FIELD_MOUTH_Y, "editor/height" },
+                                       { MII_FIELD_MOUTH_SCALE, "editor/size" },
+                                       { MII_FIELD_MOUTH_ASPECT, "editor/thickness" } });
         } });
-        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_MOUTH_COLOR); } });
+        tabs.push_back({ color, [ss] { return colorPage(ss, MII_FIELD_MOUTH_COLOR); } });
         break;
 
     case Category::FACIAL_HAIR:
@@ -559,10 +676,10 @@ void CategoryActivity::addTabs()
             }, true);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_MUSTACHE_SCALE, "editor/size" },
-                                       { MII_FIELD_MUSTACHE_Y, "editor/height" } });
+            return positionPage(s, { { MII_FIELD_MUSTACHE_Y, "editor/height" },
+                                       { MII_FIELD_MUSTACHE_SCALE, "editor/size" } });
         } });
-        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_BEARD_COLOR); } });
+        tabs.push_back({ color, [ss] { return colorPage(ss, MII_FIELD_BEARD_COLOR); } });
         break;
 
     case Category::MOLE:
@@ -575,9 +692,9 @@ void CategoryActivity::addTabs()
             }, false);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_MOLE_SCALE, "editor/size" },
+            return positionPage(s, { { MII_FIELD_MOLE_Y, "editor/vertical" },
                                        { MII_FIELD_MOLE_X, "editor/horizontal" },
-                                       { MII_FIELD_MOLE_Y, "editor/vertical" } });
+                                       { MII_FIELD_MOLE_SCALE, "editor/size" } });
         } });
         break;
 
@@ -586,9 +703,9 @@ void CategoryActivity::addTabs()
             return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_GLASS_TYPE, MII_GRID_GLASS)); }, false);
         } });
         tabs.push_back({ position, [s] {
-            return positionPage(s, { { MII_FIELD_GLASS_SCALE, "editor/size" }, { MII_FIELD_GLASS_Y, "editor/height" } });
+            return positionPage(s, { { MII_FIELD_GLASS_Y, "editor/height" }, { MII_FIELD_GLASS_SCALE, "editor/size" } });
         } });
-        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_GLASS_COLOR); } });
+        tabs.push_back({ color, [ss] { return colorPage(ss, MII_FIELD_GLASS_COLOR); } });
         break;
 
     case Category::STYLE:

@@ -26,10 +26,14 @@ class MiiPreview : public brls::View
         return brls::View::hitTest(point);
     }
 
-        void setYaw(float degrees) { yawRef() = degrees; }
+    void setYaw(float degrees) { yawRef() = degrees; }
     float getYaw() { return yawRef(); }
-    // Shares the turn angle with other previews (the editor's pages).
+    // Shares the turn and tilt angles with other previews (the editor's
+    // pages).
     void setYawSource(float* source) { yawSource = source; }
+    void setPitchSource(float* source) { pitchSource = source; }
+    // How far the right stick tilts the Mii up or down.
+    static constexpr float kMaxPitch = 15.0f;
     // Stage mode: no card backdrop or name, the head drawn large, and the
     // right stick turns it.
     void setStage(bool on) { stage = on; }
@@ -55,12 +59,15 @@ class MiiPreview : public brls::View
   private:
     void request3D();
     float& yawRef() { return yawSource ? *yawSource : yaw; }
+    float& pitchRef() { return pitchSource ? *pitchSource : pitch; }
     void pollStick();
 
     const mii_charinfo_t* mii;
     int renderSize;
     float yaw = 0.0f;
     float* yawSource = nullptr;
+    float pitch = 0.0f;
+    float* pitchSource = nullptr;
     bool stage = false;
     bool interactive = true;
     float extraZoom = 1.0f;
@@ -71,6 +78,7 @@ class MiiPreview : public brls::View
     // what we last asked HeadRenderer for
     mii_charinfo_t requested;
     float requestedYaw = 0.0f;
+    float requestedPitch = 0.0f;
     bool hasRequested = false;
 
     // newest finished render, and the NanoVG image showing it
