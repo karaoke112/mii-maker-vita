@@ -33,6 +33,11 @@ class GpuRenderer
     // on failure. Main thread, outside a frame.
     int render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
         bool fullBody, uint32_t background);
+    // Draws a transparent icon (square, any `size`) and reads it back into
+    // `rgba` (size*size*4, not premultiplied), with the GPU's 4x MSAA for
+    // smooth edges. Main thread, outside a frame.
+    bool renderIcon(const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY, bool fullBody,
+        uint8_t* rgba);
     // The owner is gone: its texture is freed after the next render.
     void release(const void* owner);
     // The NanoVG image of the owner's latest render, or -1.
