@@ -125,8 +125,8 @@ void mii3d_renderer_set_body(mii3d_renderer_t *r, const mii3d_res_t *body)
 }
 
 /* The body meshes are laid out for a texture atlas whose bottom band
- * (v > ~0.718) holds the legs and feet: those triangles, and the soles,
- * are the pants. */
+ * (v > ~0.66 to 0.72) holds the legs and feet: those triangles, and the
+ * soles, are the pants. */
 static const mii3d_mesh_t *get_body(mii3d_renderer_t *r, int gender)
 {
     gender = gender ? 1 : 0;
@@ -142,13 +142,16 @@ static const mii3d_mesh_t *get_body(mii3d_renderer_t *r, int gender)
             return NULL;
         }
         int shirt = 0, pants = m->index_count;
+        /* the male shirt is tucked in (pants up to the waist); the female
+         * top is a dress that covers the top of the legs */
+        const float waist = gender ? 0.718f : 0.66f;
         for (int i = 0; i < m->index_count; i += 3) {
             const float v = (m->uvs[2 * m->indices[i] + 1] + m->uvs[2 * m->indices[i + 1] + 1] +
                              m->uvs[2 * m->indices[i + 2] + 1]) / 3.0f;
             const float *p = m->positions;
             const int foot = p[3 * m->indices[i] + 1] < 7.0f && p[3 * m->indices[i + 1] + 1] < 7.0f &&
                              p[3 * m->indices[i + 2] + 1] < 7.0f; /* shoes and soles */
-            uint16_t *dst = (v > 0.718f || foot) ? idx + (pants -= 3) : idx + (shirt += 3) - 3;
+            uint16_t *dst = (v > waist || foot) ? idx + (pants -= 3) : idx + (shirt += 3) - 3;
             dst[0] = m->indices[i]; dst[1] = m->indices[i + 1]; dst[2] = m->indices[i + 2];
         }
         r->body_idx[gender] = idx;

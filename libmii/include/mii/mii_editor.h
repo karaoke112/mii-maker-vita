@@ -45,6 +45,13 @@ const mii_grid_t *mii_editor_grid(mii_grid_kind_t kind);
 /* Position of `value` within a grid, or -1. */
 int mii_grid_index_of(const mii_grid_t *grid, uint8_t value);
 
+/* A random, natural-looking Mii (for "look-alike" pickers): mostly
+ * everyday hair, eye and skin colors, occasional facial hair, glasses or a
+ * mole, default part positions, average height and build. `gender` 0 male,
+ * 1 female, -1 random. `state` is the random generator's state (any value
+ * but 0; it is advanced). The name is left as the default. */
+void mii_charinfo_init_random(mii_charinfo_t *ci, int gender, uint32_t *state);
+
 #ifdef __cplusplus
 }
 #endif

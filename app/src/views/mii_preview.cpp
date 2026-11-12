@@ -1,5 +1,7 @@
 #include "views/mii_preview.hpp"
 
+#include "ui_theme.hpp"
+
 #include <cmath>
 #include <cstring>
 
@@ -104,7 +106,9 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     if (!stage) {
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x, y, width, height, 18);
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + height, nvgRGB(250, 250, 252), nvgRGB(222, 226, 234)));
+    const bool dark = ui::theme() == ui::Theme::DARK;
+    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + height, dark ? nvgRGB(78, 78, 82) : nvgRGB(250, 250, 252),
+                         dark ? nvgRGB(58, 58, 62) : nvgRGB(222, 226, 234)));
     nvgFill(vg);
     }
 
@@ -112,7 +116,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
 
     if (!HeadRenderer::instance().available()) {
         // No face resource installed: say so rather than drawing a guess.
-        nvgFillColor(vg, nvgRGB(120, 120, 135));
+        nvgFillColor(vg, ui::textDim());
         const bool large = width > 220;
         nvgFontSize(vg, large ? 20.0f : 18.0f);
         nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
@@ -152,7 +156,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         if (showTimings) {
             nvgFontSize(vg, 16);
             nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-            nvgFillColor(vg, nvgRGB(120, 120, 120));
+            nvgFillColor(vg, ui::textDim());
             nvgText(vg, x + 8, y + 8, HeadRenderer::instance().timings().c_str(), nullptr);
         }
         return;
@@ -163,6 +167,6 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     mii_name_get_utf8(mii, name, sizeof(name));
     nvgFontSize(vg, 22);
     nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-    nvgFillColor(vg, nvgRGB(60, 60, 70));
+    nvgFillColor(vg, ui::text());
     nvgText(vg, cx, y + height - 12, name, nullptr);
 }

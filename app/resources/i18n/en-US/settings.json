@@ -1,0 +1,10 @@
+{
+  "title": "Settings",
+  "theme": "App Theme",
+  "light": "Light",
+  "dark": "Dark",
+  "renderer": "Mii Renderer",
+  "gpu": "GPU",
+  "software": "Software",
+  "restart": "Restart the app to switch renderers. The GPU renderer needs libshacccg.suprx."
+}

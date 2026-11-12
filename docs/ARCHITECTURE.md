@@ -152,4 +152,5 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | 4 | Ad-hoc trading (`libmii-net`, `TradeActivity`) | planned |
 | 5 | Wii format + RFL shim helpers for game ports | planned |
 | 6 | Polish: random Mii ("look-alike") generator from nn::mii's tables, more languages, touch gestures, sounds | planned |
-| 6b | **Dark mode**: a dark theme (borealis has a dark variant; the editor's colors need dark counterparts), following the system setting or a toggle | planned |
+| 6b | Dark mode (Settings: START in the library), saved in `ux0:data/mii-maker-vita/settings.txt` | done |
+| 6c | Look-alikes: ten random Miis to start from (`mii_charinfo_init_random`) | done |

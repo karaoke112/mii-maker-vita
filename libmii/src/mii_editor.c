@@ -175,3 +175,59 @@ int mii_grid_index_of(const mii_grid_t *grid, uint8_t value)
             return i;
     return -1;
 }
+
+/* ---- random Miis ---------------------------------------------------------- */
+
+static uint32_t next_random(uint32_t *state)
+{
+    /* xorshift32 */
+    uint32_t x = *state ? *state : 0x9E3779B9u;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+static int rnd(uint32_t *state, int n) { return (int)(next_random(state) % (uint32_t)n); }
+static int chance(uint32_t *state, int percent) { return rnd(state, 100) < percent; }
+
+void mii_charinfo_init_random(mii_charinfo_t *ci, int gender, uint32_t *state)
+{
+    if (gender < 0 || gender > 1)
+        gender = rnd(state, 2);
+    mii_charinfo_init_default(ci, gender);
+
+    ci->favorite_color = (uint8_t)rnd(state, 12);
+    ci->faceline_type = (uint8_t)rnd(state, 12);
+    ci->faceline_color = (uint8_t)(chance(state, 85) ? rnd(state, 6) : 6 + rnd(state, 4));
+    ci->faceline_wrinkle = (uint8_t)(chance(state, 85) ? 0 : 1 + rnd(state, 11));
+    ci->faceline_make = (uint8_t)(chance(state, 75) ? 0 : 1 + rnd(state, 11));
+
+    ci->hair_type = (uint8_t)rnd(state, 132);
+    ci->hair_flip = (uint8_t)rnd(state, 2);
+    ci->hair_color = chance(state, 90) ? mii_ver3_hair_color_to_common((uint8_t)rnd(state, 8)) : (uint8_t)rnd(state, 100);
+    ci->eyebrow_color = ci->hair_color;
+    ci->beard_color = ci->hair_color;
+
+    ci->eye_type = (uint8_t)rnd(state, 60);
+    ci->eye_color = mii_ver3_eye_color_to_common((uint8_t)rnd(state, 6));
+    ci->eyebrow_type = (uint8_t)rnd(state, 24);
+    ci->nose_type = (uint8_t)rnd(state, 18);
+    ci->mouth_type = (uint8_t)rnd(state, 36);
+    ci->mouth_color = mii_ver3_mouth_color_to_common((uint8_t)rnd(state, 5));
+
+    if (gender == 0 && chance(state, 25)) {
+        ci->mustache_type = (uint8_t)(chance(state, 60) ? 1 + rnd(state, 5) : 0);
+        ci->beard_type = (uint8_t)(chance(state, 60) ? 1 + rnd(state, 5) : 0);
+    }
+    if (chance(state, 20)) {
+        ci->glass_type = (uint8_t)(1 + rnd(state, 19));
+        ci->glass_color = mii_ver3_glass_color_to_common((uint8_t)rnd(state, 6));
+    }
+    if (chance(state, 10))
+        ci->mole_type = 1;
+    /* average body */
+    ci->height = 64;
+    ci->build = 64;
+}
