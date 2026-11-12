@@ -6,7 +6,12 @@ ports can then use them from a shared database.
 
 | Library | Editor |
 | --- | --- |
-| ![Library screen](docs/images/library.png) | ![Editor screen](docs/images/editor.png) |
+| ![Library screen](docs/images/library.png) | ![Editor menu](docs/images/editor.png) |
+| **Hairstyles** | **Body** |
+| ![Hairstyle tiles](docs/images/styles.png) | ![Body page](docs/images/body.png) |
+
+Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
+`FFLBodyRes.dat` installed.
 
 > **Mii previews** need a face resource from hardware or software you own,
 > `AFLResHigh_2_3.dat` (Miitomo) or `FFLResHigh.dat` (Wii U), in
@@ -26,8 +31,9 @@ ports can then use them from a shared database.
   Types / Position / Color tabs (L / R) and picture tiles; Style, Body and
   Favorite Color are single prompt pages. The right stick (or L / R on the
   menu) turns the Mii. Saves to `ux0:data/mii/database.nfdb`; export
-  `.charinfo` / `.nfsd` / `.ffsd`, delete. All icons and pictograms are
-  original vector drawings. Builds to a `.vpk` (it has not been run on real
+  `.charinfo` / `.nfsd` / `.ffsd`, delete. Icons come from openly licensed,
+  human-made sets (Material Symbols, Material Design Icons, game-icons.net,
+  Tabler) and the button glyphs from PromptFont. Builds to a `.vpk` (it has not been run on real
   Vita hardware yet).
 - **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face
   resources (including untiling Wii U GPU-tiled textures) and draws a Mii,
@@ -45,7 +51,7 @@ ports can then use them from a shared database.
   Kart Wii / Mario Galaxy ports.
 - [Architecture and roadmap](docs/ARCHITECTURE.md): renderer plan, ad-hoc
   trading design, how games plug in.
-- [3D rendering](docs/3D_RENDERING.md): providing the face resource, how
+- [3D rendering](docs/3D_RENDERING.md): providing the face and body resources, how
   the renderer works.
 - [Shared database](docs/SHARED_DATABASE.md): how other apps and game ports
   read players' Miis.
@@ -65,7 +71,8 @@ docs/                research, architecture, shared database, building
 
 Not affiliated with or endorsed by Nintendo. "Mii" and "Nintendo Switch" are
 trademarks of Nintendo. This repository and the `.vpk` contain no Nintendo
-code, artwork, fonts or sounds: the UI art and button glyphs are original, and
-the font is M PLUS Rounded 1c (SIL OFL). The 3D renderer uses the face
-resource file each user dumps from their own Wii U. Third-party code and
+code, artwork, fonts or sounds: icons and button glyphs come from openly
+licensed sets made by people (see the notices), and the font is M PLUS
+Rounded 1c (SIL OFL). The 3D renderer uses the face and
+body resource files each user copies from hardware or software they own. Third-party code and
 data: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

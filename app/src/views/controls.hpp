@@ -33,6 +33,7 @@ class OptionGrid : public brls::Box
         PaintOf paint;    // vector art
         float iconScale = 1.0f; // icon size relative to the tile
         float iconDy = 0.0f;    // icon offset, relative to the tile
+        bool noneIcon = false;  // value 0 means "none": show the "none" icon
     };
 
     OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8_t> items, Options options,

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-class GlyphView;
+class IconView;
 
 // What the editor's screens share: the Mii being edited and how far the
 // preview is turned.
@@ -56,7 +56,7 @@ class EditorActivity : public brls::Activity
 
     std::shared_ptr<EditorSession> session;
     OnSaved onSaved;
-    GlyphView* favoriteStar = nullptr;
+    IconView* favoriteStar = nullptr;
 };
 
 // One category's page: the preview stays on the left; on the right a tab
