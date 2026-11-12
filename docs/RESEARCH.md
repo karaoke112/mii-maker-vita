@@ -123,3 +123,21 @@ fits in a few packets. Design in [ARCHITECTURE.md](ARCHITECTURE.md#ad-hoc-tradin
 - Both are Wii games: they read Miis through RFL in the Wii format (§2). A
   Vita port would need a conversion from the shared Switch-format database to
   Wii format, plus an RFL shim (see [ARCHITECTURE.md](ARCHITECTURE.md#games)).
+
+## 7. Links reviewed (November 2026)
+
+| Link | What it is | License | Use here |
+| --- | --- | --- | --- |
+| [mii-unsecure.ariankordi.net](https://mii-unsecure.ariankordi.net/) | Web front end for Arian Kordi's FFL-based render server | — | Reference for how renders should look |
+| [FFL-Testing `renderer-server-prototype`](https://github.com/ariankordi/FFL-Testing/tree/renderer-server-prototype) | PC renderer built on the FFL decompilation, with Switch- and Miitomo-style shaders | Arian Kordi's changes: Unlicense; FFL base: none | **Used**: the Switch shading model and nn::mii material tables (his own work, Unlicense) are ported into libmii3d. Its bundled body models are extracted game files and are not used |
+| [aboood40091/ffl `nsmbu-win-port`](https://github.com/aboood40091/ffl/tree/nsmbu-win-port) | The FFL decompilation ported to PC | No license | Reference only; libmii3d is an independent implementation |
+| [MiiPort `convert_mii.h`](https://github.com/Genwald/MiiPort/blob/4ee38bbb8aa68a2365e9c48d59d7709f760f9b5d/include/convert_mii.h#L8) | Ver3 / CharInfo / CoreData conversion for Switch homebrew | ISC-style | Cross-check for libmii; also the model for asking users for the QR key |
+| [kazuki-4ys MiiInfoEditorCTR](https://github.com/kazuki-4ys/kazuki-4ys.github.io/blob/148dc339974f8b7515bfdc1395ec1fc9becb68ab/web_apps/MiiInfoEditorCTR/mii.js#L103) | Web 3DS Mii editor; the linked code encodes Mii Studio data | No license | Reference for the Studio format |
+| [jaames Mii QR gist](https://gist.github.com/jaames/96ce8daa11b61b758b6b0227b55f9f78) | Decrypts Mii QR payloads (AES-CCM) | — | Reference for QR support |
+| [maboii.js](https://github.com/Entrivax/maboii.js) | amiibo encryption in JS | MIT | Reference for amiibo support |
+| [nimiq/qr-scanner](https://github.com/nimiq/qr-scanner), [qr.js](https://github.com/educastellano/qr.js) | Browser QR scanning / generation | MIT | References; the Vita build will use quirc (ISC) and Nayuki's generator (MIT) in C |
+
+None of them is a renderer that could be dropped into a Vita app as is:
+every faithful renderer builds on the unlicensed FFL decompilation and
+desktop OpenGL, or is JavaScript. The usable pieces were the published
+shading model and the format knowledge, which libmii3d now builds on.

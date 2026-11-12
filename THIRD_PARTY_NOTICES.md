@@ -89,6 +89,14 @@ vee's MIT-licensed implementation. Used under the MIT license:
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 > DEALINGS IN THE SOFTWARE.
 
+### Arian Kordi's FFL-Testing (Unlicense)
+
+The Switch lighting model in `libmii3d/src/raster.c` / `charmodel.c` and the
+material tables in `libmii3d/src/materials.inc` (generated) come from
+`src/ShaderSwitch.cpp` and `fs/content/shaders/SampleShader.frag` in
+<https://github.com/ariankordi/FFL-Testing>, written by Arian Kordi and
+released under the Unlicense (public domain).
+
 ### zlib
 
 libmii3d links zlib (zlib license, © Jean-loup Gailly and Mark Adler) to

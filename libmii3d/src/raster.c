@@ -17,6 +17,26 @@ void m3_clear(m3_target *t, uint32_t argb)
 
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+/* sRGB-ish gamma 2.2, as the Switch Mii shader uses, via lookup tables */
+#define GAMMA_STEPS 1024
+static float g_to_linear[256];
+static uint8_t g_to_srgb[GAMMA_STEPS + 1];
+static int g_gamma_ready;
+
+static void init_gamma(void)
+{
+    if (g_gamma_ready)
+        return;
+    for (int i = 0; i < 256; i++)
+        g_to_linear[i] = powf(i / 255.0f, 2.2f);
+    for (int i = 0; i <= GAMMA_STEPS; i++)
+        g_to_srgb[i] = (uint8_t)(powf((float)i / GAMMA_STEPS, 1.0f / 2.2f) * 255.0f + 0.5f);
+    g_gamma_ready = 1;
+}
+
+static inline float to_linear(float c) { return g_to_linear[(int)(clampf(c, 0.0f, 1.0f) * 255.0f + 0.5f)]; }
+static inline uint8_t to_srgb8(float c) { return g_to_srgb[(int)(clampf(c, 0.0f, 1.0f) * GAMMA_STEPS + 0.5f)]; }
+
 static inline void fetch(const mii3d_image_t *img, int x, int y, float out[4])
 {
     const uint8_t *p = img->pixels + ((size_t)y * img->width + x) * img->channels;
@@ -98,7 +118,7 @@ static void shade_fragment(const m3_material *m, float u, float v, float out[4])
     }
 }
 
-typedef struct sv { float x, y, z, iw, uw, vw, shade, spec; } sv;
+typedef struct sv { float x, y, z, iw, uw, vw, hl, add[3], rim[3]; } sv;
 
 static inline float edge(const sv *a, const sv *b, float px, float py)
 {
@@ -140,19 +160,38 @@ static void draw_triangle(m3_target *t, const sv *a, const sv *b, const sv *c, c
             const float pw = 1.0f / iw;
             const float u = (w0 * a->uw + w1 * b->uw + w2 * c->uw) * pw;
             const float v = (w0 * a->vw + w1 * b->vw + w2 * c->vw) * pw;
-            const float shade = w0 * a->shade + w1 * b->shade + w2 * c->shade;
-            const float spec = w0 * a->spec + w1 * b->spec + w2 * c->spec;
             float col[4];
             shade_fragment(m, u, v, col);
-            if (col[3] <= 0.004f)
+            if (m->faceline) {
+                /* faceline: always opaque; feature texels mute spec/SSS */
+                const float k = 1.0f - col[3] * m->sss_blend;
+                const float hl = w0 * a->hl + w1 * b->hl + w2 * c->hl;
+                for (int i = 0; i < 3; i++) {
+                    const float add = w0 * a->add[i] + w1 * b->add[i] + w2 * c->add[i];
+                    const float rim = w0 * a->rim[i] + w1 * b->rim[i] + w2 * c->rim[i];
+                    col[i] = to_linear(col[i]) * hl + add * k + rim;
+                }
+                col[3] = 1.0f;
+            } else if (m->lit) {
+                if (col[3] <= 0.004f)
+                    continue;
+                const float hl = w0 * a->hl + w1 * b->hl + w2 * c->hl;
+                for (int i = 0; i < 3; i++) {
+                    const float add = w0 * a->add[i] + w1 * b->add[i] + w2 * c->add[i];
+                    const float rim = w0 * a->rim[i] + w1 * b->rim[i] + w2 * c->rim[i];
+                    col[i] = to_linear(col[i]) * hl + add + rim;
+                }
+            } else if (col[3] <= 0.004f) {
                 continue;
+            }
             uint8_t *p = t->rgba + 4 * idx;
             const float sa = col[3], da = p[3] / 255.0f;
             const float oa = sa + da * (1.0f - sa);
             for (int i = 0; i < 3; i++) {
-                float s = clampf(col[i] * shade + spec, 0.0f, 1.0f);
-                float d = p[i] / 255.0f;
-                float o = oa > 0 ? (s * sa + d * da * (1.0f - sa)) / oa : 0.0f;
+                /* lit colors are linear; unlit (2D passes) stay sRGB */
+                const float s = (m->lit || m->faceline) ? to_srgb8(col[i]) / 255.0f : clampf(col[i], 0.0f, 1.0f);
+                const float d = p[i] / 255.0f;
+                const float o = oa > 0 ? (s * sa + d * da * (1.0f - sa)) / oa : 0.0f;
                 p[i] = (uint8_t)(clampf(o, 0.0f, 1.0f) * 255.0f + 0.5f);
             }
             p[3] = (uint8_t)(clampf(oa, 0.0f, 1.0f) * 255.0f + 0.5f);
@@ -165,6 +204,7 @@ static void draw_triangle(m3_target *t, const sv *a, const sv *b, const sv *c, c
 void m3_draw(m3_target *t, const m3_vertex *verts, const uint16_t *indices, int index_count,
              const m3_material *mat)
 {
+    init_gamma();
     for (int i = 0; i + 2 < index_count; i += 3) {
         sv s[3];
         int ok = 1;
@@ -181,8 +221,11 @@ void m3_draw(m3_target *t, const m3_vertex *verts, const uint16_t *indices, int 
             s[k].iw = iw;
             s[k].uw = v->u * iw;
             s[k].vw = v->v * iw;
-            s[k].shade = v->shade;
-            s[k].spec = v->spec;
+            s[k].hl = v->hl;
+            for (int c = 0; c < 3; c++) {
+                s[k].add[c] = v->add[c];
+                s[k].rim[c] = v->rim[c];
+            }
         }
         if (ok)
             draw_triangle(t, &s[0], &s[1], &s[2], mat);

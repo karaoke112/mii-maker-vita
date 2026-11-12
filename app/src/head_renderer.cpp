@@ -72,8 +72,8 @@ void HeadRenderer::init(const std::string& dataDir)
 {
     if (res)
         return;
-    statusText = "3D: put FFLResHigh.dat (or FFLResMiddle.dat) in " + dataDir + "/";
-    for (const char* name : { "FFLResHigh.dat", "FFLResMiddle.dat" }) {
+    statusText = "To see your Miis, copy FFLResHigh.dat (Wii U) or AFLResHigh_2_3.dat (Miitomo) to " + dataDir + "/";
+    for (const char* name : { "AFLResHigh_2_3.dat", "FFLResHigh.dat", "FFLResMiddle.dat" }) {
         const std::string path = dataDir + "/" + name;
         if (!readFile(path, &file))
             continue;
@@ -81,7 +81,7 @@ void HeadRenderer::init(const std::string& dataDir)
         mii3d_result_t r = mii3d_res_open(&opened, file.data(), file.size());
         if (r != MII3D_OK) {
             brls::Logger::error("{}: {}", path, mii3d_result_string(r));
-            statusText = std::string("3D: ") + name + " is not a valid Wii U face resource";
+            statusText = std::string(name) + " is not a face resource this app can read";
             file.clear();
             continue;
         }
@@ -91,7 +91,7 @@ void HeadRenderer::init(const std::string& dataDir)
             break;
         }
         res = opened;
-        statusText = std::string("3D heads: ") + name;
+        statusText = std::string("Face resource: ") + name;
         brls::Logger::info("Loaded face resource {}", path);
         thread = std::thread(&HeadRenderer::worker, this);
         return;

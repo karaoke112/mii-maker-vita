@@ -36,8 +36,18 @@ const char *mii3d_result_string(mii3d_result_t r);
 typedef struct mii3d_res mii3d_res_t;
 
 /* `file` must stay valid until mii3d_res_close(). */
+/* Accepts the Wii U files (FFLResHigh.dat, FFLResMiddle.dat and their LG
+ * variants) and Miitomo's AFLResHigh_2_3.dat; the layout is detected. */
 mii3d_result_t mii3d_res_open(mii3d_res_t **out, const uint8_t *file, size_t size);
 void mii3d_res_close(mii3d_res_t *res);
+
+typedef enum mii3d_variant {
+    MII3D_VARIANT_WIIU,         /* FFLRes*.dat: GX2-tiled textures, 9 glasses */
+    MII3D_VARIANT_MIITOMO_2_3,  /* AFLResHigh_2_3.dat: linear, 20 glasses (all Switch styles) */
+    MII3D_VARIANT_MIITOMO       /* AFLResHigh.dat: linear, 9 glasses */
+} mii3d_variant_t;
+
+mii3d_variant_t mii3d_res_variant(const mii3d_res_t *res);
 
 typedef enum mii3d_tex_kind {
     MII3D_TEX_BEARD, MII3D_TEX_CAP, MII3D_TEX_EYE, MII3D_TEX_EYEBROW,
@@ -54,7 +64,7 @@ typedef enum mii3d_shape_kind {
     MII3D_SHAPE_KIND_COUNT
 } mii3d_shape_kind_t;
 
-int mii3d_res_texture_count(mii3d_tex_kind_t kind);
+int mii3d_res_texture_count(const mii3d_res_t *res, mii3d_tex_kind_t kind);
 int mii3d_res_shape_count(mii3d_shape_kind_t kind);
 
 /* A decoded texture: linear rows, `channels` bytes per pixel (1 = R,
@@ -75,6 +85,7 @@ typedef struct mii3d_mesh {
     float *positions; /* xyz */
     float *normals;   /* xyz */
     float *uvs;       /* uv */
+    uint8_t *params;  /* per-vertex parameter (hair specular blend), or NULL */
     uint16_t *indices;
     float bbox_min[3], bbox_max[3];
     /* For faceline shapes: where hair, nose and beard attach. */

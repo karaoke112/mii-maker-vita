@@ -1,52 +1,57 @@
 # 3D Mii heads
 
-Mii Maker Vita draws heads in 3D from the **Wii U face resource**, a file
-Nintendo ships on every Wii U. It is copyrighted, so it is **not** included in
-this repository or the `.vpk`: you supply your own copy. Without it,
-everything still works and previews use the built-in 2D renderer.
+Mii Maker Vita draws heads in 3D from a **face resource file** that you copy
+from hardware or software you own. These files are Nintendo's copyrighted
+data, so they are **not** included in this repository or the `.vpk`. Without
+one the app still works (create, edit, save, export), but previews only say
+where to put the file.
 
-## Installing the resource
+## Installing a resource
 
-1. Dump it from your own Wii U (for example with an FTP homebrew such as
-   ftpiiu): `/storage_mlc/sys/title/0005001b/10056000/content/FFLResHigh.dat`
-   (`FFLResMiddle.dat` from the same folder also works, with lower-resolution
-   textures).
-2. Copy it to the Vita at **`ux0:data/mii/FFLResHigh.dat`** (VitaShell over
-   FTP or USB). On the desktop build the folder is `./mii-data/`.
-3. Start the app. The line under the "Create" buttons says
-   "3D heads: FFLResHigh.dat" when it was found, or tells you where to put it.
+Copy one of these to **`ux0:data/mii/`** on the Vita (on the desktop build:
+`./mii-data/`). The first one found is used:
 
-`FFLResHighLG.dat` / `FFLResMiddleLG.dat` are not needed. Miitomo's
-`AFLResHigh_2_3.dat` is a different variant and is not supported yet.
+| File | From | Notes |
+| --- | --- | --- |
+| `AFLResHigh_2_3.dat` | Miitomo (Android/iOS app data) | Preferred: has all 20 Switch glasses styles and higher-resolution textures |
+| `FFLResHigh.dat` | Wii U: `/storage_mlc/sys/title/0005001b/10056000/content/` (e.g. via ftpiiu) | Switch-only glasses styles 9-19 are shown as their closest Wii U style |
+| `FFLResMiddle.dat` | same folder | Lower-resolution textures |
+
+The `LG` variants are not needed. The line under the "Create" buttons shows
+which file is in use.
 
 ## How it works
 
 `libmii3d/` (C99, depends on libmii and zlib):
 
-1. **Resource reader** (`src/res.c`): the big-endian `FFRA` container (header,
-   317 texture and 857 shape part tables), zlib-compressed parts, texture
-   footers and shape headers.
+1. **Resource reader** (`src/res.c`): the big-endian `FFRA` container. Wii U
+   and Miitomo files differ in their texture tables (Miitomo 2_3 has 80
+   eyes, 28 eyebrows, 52 mouths, 20 glasses), so the layout is detected by
+   checking that typical parts decode.
 2. **Texture untiling** (`src/gx2_untile.c`): Wii U textures are stored in
-   the GPU's tiled layout (2D macro tiling, 1D for the tiny placeholders).
-   This was written from the documented R6xx/R7xx tiling rules; it matched
-   GX2's own address library byte-for-byte on all 796 textures in the four
-   resource files, and the tests pin it to addrlib-derived checksums.
+   the GPU's tiled layout (2D macro tiling, 1D for the tiny placeholders);
+   Miitomo's are linear. The untiler was written from the documented
+   R6xx/R7xx tiling rules; it matched GX2's own address library
+   byte-for-byte on all 796 textures in the four Wii U files, and the tests
+   pin it to addrlib-derived checksums.
 3. **Software rasterizer** (`src/raster.c`): perspective-correct, bilinear
-   textures, depth buffer, alpha blending, and the color modes Mii parts
-   use. Doing this on the CPU avoids shader-compiler requirements on the
-   Vita and gives identical output on Vita, desktop and in tests.
+   textures, depth buffer, alpha blending, the color modes Mii parts use,
+   and the **Switch Mii lighting model** (half-Lambert diffuse, subsurface
+   tint, specular with the hair's per-vertex blend, rim light, in linear
+   color) with nn::mii's per-part material tables. Doing this on the CPU
+   avoids shader-compiler requirements on the Vita and gives identical output
+   on Vita, desktop and in tests.
 4. **Character model** (`src/charmodel.c`): composes the face texture (eyes,
-   brows, mouth, mustache, mole) and the faceline texture (skin, wrinkles,
-   makeup, texture beards), then draws faceline, forehead, hair, mask, nose,
-   nose line, glasses and beard shapes with simple lighting.
+   brows, mouth, mustache, mole) and the faceline texture (wrinkles, makeup,
+   texture beards), then draws faceline, forehead, hair, mask, nose, nose
+   line, glasses and beard shapes.
 
 The app's `HeadRenderer` runs this on a worker thread: a quick pass shows up
 first, then a 2x-supersampled pass replaces it, and results are cached so
 library thumbnails are only rendered once.
 
-Speed (desktop CPU, 256 px): about 6 ms quick pass, 21 ms smooth pass. Expect
-very roughly 10-20x that on a Vita, i.e. a quick pass in the low hundreds of
-milliseconds. This has not been measured on hardware yet.
+Speed (desktop CPU, 256 px): about 5 ms quick pass, 18 ms smooth pass. Expect
+very roughly 10-20x that on a Vita. This has not been measured on hardware yet.
 
 ## Tools
 
@@ -59,10 +64,11 @@ MII3D_RES=FFLResHigh.dat build/mii3d/test_mii3d                       # also tes
 
 ## Known gaps
 
-- Head only (the body comes from a separate resource, `FFLBodyRes.dat`); the
-  app draws a simple shirt in the favorite color under it.
-- No hats, no expressions other than the default, no Switch-only parts
-  that the Wii U resource lacks (Switch glasses 9-19 are shown as their
-  closest Wii U style, as libmii does when converting).
+- Head only for now. The body lives in `FFLBodyRes.dat` (body shapes and
+  skeleton); support is next, and the Switch body/pants materials are
+  already in `materials.inc`.
+- No hats and no expressions other than the default.
+- Miitomo's older `AFLResHigh.dat` (9 glasses) is recognised by layout but
+  has not been tested with a real file.
 - Part grids in the editor still show numbers; rendering part thumbnails is
   the next step.
