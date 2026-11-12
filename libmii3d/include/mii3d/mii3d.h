@@ -126,7 +126,9 @@ mii3d_result_t mii3d_render_head(mii3d_renderer_t *r, const mii_charinfo_t *mii,
  * instead. */
 typedef enum mii3d_icon_part {
     MII3D_ICON_EYES, MII3D_ICON_EYEBROWS, MII3D_ICON_MOUTH,
-    MII3D_ICON_MUSTACHE, MII3D_ICON_GLASSES, MII3D_ICON_MOLE
+    MII3D_ICON_MUSTACHE, MII3D_ICON_GLASSES, MII3D_ICON_MOLE,
+    /* one eye / one eyebrow (the one on the image's right), drawn larger */
+    MII3D_ICON_EYE, MII3D_ICON_EYEBROW
 } mii3d_icon_part_t;
 
 mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,

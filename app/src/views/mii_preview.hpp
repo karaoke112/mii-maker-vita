@@ -17,15 +17,25 @@ class MiiPreview : public brls::View
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override;
 
-    void setYaw(float degrees) { yaw = degrees; }
-    float getYaw() const { return yaw; }
+    void setYaw(float degrees) { yawRef() = degrees; }
+    float getYaw() { return yawRef(); }
+    // Shares the turn angle with other previews (the editor's pages).
+    void setYawSource(float* source) { yawSource = source; }
+    // Stage mode: no card backdrop or name, the head drawn large, and the
+    // right stick turns it.
+    void setStage(bool on) { stage = on; }
 
   private:
     void request3D();
+    float& yawRef() { return yawSource ? *yawSource : yaw; }
+    void pollStick();
 
     const mii_charinfo_t* mii;
     int renderSize;
     float yaw = 0.0f;
+    float* yawSource = nullptr;
+    bool stage = false;
+    brls::Time lastPoll = 0;
 
     // what we last asked HeadRenderer for
     mii_charinfo_t requested;

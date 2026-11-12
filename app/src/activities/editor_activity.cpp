@@ -1,7 +1,9 @@
 #include "activities/editor_activity.hpp"
 
 #include "mii_library.hpp"
+#include "ui_theme.hpp"
 #include "views/controls.hpp"
+#include "views/glyphs.hpp"
 #include "views/mii_preview.hpp"
 
 #include <mii/mii_editor.h>
@@ -23,35 +25,271 @@ static std::vector<uint8_t> gridItems(mii_grid_kind_t kind, int* columns)
     return std::vector<uint8_t>(g->items, g->items + g->count);
 }
 
+static NVGcolor rgb(uint32_t c)
+{
+    return nvgRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+}
+
+// ---- shared layout -----------------------------------------------------
+
+// The preview on the left and `right` beside it, in a frame with no title
+// bar and the button hints along the bottom.
+static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPreview** previewOut)
+{
+    auto* root = new brls::Box(brls::Axis::ROW);
+
+    auto* preview = new MiiPreview(&s.mii, 384);
+    preview->setStage(true);
+    preview->setYawSource(&s.yaw);
+    preview->setWidth(520);
+    preview->setGrow(0);
+    root->addView(preview);
+
+    right->setGrow(1);
+    root->addView(right);
+
+    auto* frame = new brls::AppletFrame(root);
+    frame->setHeaderVisibility(brls::Visibility::GONE);
+    if (previewOut)
+        *previewOut = preview;
+    return frame;
+}
+
+// ---- the menu ----------------------------------------------------------
+
+// A row of the menu: a pictogram and a name, with thin rules above/below.
+class MenuRow : public brls::Box
+{
+  public:
+    MenuRow(Glyph glyph, const std::string& text, bool topRule)
+        : brls::Box(brls::Axis::ROW)
+        , topRule(topRule)
+    {
+        this->setHeight(64);
+        this->setAlignItems(brls::AlignItems::CENTER);
+        this->setPadding(0, 12, 0, 14);
+        this->setFocusable(true);
+        this->setHighlightCornerRadius(4);
+        icon = new GlyphView(glyph, 40);
+        this->addView(icon);
+        label = new brls::Label();
+        label->setText(text);
+        label->setFontSize(24);
+        label->setMarginLeft(16);
+        label->setGrow(1);
+        this->addView(label);
+        this->addGestureRecognizer(new brls::TapGestureRecognizer(this));
+    }
+
+    GlyphView* glyph() { return icon; }
+
+    // a value shown at the right end (the nickname)
+    brls::Label* addValue()
+    {
+        auto* v = new brls::Label();
+        v->setFontSize(24);
+        v->setTextColor(ui::kAccent);
+        v->setHorizontalAlign(brls::HorizontalAlign::RIGHT);
+        this->addView(v);
+        return v;
+    }
+
+    void hideIcon() { icon->setVisibility(brls::Visibility::GONE); label->setMarginLeft(10); }
+
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override
+    {
+        nvgBeginPath(vg);
+        if (topRule)
+            nvgRect(vg, x, y, width, 1.5f);
+        nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
+        nvgFillColor(vg, ui::kRule);
+        nvgFill(vg);
+        brls::Box::draw(vg, x, y, width, height, style, ctx);
+    }
+
+  private:
+    bool topRule;
+    GlyphView* icon;
+    brls::Label* label;
+};
+
+struct MenuEntry {
+    Category category;
+    Glyph glyph;
+    const char* key;
+};
+
+static const MenuEntry kMenu[] = {
+    { Category::FACE, Glyph::FACE, "editor/menu/face" },
+    { Category::HAIR, Glyph::HAIR, "editor/menu/hair" },
+    { Category::EYEBROWS, Glyph::EYEBROWS, "editor/menu/eyebrows" },
+    { Category::EYES, Glyph::EYES, "editor/menu/eyes" },
+    { Category::NOSE, Glyph::NOSE, "editor/menu/nose" },
+    { Category::MOUTH, Glyph::MOUTH, "editor/menu/mouth" },
+    { Category::FACIAL_HAIR, Glyph::FACIAL_HAIR, "editor/menu/facial_hair" },
+    { Category::MOLE, Glyph::MOLE, "editor/menu/mole" },
+    { Category::STYLE, Glyph::STYLE, "editor/menu/style" },
+    { Category::BODY, Glyph::BODY, "editor/menu/body" },
+    { Category::GLASSES, Glyph::GLASSES, "editor/menu/glasses" },
+    { Category::FAVORITE_COLOR, Glyph::STAR, "editor/menu/favorite_color" },
+};
+
 EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved)
-    : mii(start)
+    : session(std::make_shared<EditorSession>())
     , onSaved(std::move(onSaved))
 {
+    session->mii = start;
 }
 
-brls::View* EditorActivity::makeTab(Fill fill)
+brls::View* EditorActivity::createContentView()
 {
-    auto* scroll = new brls::ScrollingFrame();
-    auto* box = new brls::Box(brls::Axis::COLUMN);
-    box->setPadding(10, 30, 40, 30);
-    fill(box);
-    scroll->setContentView(box);
-    return scroll;
+    auto* menu = new brls::Box(brls::Axis::COLUMN);
+    menu->setPadding(36, 40, 0, 30);
+
+    std::shared_ptr<EditorSession> s = session;
+    const int n = (int)(sizeof(kMenu) / sizeof(kMenu[0]));
+    MenuRow* star = nullptr;
+    for (int i = 0; i < n; i += 2) {
+        auto* line = new brls::Box(brls::Axis::ROW);
+        for (int j = i; j < i + 2 && j < n; j++) {
+            const MenuEntry& e = kMenu[j];
+            auto* row = new MenuRow(e.glyph, brls::getStr(e.key), i == 0);
+            row->setGrow(1);
+            row->setWidthPercentage(50);
+            if (j > i)
+                row->setMarginLeft(28);
+            const Category cat = e.category;
+            row->registerClickAction([s, cat](brls::View*) {
+                brls::Application::pushActivity(new CategoryActivity(s, cat), brls::TransitionAnimation::NONE);
+                return true;
+            });
+            if (e.glyph == Glyph::STAR)
+                star = row;
+            line->addView(row);
+        }
+        menu->addView(line);
+    }
+    // the star shows the favorite color
+    if (star) {
+        GlyphView* g = star->glyph();
+        g->setFillColor(rgb(kFavoriteSwatch[session->mii.favorite_color % 12]));
+        favoriteStar = g;
+    }
+
+    auto* nameRow = new MenuRow(Glyph::FACE, "editor/nickname"_i18n, false);
+    nameRow->hideIcon();
+    brls::Label* nameValue = nameRow->addValue();
+    auto showName = [s, nameValue] {
+        char buf[64];
+        mii_name_get_utf8(&s->mii, buf, sizeof(buf));
+        nameValue->setText(buf);
+    };
+    showName();
+    nameRow->registerClickAction([s, showName](brls::View*) {
+        char cur[64];
+        mii_name_get_utf8(&s->mii, cur, sizeof(cur));
+        brls::Application::getImeManager()->openForText(
+            [s, showName](std::string text) {
+                if (text.empty())
+                    return;
+                mii_name_set_utf8(&s->mii, text.c_str());
+                showName();
+                s->dirty = true;
+            },
+            "editor/nickname"_i18n, "", MII_NAME_LENGTH, cur);
+        return true;
+    });
+    menu->addView(nameRow);
+
+    auto* doneLine = new brls::Box(brls::Axis::ROW);
+    doneLine->setJustifyContent(brls::JustifyContent::CENTER);
+    doneLine->setMarginTop(34);
+    auto* done = new brls::Button();
+    done->setStyle(&brls::BUTTONSTYLE_PRIMARY);
+    done->setText("editor/done"_i18n);
+    done->setFontSize(26);
+    done->setDimensions(320, 72);
+    done->setCornerRadius(6);
+    done->registerClickAction([this](brls::View*) { return save(); });
+    doneLine->addView(done);
+    menu->addView(doneLine);
+
+    MiiPreview* preview = nullptr;
+    brls::AppletFrame* frame = editorFrame(*session, menu, &preview);
+    frame->registerAction("editor/save"_i18n, brls::BUTTON_START, [this](brls::View*) { return save(); }, true);
+    // Keyboard shortcut for desktop builds (no START key there).
+    frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_S, brls::BRLS_KBD_MODIFIER_CTRL),
+        [this](brls::View*) { return save(); });
+    frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return close(); });
+    // L / R turn the Mii (the right stick does too, smoothly).
+    frame->registerAction("editor/rotate"_i18n, brls::BUTTON_RB, [s](brls::View*) {
+        s->yaw = std::fmin(60.0f, s->yaw + 20.0f);
+        return true;
+    }, false, true);
+    frame->registerAction("editor/rotate"_i18n, brls::BUTTON_LB, [s](brls::View*) {
+        s->yaw = std::fmax(-60.0f, s->yaw - 20.0f);
+        return true;
+    }, true, true);
+    return frame;
 }
 
-// ---- grid icons --------------------------------------------------------
-// Like the Switch editor, each style tile shows that style in the Mii's
-// current colors. Shapes are drawn as small heads framed on the part;
-// flat parts (eyes, brows, mouth, mustache, glasses) as the part alone.
+void EditorActivity::onResume()
+{
+    // the favorite color may have changed on its page
+    if (favoriteStar)
+        favoriteStar->setFillColor(rgb(kFavoriteSwatch[session->mii.favorite_color % 12]));
+}
+
+bool EditorActivity::save()
+{
+    mii_charinfo_t& mii = session->mii;
+    if (mii_verify(&mii, 0) != MII_FIELD_COUNT) {
+        brls::Application::notify("editor/invalid"_i18n);
+        return true;
+    }
+    if (MiiLibrary::instance().put(&mii) < 0) {
+        brls::Application::notify("editor/save_failed"_i18n);
+        return true;
+    }
+    session->dirty = false;
+    auto cb = onSaved;
+    brls::Application::popActivity(brls::TransitionAnimation::FADE, [cb] {
+        if (cb)
+            cb();
+    });
+    return true;
+}
+
+bool EditorActivity::close()
+{
+    if (!session->dirty) {
+        brls::Application::popActivity();
+        return true;
+    }
+    auto* dialog = new brls::Dialog("editor/discard"_i18n);
+    dialog->addButton("hints/cancel"_i18n, [] {});
+    dialog->addButton("editor/discard_yes"_i18n, [] { brls::Application::popActivity(); });
+    dialog->open();
+    return true;
+}
+
+// ---- tile icons --------------------------------------------------------
+// Like the Switch 2 editor, style tiles are drawn in neutral colors (black
+// hair and lines, light skin) so the shapes read clearly; eyes and lips
+// keep the Mii's own colors.
 
 static mii_charinfo_t iconBase(const mii_charinfo_t& cur)
 {
     mii_charinfo_t m;
     mii_charinfo_init_default(&m, cur.gender);
-    m.faceline_color = cur.faceline_color;
-    m.hair_color = cur.hair_color;
-    m.eyebrow_color = cur.eyebrow_color;
-    m.beard_color = cur.beard_color;
+    m.faceline_color = 0;
+    m.hair_color = 0;
+    m.eyebrow_color = 0;
+    m.beard_color = 0;
+    m.glass_color = 0;
+    m.eye_color = cur.eye_color;
+    m.mouth_color = cur.mouth_color;
     return m;
 }
 
@@ -68,7 +306,7 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
     };
     auto part = [](mii3d_icon_part_t which, mii_field_t f) {
         return OptionGrid::IconOf([=](uint8_t v, const mii_charinfo_t& cur, Spec* spec) {
-            spec->mii = cur;
+            spec->mii = iconBase(cur);
             mii_field_set(&spec->mii, f, v);
             spec->icon = which;
         });
@@ -101,8 +339,8 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
             m.beard_type = v;
             m.hair_type = 30; // keep the hair out of the way
         });
-    case MII_FIELD_EYE_TYPE:      return part(MII3D_ICON_EYES, field);
-    case MII_FIELD_EYEBROW_TYPE:  return part(MII3D_ICON_EYEBROWS, field);
+    case MII_FIELD_EYE_TYPE:      return part(MII3D_ICON_EYE, field);
+    case MII_FIELD_EYEBROW_TYPE:  return part(MII3D_ICON_EYEBROW, field);
     case MII_FIELD_MOUTH_TYPE:    return part(MII3D_ICON_MOUTH, field);
     case MII_FIELD_MUSTACHE_TYPE: return part(MII3D_ICON_MUSTACHE, field);
     case MII_FIELD_GLASS_TYPE:    return part(MII3D_ICON_GLASSES, field);
@@ -110,297 +348,388 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
     }
 }
 
-// Adds a parts grid, a color palette and sliders: the common shape of most
-// categories.
-struct Section {
-    static constexpr float kIconCell = 76.0f;
+// a light gray circle standing in for the face
+static void paintRing(NVGcontext* vg, float x, float y, float s)
+{
+    nvgBeginPath(vg);
+    nvgCircle(vg, x + s / 2, y + s / 2, s * 0.33f);
+    nvgStrokeColor(vg, ui::kRing);
+    nvgStrokeWidth(vg, s * 0.045f);
+    nvgStroke(vg);
+}
 
-    static void parts(EditorActivity* self, brls::Box* box, mii_charinfo_t* mii, mii_field_t field,
-        mii_grid_kind_t kind, std::function<void()> changed)
-    {
-        int cols;
-        std::vector<uint8_t> items = gridItems(kind, &cols);
-        box->addView(new OptionGrid(mii, field, items, cols, kIconCell, nullptr, nullptr, changed, iconFor(field)));
+// ---- page building blocks ----------------------------------------------
+
+using Fill = std::function<void(brls::Box*)>;
+
+// A page body: centered content; `scroll` for grids taller than the screen.
+static brls::View* page(Fill fill, bool scroll)
+{
+    auto* box = new brls::Box(brls::Axis::COLUMN);
+    box->setAlignItems(brls::AlignItems::CENTER);
+    if (!scroll) {
+        box->setJustifyContent(brls::JustifyContent::CENTER);
+        box->setPadding(10, 30, 30, 30);
+        fill(box);
+        return box;
     }
-    static void range(brls::Box* box, mii_charinfo_t* mii, mii_field_t field, int cols,
-        std::function<void()> changed)
-    {
-        OptionGrid::IconOf icon = iconFor(field);
-        box->addView(new OptionGrid(mii, field, OptionGrid::range(field), cols, icon ? kIconCell : 60, nullptr,
-            nullptr, changed, icon));
-    }
-    static void colors(brls::Box* box, mii_charinfo_t* mii, mii_field_t field, std::function<void()> changed)
-    {
-        int cols;
-        std::vector<uint8_t> items = gridItems(MII_GRID_COMMON_COLOR, &cols);
-        box->addView(new OptionGrid(mii, field, items, cols, 40,
-            [](uint8_t v) { return mii_common_color_rgb(v); }, nullptr, changed));
-    }
-};
-
-brls::View* EditorActivity::profileTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-
-        box->addView(makeSectionTitle("editor/nickname"_i18n));
-        auto* name = new brls::Button();
-        char buf[64];
-        mii_name_get_utf8(&mii, buf, sizeof(buf));
-        name->setText(buf);
-        name->setWidth(360);
-        name->registerClickAction([this, name](brls::View*) {
-            char cur[64];
-            mii_name_get_utf8(&mii, cur, sizeof(cur));
-            brls::Application::getImeManager()->openForText(
-                [this, name](std::string text) {
-                    if (text.empty())
-                        return;
-                    mii_name_set_utf8(&mii, text.c_str());
-                    char out[64];
-                    mii_name_get_utf8(&mii, out, sizeof(out));
-                    name->setText(out);
-                    this->changed();
-                },
-                "editor/nickname"_i18n, "", MII_NAME_LENGTH, cur);
-            return true;
-        });
-        box->addView(name);
-
-        box->addView(makeSectionTitle("editor/gender"_i18n));
-        box->addView(new OptionGrid(&mii, MII_FIELD_GENDER, { 0, 1 }, 2, 56, nullptr,
-            [](uint8_t v) { return v ? "editor/female"_i18n : "editor/male"_i18n; }, changed));
-
-        box->addView(makeSectionTitle("editor/favorite_color"_i18n));
-        box->addView(new OptionGrid(&mii, MII_FIELD_FAVORITE_COLOR, OptionGrid::range(MII_FIELD_FAVORITE_COLOR), 6, 44,
-            [](uint8_t v) { return kFavoriteSwatch[v % 12]; }, nullptr, changed));
-    });
-}
-
-brls::View* EditorActivity::faceTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/face_shape"_i18n));
-        Section::range(box, &mii, MII_FIELD_FACELINE_TYPE, 6, changed);
-        box->addView(makeSectionTitle("editor/skin_color"_i18n));
-        int cols;
-        std::vector<uint8_t> skin = gridItems(MII_GRID_FACELINE_COLOR, &cols);
-        box->addView(new OptionGrid(&mii, MII_FIELD_FACELINE_COLOR, skin, cols, 44,
-            [](uint8_t v) { return mii_faceline_color_rgb(v); }, nullptr, changed));
-        box->addView(makeSectionTitle("editor/wrinkles"_i18n));
-        Section::range(box, &mii, MII_FIELD_FACELINE_WRINKLE, 6, changed);
-        box->addView(makeSectionTitle("editor/makeup"_i18n));
-        Section::range(box, &mii, MII_FIELD_FACELINE_MAKE, 6, changed);
-    });
-}
-
-brls::View* EditorActivity::hairTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/style"_i18n));
-        Section::parts(this, box, &mii, MII_FIELD_HAIR_TYPE, MII_GRID_HAIR, changed);
-        box->addView(makeSectionTitle("editor/color"_i18n));
-        Section::colors(box, &mii, MII_FIELD_HAIR_COLOR, changed);
-        auto* flip = new brls::BooleanCell();
-        flip->init("editor/flip_part"_i18n, mii.hair_flip, [this](bool on) {
-            mii.hair_flip = on;
-            this->changed();
-        });
-        box->addView(flip);
-    });
-}
-
-brls::View* EditorActivity::eyebrowTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/style"_i18n));
-        Section::parts(this, box, &mii, MII_FIELD_EYEBROW_TYPE, MII_GRID_EYEBROW, changed);
-        box->addView(makeSectionTitle("editor/color"_i18n));
-        Section::colors(box, &mii, MII_FIELD_EYEBROW_COLOR, changed);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYEBROW_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYEBROW_ASPECT, "editor/thickness"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYEBROW_ROTATE, "editor/rotation"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYEBROW_X, "editor/spacing"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYEBROW_Y, "editor/height"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::eyeTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/style"_i18n));
-        Section::parts(this, box, &mii, MII_FIELD_EYE_TYPE, MII_GRID_EYE, changed);
-        box->addView(makeSectionTitle("editor/color"_i18n));
-        Section::colors(box, &mii, MII_FIELD_EYE_COLOR, changed);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYE_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYE_ASPECT, "editor/squash"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYE_ROTATE, "editor/rotation"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYE_X, "editor/spacing"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_EYE_Y, "editor/height"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::noseTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/style"_i18n));
-        Section::parts(this, box, &mii, MII_FIELD_NOSE_TYPE, MII_GRID_NOSE, changed);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_NOSE_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_NOSE_Y, "editor/height"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::mouthTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/style"_i18n));
-        Section::parts(this, box, &mii, MII_FIELD_MOUTH_TYPE, MII_GRID_MOUTH, changed);
-        box->addView(makeSectionTitle("editor/color"_i18n));
-        Section::colors(box, &mii, MII_FIELD_MOUTH_COLOR, changed);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MOUTH_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MOUTH_ASPECT, "editor/thickness"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MOUTH_Y, "editor/height"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::facialHairTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/mustache"_i18n));
-        Section::range(box, &mii, MII_FIELD_MUSTACHE_TYPE, 6, changed);
-        box->addView(makeSectionTitle("editor/beard"_i18n));
-        Section::range(box, &mii, MII_FIELD_BEARD_TYPE, 6, changed);
-        box->addView(makeSectionTitle("editor/color"_i18n));
-        Section::colors(box, &mii, MII_FIELD_BEARD_COLOR, changed);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MUSTACHE_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MUSTACHE_Y, "editor/height"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::glassesTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/style"_i18n));
-        Section::parts(this, box, &mii, MII_FIELD_GLASS_TYPE, MII_GRID_GLASS, changed);
-        box->addView(makeSectionTitle("editor/color"_i18n));
-        Section::colors(box, &mii, MII_FIELD_GLASS_COLOR, changed);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_GLASS_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_GLASS_Y, "editor/height"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::moleTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        auto* on = new brls::BooleanCell();
-        on->init("editor/mole"_i18n, mii.mole_type, [this](bool v) {
-            mii.mole_type = v;
-            this->changed();
-        });
-        box->addView(on);
-        box->addView(makeSectionTitle("editor/adjust"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MOLE_SCALE, "editor/size"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MOLE_X, "editor/horizontal"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_MOLE_Y, "editor/vertical"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::bodyTab()
-{
-    return makeTab([this](brls::Box* box) {
-        auto changed = [this] { this->changed(); };
-        box->addView(makeSectionTitle("editor/body"_i18n));
-        box->addView(new FieldSlider(&mii, MII_FIELD_HEIGHT, "editor/height"_i18n, changed));
-        box->addView(new FieldSlider(&mii, MII_FIELD_BUILD, "editor/build"_i18n, changed));
-    });
-}
-
-brls::View* EditorActivity::createContentView()
-{
-    auto* root = new brls::Box(brls::Axis::ROW);
-
-    auto* preview = new MiiPreview(&mii, 256);
-    preview->setWidth(270);
-    preview->setMargins(16, 0, 16, 16);
-    root->addView(preview);
-
-    auto* tabs = new brls::TabFrame();
-    tabs->setGrow(1);
-    tabs->addTab("editor/tabs/profile"_i18n, [this] { return profileTab(); });
-    tabs->addTab("editor/tabs/face"_i18n, [this] { return faceTab(); });
-    tabs->addTab("editor/tabs/hair"_i18n, [this] { return hairTab(); });
-    tabs->addTab("editor/tabs/eyebrows"_i18n, [this] { return eyebrowTab(); });
-    tabs->addTab("editor/tabs/eyes"_i18n, [this] { return eyeTab(); });
-    tabs->addTab("editor/tabs/nose"_i18n, [this] { return noseTab(); });
-    tabs->addTab("editor/tabs/mouth"_i18n, [this] { return mouthTab(); });
-    tabs->addTab("editor/tabs/facial_hair"_i18n, [this] { return facialHairTab(); });
-    tabs->addTab("editor/tabs/glasses"_i18n, [this] { return glassesTab(); });
-    tabs->addTab("editor/tabs/mole"_i18n, [this] { return moleTab(); });
-    tabs->addTab("editor/tabs/body"_i18n, [this] { return bodyTab(); });
-    root->addView(tabs);
-
-    auto* frame = new brls::AppletFrame(root);
-    frame->setTitle("editor/title"_i18n);
-    frame->registerAction("editor/save"_i18n, brls::BUTTON_START, [this](brls::View*) { return save(); });
-    // Keyboard shortcut for desktop builds (no START key there).
-    frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_S, brls::BRLS_KBD_MODIFIER_CTRL),
-        [this](brls::View*) { return save(); });
-    frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return close(); });
-    // L / R turn the preview, in the steps the 3D renderer caches well.
-    frame->registerAction("editor/turn_left"_i18n, brls::BUTTON_LB, [preview](brls::View*) {
-        preview->setYaw(std::fmax(-60.0f, preview->getYaw() - 20.0f));
-        return true;
-    }, false, true);
-    frame->registerAction("editor/turn_right"_i18n, brls::BUTTON_RB, [preview](brls::View*) {
-        preview->setYaw(std::fmin(60.0f, preview->getYaw() + 20.0f));
-        return true;
-    }, false, true);
+    box->setPadding(24, 30, 40, 30);
+    fill(box);
+    auto* frame = new brls::ScrollingFrame();
+    frame->setContentView(box);
     return frame;
 }
 
-bool EditorActivity::save()
+static OptionGrid* partsGrid(EditorSession* s, mii_field_t field, mii_grid_kind_t kind)
 {
-    if (mii_verify(&mii, 0) != MII_FIELD_COUNT) {
-        brls::Application::notify("editor/invalid"_i18n);
-        return true;
+    int cols;
+    std::vector<uint8_t> items = gridItems(kind, &cols);
+    OptionGrid::Options o;
+    o.columns = cols;
+    o.iconOf = iconFor(field);
+    if (field == MII_FIELD_EYE_TYPE || field == MII_FIELD_EYEBROW_TYPE)
+        o.iconScale = 0.86f;
+    if (field == MII_FIELD_GLASS_TYPE) {
+        o.paint = [](NVGcontext* vg, uint8_t, float x, float y, float sz) { paintRing(vg, x, y, sz); };
+        o.iconScale = 0.6f;
     }
-    if (MiiLibrary::instance().put(&mii) < 0) {
-        brls::Application::notify("editor/save_failed"_i18n);
-        return true;
-    }
-    dirty = false;
-    auto cb = onSaved;
-    brls::Application::popActivity(brls::TransitionAnimation::FADE, [cb] {
-        if (cb)
-            cb();
-    });
-    return true;
+    return new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
 }
 
-bool EditorActivity::close()
+static OptionGrid* rangeGrid(EditorSession* s, mii_field_t field, int cols)
 {
-    if (!dirty) {
-        brls::Application::popActivity();
-        return true;
-    }
-    auto* dialog = new brls::Dialog("editor/discard"_i18n);
-    dialog->addButton("hints/cancel"_i18n, [] {});
-    dialog->addButton("editor/discard_yes"_i18n, [] { brls::Application::popActivity(); });
-    dialog->open();
-    return true;
+    OptionGrid::Options o;
+    o.columns = cols;
+    o.iconOf = iconFor(field);
+    return new OptionGrid(&s->mii, field, OptionGrid::range(field), o, [s] { s->dirty = true; });
 }
+
+static OptionGrid* colorGrid(EditorSession* s, mii_field_t field)
+{
+    int cols;
+    std::vector<uint8_t> items = gridItems(MII_GRID_COMMON_COLOR, &cols);
+    OptionGrid::Options o;
+    o.columns = cols;
+    o.cell = 56;
+    o.gap = 8;
+    o.colorOf = [](uint8_t v) { return mii_common_color_rgb(v); };
+    return new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
+}
+
+static brls::View* colorPage(EditorSession* s, mii_field_t field)
+{
+    return page([=](brls::Box* box) { box->addView(colorGrid(s, field)); }, true);
+}
+
+struct SliderSpec {
+    mii_field_t field;
+    const char* key;
+};
+
+static brls::View* positionPage(EditorSession* s, std::initializer_list<SliderSpec> sliders)
+{
+    std::vector<SliderSpec> list(sliders);
+    return page([=](brls::Box* box) {
+        for (const SliderSpec& sp : list) {
+            auto* slider = new FieldSlider(&s->mii, sp.field, brls::getStr(sp.key), [s] { s->dirty = true; });
+            slider->setWidth(600);
+            box->addView(slider);
+        }
+    }, false);
+}
+
+// ---- category pages ----------------------------------------------------
+
+CategoryActivity::CategoryActivity(std::shared_ptr<EditorSession> session, Category category)
+    : session(std::move(session))
+    , category(category)
+{
+}
+
+void CategoryActivity::addTabs()
+{
+    EditorSession* s = session.get();
+    auto types = "editor/tabs/types"_i18n;
+    auto position = "editor/tabs/position"_i18n;
+    auto color = "editor/tabs/color"_i18n;
+
+    switch (category) {
+    case Category::FACE:
+        tabs.push_back({ "editor/tabs/shape"_i18n, [s] {
+            return page([s](brls::Box* b) { b->addView(rangeGrid(s, MII_FIELD_FACELINE_TYPE, 4)); }, false);
+        } });
+        tabs.push_back({ "editor/tabs/wrinkles"_i18n, [s] {
+            return page([s](brls::Box* b) { b->addView(rangeGrid(s, MII_FIELD_FACELINE_WRINKLE, 6)); }, false);
+        } });
+        tabs.push_back({ "editor/tabs/makeup"_i18n, [s] {
+            return page([s](brls::Box* b) { b->addView(rangeGrid(s, MII_FIELD_FACELINE_MAKE, 6)); }, false);
+        } });
+        tabs.push_back({ color, [s] {
+            return page([s](brls::Box* b) {
+                int cols;
+                std::vector<uint8_t> items = gridItems(MII_GRID_FACELINE_COLOR, &cols);
+                OptionGrid::Options o;
+                o.columns = cols;
+                o.cell = 80;
+                o.colorOf = [](uint8_t v) { return mii_faceline_color_rgb(v); };
+                b->addView(new OptionGrid(&s->mii, MII_FIELD_FACELINE_COLOR, items, o, [s] { s->dirty = true; }));
+            }, false);
+        } });
+        break;
+
+    case Category::HAIR:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_HAIR_TYPE, MII_GRID_HAIR)); }, true);
+        } });
+        tabs.push_back({ color, [s] {
+            return page([s](brls::Box* b) {
+                b->addView(colorGrid(s, MII_FIELD_HAIR_COLOR));
+                auto* flip = new brls::BooleanCell();
+                flip->init("editor/flip_part"_i18n, s->mii.hair_flip, [s](bool on) {
+                    s->mii.hair_flip = on;
+                    s->dirty = true;
+                });
+                flip->setWidth(600);
+                flip->setMarginTop(24);
+                b->addView(flip);
+            }, true);
+        } });
+        break;
+
+    case Category::EYEBROWS:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_EYEBROW_TYPE, MII_GRID_EYEBROW)); }, true);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_EYEBROW_SCALE, "editor/size" },
+                                       { MII_FIELD_EYEBROW_ASPECT, "editor/thickness" },
+                                       { MII_FIELD_EYEBROW_ROTATE, "editor/rotation" },
+                                       { MII_FIELD_EYEBROW_X, "editor/spacing" },
+                                       { MII_FIELD_EYEBROW_Y, "editor/height" } });
+        } });
+        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_EYEBROW_COLOR); } });
+        break;
+
+    case Category::EYES:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_EYE_TYPE, MII_GRID_EYE)); }, true);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_EYE_SCALE, "editor/size" },
+                                       { MII_FIELD_EYE_ASPECT, "editor/squash" },
+                                       { MII_FIELD_EYE_ROTATE, "editor/rotation" },
+                                       { MII_FIELD_EYE_X, "editor/spacing" },
+                                       { MII_FIELD_EYE_Y, "editor/height" } });
+        } });
+        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_EYE_COLOR); } });
+        break;
+
+    case Category::NOSE:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_NOSE_TYPE, MII_GRID_NOSE)); }, false);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_NOSE_SCALE, "editor/size" }, { MII_FIELD_NOSE_Y, "editor/height" } });
+        } });
+        break;
+
+    case Category::MOUTH:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_MOUTH_TYPE, MII_GRID_MOUTH)); }, true);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_MOUTH_SCALE, "editor/size" },
+                                       { MII_FIELD_MOUTH_ASPECT, "editor/thickness" },
+                                       { MII_FIELD_MOUTH_Y, "editor/height" } });
+        } });
+        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_MOUTH_COLOR); } });
+        break;
+
+    case Category::FACIAL_HAIR:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) {
+                b->addView(makeSectionTitle("editor/mustache"_i18n));
+                OptionGrid::Options o;
+                o.columns = 3;
+                o.iconOf = iconFor(MII_FIELD_MUSTACHE_TYPE);
+                o.paint = [](NVGcontext* vg, uint8_t, float x, float y, float sz) { paintRing(vg, x, y, sz); };
+                o.iconScale = 0.36f;
+                o.iconDy = 0.1f;
+                b->addView(new OptionGrid(&s->mii, MII_FIELD_MUSTACHE_TYPE,
+                    OptionGrid::range(MII_FIELD_MUSTACHE_TYPE), o, [s] { s->dirty = true; }));
+                auto* beard = makeSectionTitle("editor/beard"_i18n);
+                beard->setMarginTop(26);
+                b->addView(beard);
+                b->addView(rangeGrid(s, MII_FIELD_BEARD_TYPE, 3));
+            }, true);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_MUSTACHE_SCALE, "editor/size" },
+                                       { MII_FIELD_MUSTACHE_Y, "editor/height" } });
+        } });
+        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_BEARD_COLOR); } });
+        break;
+
+    case Category::MOLE:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) {
+                OptionGrid::Options o;
+                o.columns = 2;
+                o.paint = [](NVGcontext* vg, uint8_t v, float x, float y, float sz) {
+                    paintRing(vg, x, y, sz);
+                    if (v) {
+                        nvgBeginPath(vg);
+                        nvgCircle(vg, x + sz * 0.42f, y + sz * 0.56f, sz * 0.035f);
+                        nvgFillColor(vg, ui::kText);
+                        nvgFill(vg);
+                    }
+                };
+                b->addView(new OptionGrid(&s->mii, MII_FIELD_MOLE_TYPE, { 0, 1 }, o, [s] { s->dirty = true; }));
+            }, false);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_MOLE_SCALE, "editor/size" },
+                                       { MII_FIELD_MOLE_X, "editor/horizontal" },
+                                       { MII_FIELD_MOLE_Y, "editor/vertical" } });
+        } });
+        break;
+
+    case Category::GLASSES:
+        tabs.push_back({ types, [s] {
+            return page([s](brls::Box* b) { b->addView(partsGrid(s, MII_FIELD_GLASS_TYPE, MII_GRID_GLASS)); }, false);
+        } });
+        tabs.push_back({ position, [s] {
+            return positionPage(s, { { MII_FIELD_GLASS_SCALE, "editor/size" }, { MII_FIELD_GLASS_Y, "editor/height" } });
+        } });
+        tabs.push_back({ color, [s] { return colorPage(s, MII_FIELD_GLASS_COLOR); } });
+        break;
+
+    case Category::STYLE:
+        tabs.push_back({ "", [s] {
+            return page([s](brls::Box* b) {
+                b->addView(makePrompt("editor/prompt/style"_i18n));
+                OptionGrid::Options o;
+                o.columns = 2;
+                o.cell = 200;
+                o.gap = 16;
+                o.paint = [](NVGcontext* vg, uint8_t v, float x, float y, float sz) {
+                    drawGlyph(vg, v ? Glyph::PERSON_B : Glyph::PERSON_A, x + sz * 0.15f, y + sz * 0.15f, sz * 0.7f,
+                        ui::kText, ui::kText);
+                };
+                b->addView(new OptionGrid(&s->mii, MII_FIELD_GENDER, { 0, 1 }, o, [s] { s->dirty = true; }));
+                auto* note = new brls::Label();
+                note->setText("editor/prompt/style_note"_i18n);
+                note->setFontSize(20);
+                note->setMarginTop(28);
+                b->addView(note);
+            }, false);
+        } });
+        break;
+
+    case Category::BODY:
+        tabs.push_back({ "", [s] {
+            return page([s](brls::Box* b) {
+                b->addView(makePrompt("editor/prompt/body"_i18n));
+                auto glyph = [](Glyph g) {
+                    auto* v = new GlyphView(g, 84);
+                    v->setGlyphColor(nvgRGB(110, 110, 110));
+                    return v;
+                };
+                auto changed = [s] { s->dirty = true; };
+                auto* height = new FieldSlider(&s->mii, MII_FIELD_HEIGHT, glyph(Glyph::BODY_SHORT),
+                    glyph(Glyph::BODY_TALL), changed);
+                height->setWidth(620);
+                b->addView(height);
+                auto* build = new FieldSlider(&s->mii, MII_FIELD_BUILD, glyph(Glyph::BODY_THIN),
+                    glyph(Glyph::BODY_WIDE), changed);
+                build->setWidth(620);
+                b->addView(build);
+            }, false);
+        } });
+        break;
+
+    case Category::FAVORITE_COLOR:
+        tabs.push_back({ "", [s] {
+            return page([s](brls::Box* b) {
+                b->addView(makePrompt("editor/prompt/favorite_color"_i18n));
+                OptionGrid::Options o;
+                o.columns = 6;
+                o.colorOf = [](uint8_t v) { return kFavoriteSwatch[v % 12]; };
+                b->addView(new OptionGrid(&s->mii, MII_FIELD_FAVORITE_COLOR, OptionGrid::range(MII_FIELD_FAVORITE_COLOR),
+                    o, [s] { s->dirty = true; }));
+            }, false);
+        } });
+        break;
+
+    case Category::COUNT:
+        break;
+    }
+}
+
+brls::View* CategoryActivity::createContentView()
+{
+    addTabs();
+
+    auto* right = new brls::Box(brls::Axis::COLUMN);
+    if (tabs.size() > 1) {
+        std::vector<std::string> names;
+        for (const Tab& t : tabs)
+            names.push_back(t.name);
+        tabBar = new TabBar(names, [this](int i) { setTab(i); });
+        tabBar->setMarginTop(8);
+        right->addView(tabBar);
+    }
+    body = new brls::Box(brls::Axis::COLUMN);
+    body->setGrow(1);
+    right->addView(body);
+
+    brls::AppletFrame* frame = editorFrame(*session, right, nullptr);
+    frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
+        brls::Application::popActivity(brls::TransitionAnimation::NONE);
+        return true;
+    });
+    if (tabs.size() > 1) {
+        // the tab bar shows the L / R glyphs, so no hints for these
+        frame->registerAction("", brls::BUTTON_LB, [this](brls::View*) {
+            if (active > 0)
+                setTab(active - 1);
+            return true;
+        }, true);
+        frame->registerAction("", brls::BUTTON_RB, [this](brls::View*) {
+            if (active + 1 < (int)tabs.size())
+                setTab(active + 1);
+            return true;
+        }, true);
+        // desktop builds: Q / E (keyboards have no shoulder buttons)
+        frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_Q), [this](brls::View*) {
+            setTab(active - 1);
+            return true;
+        });
+        frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_E), [this](brls::View*) {
+            setTab(active + 1);
+            return true;
+        });
+    }
+    setTab(0);
+    return frame;
+}
+
+void CategoryActivity::setTab(int index)
+{
+    if (index == active || index < 0 || index >= (int)tabs.size())
+        return;
+    brls::View* next = tabs[index].build();
+    next->setGrow(1);
+    body->addView(next);
+    brls::View* old = current;
+    current = next;
+    active = index;
+    if (tabBar)
+        tabBar->setActive(index);
+    if (old) {
+        // move focus off the old page before freeing it
+        brls::Application::giveFocus(next);
+        body->removeView(old);
+    }
+}
+

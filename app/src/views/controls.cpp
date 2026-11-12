@@ -1,5 +1,7 @@
 #include "views/controls.hpp"
 
+#include "ui_theme.hpp"
+
 #include <cmath>
 #include <cstring>
 
@@ -8,35 +10,86 @@ static NVGcolor rgb(uint32_t c)
     return nvgRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
 }
 
-// A grid tile that shows a rendered icon once HeadRenderer delivers it.
-// Icons are requested lazily, when the tile is first drawn, so only what is
-// on screen gets rendered; the spec is re-checked every frame, so icons
-// follow color changes.
-class IconCell : public brls::Box
+// One tile of an OptionGrid: a color swatch, or a light tile with vector
+// art, a rendered icon (requested from HeadRenderer the first time the tile
+// is drawn, so only what is on screen gets rendered) or a label.
+class GridCell : public brls::Box
 {
   public:
-    IconCell(const mii_charinfo_t* mii, uint8_t value, int iconSize, OptionGrid::IconOf iconOf)
-        : mii(mii), value(value), iconSize(iconSize), iconOf(std::move(iconOf))
+    GridCell(const mii_charinfo_t* mii, uint8_t value, const OptionGrid::Options& opt)
+        : mii(mii)
+        , value(value)
+        , opt(opt)
     {
         std::memset(&requested.mii, 0, sizeof(requested.mii));
+        iconSize = (int)std::lround(opt.cell * 1.15f * opt.iconScale);
+        if (iconSize < 32)
+            iconSize = 32;
+        this->setJustifyContent(brls::JustifyContent::CENTER);
+        this->setAlignItems(brls::AlignItems::CENTER);
+        if (!opt.colorOf && !opt.paint) {
+            auto* label = new brls::Label();
+            label->setText(opt.labelOf ? opt.labelOf(value) : std::to_string(value + 1));
+            label->setFontSize(opt.labelOf ? 22 : 20);
+            label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+            this->addView(label);
+        }
     }
 
-    ~IconCell() override
+    ~GridCell() override
     {
         HeadRenderer::instance().forget(this);
         if (nvgImage >= 0)
             nvgDeleteImage(brls::Application::getNVGContext(), nvgImage);
     }
 
+    void setSelected(bool s) { selected = s; }
+
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override
+    {
+        nvgBeginPath(vg);
+        nvgRect(vg, x, y, width, height);
+        nvgFillColor(vg, opt.colorOf ? rgb(opt.colorOf(value)) : ui::kTile);
+        nvgFill(vg);
+
+        const float side = std::fmin(width, height);
+        const float sx = x + (width - side) / 2, sy = y + (height - side) / 2;
+        if (opt.paint)
+            opt.paint(vg, value, sx, sy, side);
+
+        bool drewIcon = false;
+        if (opt.iconOf)
+            drewIcon = drawIcon(vg, sx, sy, side);
+        if (!drewIcon && !opt.colorOf && !opt.paint)
+            brls::Box::draw(vg, x, y, width, height, style, ctx);
+
+        if (selected) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x + 2, y + 2, width - 4, height - 4);
+            nvgStrokeColor(vg, ui::kAccent);
+            nvgStrokeWidth(vg, 4);
+            nvgStroke(vg);
+            if (opt.colorOf) {
+                nvgBeginPath(vg);
+                nvgRect(vg, x + 5.5f, y + 5.5f, width - 11, height - 11);
+                nvgStrokeColor(vg, nvgRGB(255, 255, 255));
+                nvgStrokeWidth(vg, 3);
+                nvgStroke(vg);
+            }
+        }
+    }
+
+  private:
+    bool drawIcon(NVGcontext* vg, float sx, float sy, float side)
     {
         HeadRenderer& hr = HeadRenderer::instance();
         if (hr.available()) {
             HeadRenderer::Spec spec;
             spec.size = iconSize;
             spec.lowPriority = true;
-            iconOf(value, *mii, &spec);
+            opt.iconOf(value, *mii, &spec);
+            // re-checked every frame, so icons follow the Mii's colors
             if (!hasRequested || std::memcmp(&spec.mii, &requested.mii, sizeof(spec.mii)) != 0 ||
                 spec.icon != requested.icon) {
                 requested = spec;
@@ -47,28 +100,27 @@ class IconCell : public brls::Box
                 });
             }
         }
-        if (image) {
-            if (nvgImage < 0)
-                nvgImage = nvgCreateImageRGBA(vg, iconSize, iconSize, 0, image->data());
-            else if (dirty)
-                nvgUpdateImage(vg, nvgImage, image->data());
-            dirty = false;
-            const float side = std::fmin(width, height) - 4;
-            const float ix = x + (width - side) / 2, iy = y + (height - side) / 2;
-            nvgBeginPath(vg);
-            nvgRect(vg, ix, iy, side, side);
-            nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, nvgImage, 1.0f));
-            nvgFill(vg);
-            return; // the icon replaces the number
-        }
-        brls::Box::draw(vg, x, y, width, height, style, ctx);
+        if (!image)
+            return false;
+        if (nvgImage < 0)
+            nvgImage = nvgCreateImageRGBA(vg, iconSize, iconSize, 0, image->data());
+        else if (dirty)
+            nvgUpdateImage(vg, nvgImage, image->data());
+        dirty = false;
+        const float s = (side - 6) * opt.iconScale;
+        const float ix = sx + (side - s) / 2, iy = sy + (side - s) / 2 + opt.iconDy * side;
+        nvgBeginPath(vg);
+        nvgRect(vg, ix, iy, s, s);
+        nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, s, s, 0.0f, nvgImage, 1.0f));
+        nvgFill(vg);
+        return true;
     }
 
-  private:
     const mii_charinfo_t* mii;
     uint8_t value;
+    const OptionGrid::Options& opt;
     int iconSize;
-    OptionGrid::IconOf iconOf;
+    bool selected = false;
     HeadRenderer::Spec requested;
     bool hasRequested = false;
     HeadRenderer::Image image;
@@ -84,40 +136,34 @@ std::vector<uint8_t> OptionGrid::range(mii_field_t field)
     return v;
 }
 
-OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8_t> items, int columns,
-    float cellSize, ColorOf colorOf, LabelOf labelOf, std::function<void()> onChange, IconOf iconOf)
+OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8_t> items, Options options,
+    std::function<void()> onChange)
     : brls::Box(brls::Axis::COLUMN)
     , mii(mii)
     , field(field)
     , values(std::move(items))
     , onChange(std::move(onChange))
+    , opt(std::move(options))
 {
+    // cells keep a reference to `opt`; they are freed after it, but their
+    // destructors do not touch it
+
+    const float w = opt.labelOf && !opt.colorOf ? opt.cell * 2.4f : opt.cell;
     brls::Box* row = nullptr;
     for (size_t i = 0; i < values.size(); i++) {
-        if (i % columns == 0) {
+        if (i % opt.columns == 0) {
             row = new brls::Box(brls::Axis::ROW);
-            row->setMarginBottom(8);
+            if (i > 0)
+                row->setMarginTop(opt.gap);
             this->addView(row);
         }
         const uint8_t value = values[i];
-        brls::Box* cell = iconOf && !colorOf
-            ? new IconCell(this->mii, value, 96, iconOf)
-            : new brls::Box();
-        cell->setDimensions(labelOf && !colorOf ? cellSize * 1.6f : cellSize, cellSize);
-        cell->setMarginRight(8);
-        cell->setCornerRadius(colorOf ? cellSize / 2 : 10);
-        cell->setHighlightCornerRadius(colorOf ? cellSize / 2 : 12);
+        auto* cell = new GridCell(this->mii, value, opt);
+        cell->setDimensions(w, opt.cell);
+        if (i % opt.columns != 0)
+            cell->setMarginLeft(opt.gap);
         cell->setFocusable(true);
-        cell->setJustifyContent(brls::JustifyContent::CENTER);
-        cell->setAlignItems(brls::AlignItems::CENTER);
-        cell->setBackgroundColor(colorOf ? rgb(colorOf(value)) : nvgRGB(255, 255, 255));
-        if (!colorOf) {
-            auto* label = new brls::Label();
-            label->setText(labelOf ? labelOf(value) : std::to_string(value + 1));
-            label->setFontSize(labelOf ? 18 : 20);
-            label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-            cell->addView(label);
-        }
+        cell->setHighlightCornerRadius(3);
         cell->registerClickAction([this, value](brls::View*) {
             mii_field_set(this->mii, this->field, value);
             this->refresh();
@@ -135,48 +181,152 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
 void OptionGrid::refresh()
 {
     const uint8_t current = mii_field_get(mii, field);
+    for (size_t i = 0; i < cells.size(); i++)
+        cells[i]->setSelected(values[i] == current);
+}
+
+brls::View* OptionGrid::getDefaultFocus()
+{
+    const uint8_t current = mii_field_get(mii, field);
     for (size_t i = 0; i < cells.size(); i++) {
-        const bool selected = values[i] == current;
-        cells[i]->setBorderColor(selected ? nvgRGB(255, 160, 0) : nvgRGBA(0, 0, 0, 40));
-        cells[i]->setBorderThickness(selected ? 4.0f : 1.0f);
+        if (values[i] == current)
+            return cells[i];
     }
+    return cells.empty() ? nullptr : cells[0];
+}
+
+// ---- FieldSlider -------------------------------------------------------
+
+brls::Slider* FieldSlider::makeSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange)
+{
+    const int lo = mii_field_min(field), hi = mii_field_max(field);
+    auto* slider = new brls::Slider();
+    slider->setGrow(1);
+    slider->setStep(1.0f / (float)(hi - lo));
+    slider->setProgress((float)(mii_field_get(mii, field) - lo) / (float)(hi - lo));
+    slider->getProgressEvent()->subscribe([mii, field, lo, hi, onChange](float progress) {
+        const int v = lo + (int)std::lround(progress * (float)(hi - lo));
+        if (v == mii_field_get(mii, field))
+            return;
+        mii_field_set(mii, field, v);
+        if (onChange)
+            onChange();
+    });
+    return slider;
 }
 
 FieldSlider::FieldSlider(mii_charinfo_t* mii, mii_field_t field, const std::string& title,
     std::function<void()> onChange)
     : brls::Box(brls::Axis::ROW)
 {
-    const int lo = mii_field_min(field), hi = mii_field_max(field);
     this->setAlignItems(brls::AlignItems::CENTER);
-    this->setHeight(56);
-    this->setMarginBottom(6);
+    this->setHeight(64);
+    this->setMarginBottom(8);
 
     auto* label = new brls::Label();
     label->setText(title);
-    label->setFontSize(20);
-    label->setWidth(150);
+    label->setFontSize(22);
+    label->setWidth(170);
     this->addView(label);
+    this->addView(makeSlider(mii, field, std::move(onChange)));
+}
 
-    auto* slider = new brls::Slider();
-    slider->setGrow(1);
-    slider->setStep(1.0f / (float)(hi - lo));
-    slider->setProgress((float)(mii_field_get(mii, field) - lo) / (float)(hi - lo));
-    this->addView(slider);
+FieldSlider::FieldSlider(mii_charinfo_t* mii, mii_field_t field, brls::View* lowEnd, brls::View* highEnd,
+    std::function<void()> onChange)
+    : brls::Box(brls::Axis::ROW)
+{
+    this->setAlignItems(brls::AlignItems::CENTER);
+    this->setHeight(96);
+    this->setMarginBottom(16);
+    lowEnd->setMarginRight(16);
+    highEnd->setMarginLeft(16);
+    this->addView(lowEnd);
+    this->addView(makeSlider(mii, field, std::move(onChange)));
+    this->addView(highEnd);
+}
 
-    value = new brls::Label();
-    value->setFontSize(20);
-    value->setWidth(48);
-    value->setHorizontalAlign(brls::HorizontalAlign::RIGHT);
-    value->setText(std::to_string(mii_field_get(mii, field)));
-    this->addView(value);
+// ---- TabBar ------------------------------------------------------------
 
-    slider->getProgressEvent()->subscribe([this, mii, field, lo, hi, onChange](float progress) {
-        int v = lo + (int)std::lround(progress * (float)(hi - lo));
-        v = mii_field_set(mii, field, v);
-        this->value->setText(std::to_string(v));
-        if (onChange)
-            onChange();
-    });
+static brls::Label* glyphLabel(const char* text)
+{
+    auto* l = new brls::Label();
+    l->setText(text);
+    l->setFontSize(30);
+    l->setWidth(60);
+    l->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    return l;
+}
+
+TabBar::TabBar(const std::vector<std::string>& names, std::function<void(int)> onSelect)
+    : brls::Box(brls::Axis::ROW)
+{
+    this->setHeight(76);
+    this->setAlignItems(brls::AlignItems::CENTER);
+    this->setPadding(0, 16, 0, 16);
+
+    left = glyphLabel("");
+    this->addView(left);
+    for (size_t i = 0; i < names.size(); i++) {
+        auto* tab = new brls::Box();
+        tab->setGrow(1);
+        tab->setHeight(76);
+        tab->setJustifyContent(brls::JustifyContent::CENTER);
+        tab->setAlignItems(brls::AlignItems::CENTER);
+        auto* label = new brls::Label();
+        label->setText(names[i]);
+        label->setFontSize(26);
+        tab->addView(label);
+        const int index = (int)i;
+        tab->addGestureRecognizer(new brls::TapGestureRecognizer(tab, [onSelect, index] { onSelect(index); }));
+        this->addView(tab);
+        tabs.push_back(tab);
+        labels.push_back(label);
+    }
+    right = glyphLabel("");
+    this->addView(right);
+    setActive(0);
+}
+
+void TabBar::setActive(int index)
+{
+    active = index;
+    for (size_t i = 0; i < labels.size(); i++)
+        labels[i]->setTextColor((int)i == active ? ui::kAccent : ui::kText);
+    left->setTextColor(active > 0 ? ui::kText : nvgRGB(200, 200, 200));
+    right->setTextColor(active + 1 < (int)labels.size() ? ui::kText : nvgRGB(200, 200, 200));
+}
+
+void TabBar::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+    brls::FrameContext* ctx)
+{
+    brls::Box::draw(vg, x, y, width, height, style, ctx);
+
+    nvgBeginPath(vg);
+    nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
+    nvgFillColor(vg, ui::kRule);
+    nvgFill(vg);
+
+    if (active >= 0 && active < (int)tabs.size()) {
+        brls::Box* tab = tabs[active];
+        const float lw = std::fmin(tab->getWidth() * 0.8f, labels[active]->getWidth() + 28.0f);
+        const float lx = tab->getX() + (tab->getWidth() - lw) / 2;
+        nvgBeginPath(vg);
+        nvgRect(vg, lx, y + height - 6, lw, 4);
+        nvgFillColor(vg, ui::kAccent);
+        nvgFill(vg);
+    }
+}
+
+// ---- labels ------------------------------------------------------------
+
+brls::Label* makePrompt(const std::string& text)
+{
+    auto* label = new brls::Label();
+    label->setText(text);
+    label->setFontSize(26);
+    label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    label->setMarginBottom(28);
+    return label;
 }
 
 brls::Label* makeSectionTitle(const std::string& text)
@@ -184,8 +334,7 @@ brls::Label* makeSectionTitle(const std::string& text)
     auto* label = new brls::Label();
     label->setText(text);
     label->setFontSize(22);
-    label->setMarginTop(14);
-    label->setMarginBottom(10);
-    label->setTextColor(nvgRGB(90, 90, 110));
+    label->setMarginTop(6);
+    label->setMarginBottom(12);
     return label;
 }

@@ -6,6 +6,7 @@
 #include "activities/library_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
+#include "ui_theme.hpp"
 
 using namespace brls::literals;
 
@@ -16,10 +17,7 @@ int main(int argc, char* argv[])
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
     }
 
-    // A narrower sidebar leaves room for the preview on the Vita's screen.
-    brls::getStyle().addMetric("brls/tab_frame/sidebar_width", 250.0f);
-    brls::getStyle().addMetric("brls/sidebar/padding_left", 30.0f);
-    brls::getStyle().addMetric("brls/sidebar/padding_right", 20.0f);
+    ui::applyTheme();
 
     if (!brls::Application::init()) {
         brls::Logger::error("Unable to init borealis");
@@ -32,8 +30,8 @@ int main(int argc, char* argv[])
     brls::Application::setGlobalQuit(false);
 
     MiiLibrary::instance().load();
-    // 3D heads need the user's own Wii U face resource; without it the
-    // previews use the built-in 2D renderer.
+    // 3D heads need a face resource the user provides; without it the
+    // previews say where to put it.
     HeadRenderer::instance().init(MiiLibrary::instance().dataDir());
 
     brls::Application::pushActivity(new LibraryActivity());

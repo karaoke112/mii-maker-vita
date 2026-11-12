@@ -21,10 +21,14 @@ ports can then use them from a shared database.
   order. Checked byte-for-byte against [MiiJS](https://github.com/Stewared/MiiJS)
   on hundreds of real Mii files.
 - **Editor app** (`app/`, C++ on [borealis](https://github.com/xfangfang/borealis)):
-  create from a male/female base, all eleven categories (profile, face, hair,
-  eyebrows, eyes, nose, mouth, facial hair, glasses, mole, body), save to
-  `ux0:data/mii/database.nfdb`, export `.charinfo` / `.nfsd` / `.ffsd`, delete.
-  Builds to a `.vpk` (it has not been run on real Vita hardware yet).
+  laid out like the Switch 2 Mii editor: a large preview with a two-column
+  category menu, nickname and Done button; each category opens a page with
+  Types / Position / Color tabs (L / R) and picture tiles; Style, Body and
+  Favorite Color are single prompt pages. The right stick (or L / R on the
+  menu) turns the Mii. Saves to `ux0:data/mii/database.nfdb`; export
+  `.charinfo` / `.nfsd` / `.ffsd`, delete. All icons and pictograms are
+  original vector drawings. Builds to a `.vpk` (it has not been run on real
+  Vita hardware yet).
 - **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face
   resources (including untiling Wii U GPU-tiled textures) and draws a Mii
   head with the Switch's lighting model in a small software rasterizer, so
