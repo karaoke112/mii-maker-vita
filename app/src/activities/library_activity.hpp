@@ -13,6 +13,7 @@ class LibraryActivity : public brls::Activity
   public:
     brls::View* createContentView() override;
     void onContentAvailable() override;
+    void onResume() override;
 
   private:
     void rebuild();
@@ -20,6 +21,7 @@ class LibraryActivity : public brls::Activity
     void exportMii(int index);
     void showAddMenu();
     void showSendMenu();
+    void showSettings();
     enum class Pick { NONE, EXPORT };
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
@@ -29,6 +31,7 @@ class LibraryActivity : public brls::Activity
     brls::Label* empty = nullptr;
     brls::Label* pickLabel = nullptr;
     Pick pick = Pick::NONE;
+    bool themeChanged = false;
     std::vector<brls::View*> cards;
     std::vector<mii_charinfo_t> miis;
 };

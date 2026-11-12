@@ -52,7 +52,7 @@ class GridCell : public brls::Box
     {
         nvgBeginPath(vg);
         nvgRect(vg, x, y, width, height);
-        nvgFillColor(vg, opt.colorOf ? rgb(opt.colorOf(value)) : ui::kTile);
+        nvgFillColor(vg, opt.colorOf ? rgb(opt.colorOf(value)) : ui::tile());
         nvgFill(vg);
 
         const float side = std::fmin(width, height);
@@ -63,7 +63,7 @@ class GridCell : public brls::Box
         bool drewIcon = false;
         if (opt.noneIcon && value == 0) {
             const float s = side * 0.42f;
-            ::drawIcon(vg, "none", sx + (side - s) / 2, sy + (side - s) / 2, s, ui::kRing);
+            ::drawIcon(vg, "none", sx + (side - s) / 2, sy + (side - s) / 2, s, ui::ring());
             drewIcon = true;
         } else if (opt.iconOf) {
             drewIcon = drawIcon(vg, sx, sy, side);
@@ -74,7 +74,7 @@ class GridCell : public brls::Box
         if (selected) {
             nvgBeginPath(vg);
             nvgRect(vg, x + 2, y + 2, width - 4, height - 4);
-            nvgStrokeColor(vg, ui::kAccent);
+            nvgStrokeColor(vg, ui::accent());
             nvgStrokeWidth(vg, 4);
             nvgStroke(vg);
             if (opt.colorOf) {
@@ -205,6 +205,12 @@ void OptionGrid::refresh()
 
 brls::View* OptionGrid::getDefaultFocus()
 {
+    // While the cursor is in the grid, that tile (scrolling frames center on
+    // the default focus); otherwise the chosen tile.
+    brls::View* focus = brls::Application::getCurrentFocus();
+    for (GridCell* c : cells)
+        if (c == focus)
+            return c;
     const uint8_t current = mii_field_get(mii, field);
     for (size_t i = 0; i < cells.size(); i++) {
         if (values[i] == current)
@@ -254,18 +260,18 @@ class UnitSlider : public brls::Box
         const float kx = x0 + (x1 - x0) * t;
         nvgBeginPath(vg);
         nvgRoundedRect(vg, x0, cy - 3.5f, x1 - x0, 7, 3.5f);
-        nvgFillColor(vg, nvgRGB(205, 205, 205));
+        nvgFillColor(vg, ui::rule());
         nvgFill(vg);
         nvgBeginPath(vg);
         nvgRoundedRect(vg, x0, cy - 3.5f, kx - x0, 7, 3.5f);
-        nvgFillColor(vg, ui::kAccent);
+        nvgFillColor(vg, ui::accent());
         nvgFill(vg);
         nvgBeginPath(vg);
         nvgCircle(vg, kx, cy, kKnob - 4);
         nvgFillColor(vg, nvgRGB(255, 255, 255));
         nvgFill(vg);
         nvgStrokeWidth(vg, this->isFocused() ? 4.0f : 2.0f);
-        nvgStrokeColor(vg, this->isFocused() ? ui::kAccent : nvgRGB(190, 190, 190));
+        nvgStrokeColor(vg, this->isFocused() ? ui::accent() : ui::ring());
         nvgStroke(vg);
     }
 
@@ -412,9 +418,9 @@ void TabBar::setActive(int index)
 {
     active = index;
     for (size_t i = 0; i < labels.size(); i++)
-        labels[i]->setTextColor((int)i == active ? ui::kAccent : ui::kText);
-    left->setTextColor(active > 0 ? ui::kText : nvgRGB(200, 200, 200));
-    right->setTextColor(active + 1 < (int)labels.size() ? ui::kText : nvgRGB(200, 200, 200));
+        labels[i]->setTextColor((int)i == active ? ui::accent() : ui::text());
+    left->setTextColor(active > 0 ? ui::text() : ui::rule());
+    right->setTextColor(active + 1 < (int)labels.size() ? ui::text() : ui::rule());
 }
 
 void TabBar::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
@@ -424,7 +430,7 @@ void TabBar::draw(NVGcontext* vg, float x, float y, float width, float height, b
 
     nvgBeginPath(vg);
     nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
-    nvgFillColor(vg, ui::kRule);
+    nvgFillColor(vg, ui::rule());
     nvgFill(vg);
 
     if (active >= 0 && active < (int)tabs.size()) {
@@ -433,7 +439,7 @@ void TabBar::draw(NVGcontext* vg, float x, float y, float width, float height, b
         const float lx = tab->getX() + (tab->getWidth() - lw) / 2;
         nvgBeginPath(vg);
         nvgRect(vg, lx, y + height - 6, lw, 4);
-        nvgFillColor(vg, ui::kAccent);
+        nvgFillColor(vg, ui::accent());
         nvgFill(vg);
     }
 }

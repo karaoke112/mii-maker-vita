@@ -2,20 +2,27 @@
 
 #include <borealis.hpp>
 
-// The editor's look: a light gray page, white-gray tiles, blue selection,
-// thin gray rules. Loosely modeled on the Switch 2 Mii editor's layout.
+// The app's look: light (light gray pages, blue selection) or dark (dark
+// gray pages, green selection), loosely modeled on the Switch 2 Mii
+// editor. Colors are read when drawing, so switching applies at once.
 namespace ui {
 
-inline const NVGcolor kBackground = nvgRGB(235, 235, 235);
-inline const NVGcolor kTile = nvgRGB(247, 247, 247);
-inline const NVGcolor kText = nvgRGB(30, 30, 30);
-inline const NVGcolor kTextDim = nvgRGB(150, 150, 150);
-inline const NVGcolor kRule = nvgRGB(196, 196, 196);
-inline const NVGcolor kRing = nvgRGB(190, 190, 190);
-inline const NVGcolor kAccent = nvgRGB(10, 100, 220);
+enum class Theme { LIGHT, DARK };
 
-// Applies the colors and metrics above to borealis' light theme. Call
-// before brls::Application::init().
-void applyTheme();
+// Sets borealis' colors and metrics for `theme`. Call once before
+// brls::Application::init() (it also prepares both borealis themes) and
+// again with applyVariant() after it to switch.
+void applyTheme(Theme theme);
+// Switches borealis to the light or dark variant (after init).
+void applyVariant();
+Theme theme();
+
+NVGcolor background();
+NVGcolor tile();
+NVGcolor text();
+NVGcolor textDim();
+NVGcolor rule();
+NVGcolor ring();
+NVGcolor accent();
 
 } // namespace ui

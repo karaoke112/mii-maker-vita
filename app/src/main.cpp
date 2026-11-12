@@ -7,6 +7,7 @@
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
 #include "paths.hpp"
+#include "settings.hpp"
 #include "ui_theme.hpp"
 
 using namespace brls::literals;
@@ -18,19 +19,20 @@ int main(int argc, char* argv[])
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
     }
 
-    ui::applyTheme();
+    paths::prepare();
+    Settings::get().load();
+    ui::applyTheme(Settings::get().theme);
 
     if (!brls::Application::init()) {
         brls::Logger::error("Unable to init borealis");
         return EXIT_FAILURE;
     }
     brls::Application::createWindow("app/title"_i18n);
-    brls::Application::getPlatform()->setThemeVariant(brls::ThemeVariant::LIGHT);
-    // START means "save" in the editor, so only the library binds it to quit
-    // (global quit would override the editor's binding).
+    ui::applyVariant();
+    // START opens settings in the library and saves in the editor; the app is
+    // closed with the PS button.
     brls::Application::setGlobalQuit(false);
 
-    paths::prepare();
     MiiLibrary::instance().load();
     // 3D heads need a face resource the user provides; without it the
     // previews say where to put it.

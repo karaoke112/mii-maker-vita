@@ -434,6 +434,31 @@ static int ver3_roundtrip(int argc, char **argv)
     return bad ? 1 : 0;
 }
 
+/* Random Miis are always valid, average-sized, and vary. */
+static void test_random(void)
+{
+    uint32_t state = 12345;
+    int hair_seen[132] = { 0 }, distinct = 0, genders[2] = { 0, 0 };
+    for (int i = 0; i < 2000; i++) {
+        mii_charinfo_t ci;
+        mii_charinfo_init_random(&ci, -1, &state);
+        CHECK_EQ(mii_verify(&ci, 0), MII_FIELD_COUNT);
+        CHECK_EQ(ci.height, 64);
+        CHECK_EQ(ci.build, 64);
+        if (!hair_seen[ci.hair_type]++)
+            distinct++;
+        genders[ci.gender]++;
+    }
+    CHECK(distinct > 100);
+    CHECK(genders[0] > 800 && genders[1] > 800);
+    mii_charinfo_t a, b;
+    state = 7;
+    mii_charinfo_init_random(&a, 1, &state);
+    CHECK_EQ(a.gender, 1);
+    mii_charinfo_init_random(&b, 1, &state);
+    CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 3 && !strcmp(argv[1], "--gen-vectors"))
@@ -446,6 +471,7 @@ int main(int argc, char **argv)
     test_fields();
     test_names();
     test_create_id();
+    test_random();
     test_switch_roundtrips();
     test_ver3();
     test_nfdb();

@@ -67,7 +67,7 @@ class MenuRow : public brls::Box
         this->setPadding(0, 12, 0, 14);
         this->setFocusable(true);
         this->setHighlightCornerRadius(4);
-        icon = new IconView(iconName ? iconName : "", 40, ui::kText);
+        icon = new IconView(iconName ? iconName : "", 40, ui::text());
         if (!iconName)
             icon->setVisibility(brls::Visibility::GONE);
         this->addView(icon);
@@ -87,7 +87,7 @@ class MenuRow : public brls::Box
     {
         auto* v = new brls::Label();
         v->setFontSize(24);
-        v->setTextColor(ui::kAccent);
+        v->setTextColor(ui::accent());
         v->setHorizontalAlign(brls::HorizontalAlign::RIGHT);
         this->addView(v);
         return v;
@@ -101,7 +101,7 @@ class MenuRow : public brls::Box
         if (topRule)
             nvgRect(vg, x, y, width, 1.5f);
         nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
-        nvgFillColor(vg, ui::kRule);
+        nvgFillColor(vg, ui::rule());
         nvgFill(vg);
         brls::Box::draw(vg, x, y, width, height, style, ctx);
     }
@@ -173,7 +173,7 @@ brls::View* EditorActivity::createContentView()
     // the star shows the favorite color
     if (star) {
         IconView* g = star->iconView();
-        g->setOverlay("star_outline", ui::kText);
+        g->setOverlay("star_outline", ui::text());
         g->setColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
         favoriteStar = g;
     }
@@ -600,7 +600,7 @@ void CategoryActivity::addTabs()
                 o.cell = 200;
                 o.gap = 16;
                 o.paint = [](NVGcontext* vg, uint8_t v, float x, float y, float sz) {
-                    drawIcon(vg, v ? "woman" : "man", x + sz * 0.1f, y + sz * 0.1f, sz * 0.8f, ui::kText);
+                    drawIcon(vg, v ? "woman" : "man", x + sz * 0.1f, y + sz * 0.1f, sz * 0.8f, ui::text());
                 };
                 b->addView(new OptionGrid(&s->mii, MII_FIELD_GENDER, { 0, 1 }, o, [s] { s->dirty = true; }));
                 auto* note = new brls::Label();
@@ -616,7 +616,7 @@ void CategoryActivity::addTabs()
         tabs.push_back({ "", [s] {
             return page([s](brls::Box* b) {
                 b->addView(makePrompt("editor/prompt/body"_i18n));
-                auto icon = [](const char* name) { return new IconView(name, 56, nvgRGB(110, 110, 110)); };
+                auto icon = [](const char* name) { return new IconView(name, 56, ui::textDim()); };
                 auto changed = [s] { s->dirty = true; };
                 b->addView(makeSectionTitle("editor/height"_i18n));
                 auto* height = new FieldSlider(&s->mii, MII_FIELD_HEIGHT, icon("shorter"), icon("taller"), changed);
