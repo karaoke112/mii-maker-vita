@@ -35,6 +35,8 @@ class GpuRenderer
         bool fullBody, uint32_t background);
     // The owner is gone: its texture is freed after the next render.
     void release(const void* owner);
+    // The NanoVG image of the owner's latest render, or -1.
+    int imageOf(const void* owner);
 
     struct Impl; // GXM state (Vita builds only)
 

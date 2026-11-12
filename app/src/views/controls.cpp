@@ -204,6 +204,35 @@ void OptionGrid::refresh()
         cells[i]->setSelected(values[i] == current);
 }
 
+void OptionGrid::updatePriorities()
+{
+    if (!opt.iconOf)
+        return;
+    int from = -1;
+    brls::View* focus = brls::Application::getCurrentFocus();
+    for (size_t i = 0; i < cells.size(); i++)
+        if (cells[i] == focus)
+            from = (int)i;
+    if (from < 0) {
+        const uint8_t current = mii_field_get(mii, field);
+        for (size_t i = 0; i < values.size(); i++)
+            if (values[i] == current)
+                from = (int)i;
+    }
+    if (from < 0)
+        from = 0;
+    if (from == prioritiesFrom)
+        return;
+    prioritiesFrom = from;
+    HeadRenderer& hr = HeadRenderer::instance();
+    const int cols = opt.columns, fr = from / cols, fc = from % cols;
+    for (size_t i = 0; i < cells.size(); i++) {
+        const int r = (int)i / cols, c = (int)i % cols;
+        // rows count more than columns: the screen shows a few rows at a time
+        hr.setPriority(cells[i], 2 * std::abs(r - fr) + std::abs(c - fc));
+    }
+}
+
 brls::View* OptionGrid::getDefaultFocus()
 {
     // While the cursor is in the grid, that tile (scrolling frames center on

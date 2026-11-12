@@ -6,15 +6,45 @@
 #include "activities/start_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
+#include "music.hpp"
 #include "mii_qr.hpp"
 #include "settings.hpp"
 #include "ui_theme.hpp"
 #include "views/popup_menu.hpp"
+#include <mii/mii_editor.h>
+#include "views/controls.hpp"
 #include "views/mii_preview.hpp"
 
 using namespace brls::literals;
 
 static constexpr int kColumns = 5;
+
+// A Mii's card; while a Mii is held, the card under the cursor draws it
+// lifted above itself.
+class MiiCard : public brls::Box
+{
+  public:
+    MiiCard()
+        : brls::Box(brls::Axis::COLUMN)
+    {
+    }
+    std::function<void(NVGcontext*, float, float, float, float, brls::Style, brls::FrameContext*)> overlay;
+    bool empty = false;
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override
+    {
+        brls::Box::draw(vg, x, y, width, height, style, ctx);
+        if (empty) { // the held Mii's place
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, x + 3, y + 3, width - 6, height - 6, 16);
+            nvgStrokeColor(vg, ui::rule());
+            nvgStrokeWidth(vg, 3);
+            nvgStroke(vg);
+        }
+        if (overlay)
+            overlay(vg, x, y, width, height, style, ctx);
+    }
+};
 
 brls::View* LibraryActivity::createContentView()
 {
@@ -136,6 +166,7 @@ void LibraryActivity::rebuild()
     brls::Application::giveFocus(createButton);
     grid->clearViews();
     cards.clear();
+    thumbs.clear();
     miis.clear();
     miis.reserve(MII_NFDB_MAX_MIIS); // previews keep pointers into this vector
     for (int i = 0; i < lib.count(); i++) {
@@ -154,7 +185,7 @@ void LibraryActivity::rebuild()
             row->setMarginBottom(20);
             grid->addView(row);
         }
-        auto* card = new brls::Box(brls::Axis::COLUMN);
+        auto* card = new MiiCard();
         cards.push_back(card);
         card->setDimensions(200, 250);
         card->setMarginRight(20);
@@ -162,6 +193,7 @@ void LibraryActivity::rebuild()
         card->setCornerRadius(18);
         card->setHighlightCornerRadius(20);
         auto* preview = new MiiPreview(&miis[i], 160);
+        thumbs.push_back(preview);
         preview->setDimensions(200, 250);
         card->addView(preview);
 
@@ -187,6 +219,7 @@ void LibraryActivity::rebuild()
         });
         card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
         card->getFocusEvent()->subscribe([this, index](brls::View*) {
+            thumbPriorities(index);
             if (held >= 0)
                 showHeldAt(index);
         });
@@ -194,6 +227,17 @@ void LibraryActivity::rebuild()
     }
     for (size_t i = 0; i < cards.size(); i++)
         cardActions((int)i);
+    thumbPriorities(0);
+}
+
+// Thumbnails nearest the cursor are drawn first.
+void LibraryActivity::thumbPriorities(int focus)
+{
+    const int fr = focus / kColumns, fc = focus % kColumns;
+    for (size_t i = 0; i < thumbs.size(); i++) {
+        const int r = (int)i / kColumns, c = (int)i % kColumns;
+        HeadRenderer::instance().setPriority(thumbs[i], 2 * std::abs(r - fr) + std::abs(c - fc));
+    }
 }
 
 // The card's buttons for the current state (hints change with them).
@@ -243,27 +287,54 @@ void LibraryActivity::cardActions(int index)
 void LibraryActivity::startHold(int index)
 {
     held = index;
-    base = miis;
+    heldMii = miis[index];
+    if (!floating) {
+        floating.reset(new MiiPreview(&heldMii, 160));
+        floating->setDimensions(200, 250);
+    }
+    thumbs[index]->setVisibility(brls::Visibility::INVISIBLE); // its place is empty while held
+    static_cast<MiiCard*>(cards[index])->empty = true;
     showHeldAt(index);
     for (size_t i = 0; i < cards.size(); i++)
         cardActions((int)i);
 }
 
-// The held Mii shown where the cursor is, the others closing up around it.
-// (The cards' previews point into `miis`, so they follow.)
+// The held Mii floats above the card under the cursor, shifted up and left
+// so that card's Mii shows too; nothing else moves until it is put down.
 void LibraryActivity::showHeldAt(int index)
 {
     heldAt = index;
-    std::vector<mii_charinfo_t> order = base;
-    const mii_charinfo_t m = order[held];
-    order.erase(order.begin() + held);
-    order.insert(order.begin() + index, m);
-    for (size_t i = 0; i < miis.size(); i++)
-        miis[i] = order[i];
     for (size_t i = 0; i < cards.size(); i++) {
-        cards[i]->setBorderColor(ui::accent());
-        cards[i]->setBorderThickness((int)i == index ? 5.0f : 0.0f);
+        auto* card = static_cast<MiiCard*>(cards[i]);
+        if ((int)i != index) {
+            card->overlay = nullptr;
+            continue;
+        }
+        card->overlay = [this](NVGcontext* vg, float x, float y, float w, float h, brls::Style style, brls::FrameContext* ctx) {
+            const float dx = -26, dy = -30;
+            // a soft shadow under the lifted card
+            NVGpaint shadow = nvgBoxGradient(vg, x + dx + 6, y + dy + 10, w, h, 18, 16, nvgRGBA(0, 0, 0, 90), nvgRGBA(0, 0, 0, 0));
+            nvgBeginPath(vg);
+            nvgRect(vg, x + dx - 20, y + dy - 20, w + 52, h + 56);
+            nvgFillPaint(vg, shadow);
+            nvgFill(vg);
+            floating->draw(vg, x + dx, y + dy, w, h, style, ctx);
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, x + dx + 1.5f, y + dy + 1.5f, w - 3, h - 3, 18);
+            nvgStrokeColor(vg, ui::accent());
+            nvgStrokeWidth(vg, 4);
+            nvgStroke(vg);
+        };
     }
+}
+
+// Rereads the order from the library into the cards (their previews point
+// into `miis`), without rebuilding the screen.
+void LibraryActivity::reloadOrder()
+{
+    MiiLibrary& lib = MiiLibrary::instance();
+    for (size_t i = 0; i < miis.size(); i++)
+        lib.get((int)i, &miis[i]);
 }
 
 void LibraryActivity::endHold(bool place)
@@ -271,34 +342,34 @@ void LibraryActivity::endHold(bool place)
     const int from = held, to = heldAt;
     held = heldAt = -1;
     for (brls::View* c : cards)
-        c->setBorderThickness(0.0f);
-    if (place && from != to) {
+        static_cast<MiiCard*>(c)->overlay = nullptr;
+    if (from >= 0 && from < (int)thumbs.size()) {
+        thumbs[from]->setVisibility(brls::Visibility::VISIBLE);
+        static_cast<MiiCard*>(cards[from])->empty = false;
+    }
+    // Put down on another card: it moves there and the Mii between close
+    // up, taking the place it left.
+    if (place && from != to && to >= 0) {
         if (!MiiLibrary::instance().move(from, to))
             brls::Application::notify("library/move_failed"_i18n);
-        rebuild();
-        if (to >= 0 && to < (int)cards.size())
-            brls::Application::giveFocus(cards[to]);
-        return;
+        reloadOrder();
     }
-    for (size_t i = 0; i < miis.size(); i++)
-        miis[i] = base[i];
     for (size_t i = 0; i < cards.size(); i++)
         cardActions((int)i);
 }
 
-// Puts the held Mii where the hovered one is and picks that one up.
+// Puts the held Mii where the hovered one is and picks that one up (it
+// now belongs in the empty place the held one left).
 void LibraryActivity::swapHeld(int index)
 {
-    if (index == held) // the held Mii's own place: nothing to swap with
+    if (index == held)
         return;
     if (!MiiLibrary::instance().swap(held, index)) {
         brls::Application::notify("library/move_failed"_i18n);
         return;
     }
-    // the hovered Mii now sits where the held one was, and is the one held
-    MiiLibrary& lib = MiiLibrary::instance();
-    for (size_t i = 0; i < base.size(); i++)
-        lib.get((int)i, &base[i]);
+    reloadOrder();
+    heldMii = miis[held];
     showHeldAt(index);
 }
 
@@ -423,6 +494,55 @@ void LibraryActivity::showSendMenu()
     brls::Application::pushActivity(new PopupMenu("library/send"_i18n, items), brls::TransitionAnimation::NONE);
 }
 
+// Settings > Default Skin Tone: the ten skin colors in a small panel over
+// the list; picking one keeps the panel open (Circle closes it).
+class SkinTonePicker : public brls::Activity
+{
+  public:
+    brls::View* createContentView() override
+    {
+        mii_charinfo_init_default(&mii, 0);
+        mii.faceline_color = Settings::get().skinTone;
+        auto* root = new brls::Box();
+        root->setJustifyContent(brls::JustifyContent::CENTER);
+        root->setAlignItems(brls::AlignItems::CENTER);
+        root->setBackgroundColor(nvgRGBA(0, 0, 0, 140));
+        auto* panel = new brls::Box(brls::Axis::COLUMN);
+        panel->setPadding(24, 30, 30, 30);
+        panel->setBackgroundColor(ui::background());
+        panel->setCornerRadius(8);
+        panel->setAlignItems(brls::AlignItems::CENTER);
+        auto* title = new brls::Label();
+        title->setText("settings/skin"_i18n);
+        title->setFontSize(28);
+        title->setMarginBottom(18);
+        panel->addView(title);
+        int cols;
+        const mii_grid_t* g = mii_editor_grid(MII_GRID_FACELINE_COLOR);
+        cols = g->columns;
+        OptionGrid::Options o;
+        o.columns = cols;
+        o.cell = 72;
+        o.colorOf = [](uint8_t v) { return mii_faceline_color_rgb(v); };
+        panel->addView(new OptionGrid(&mii, MII_FIELD_FACELINE_COLOR, std::vector<uint8_t>(g->items, g->items + g->count), o,
+            [this] {
+                Settings& s = Settings::get();
+                s.skinTone = mii.faceline_color;
+                s.save();
+            }));
+        root->addView(panel);
+        root->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
+            brls::Application::popActivity(brls::TransitionAnimation::NONE);
+            return true;
+        });
+        return root;
+    }
+    bool isTranslucent() override { return true; }
+
+  private:
+    mii_charinfo_t mii;
+};
+
 void LibraryActivity::showSettings()
 {
     PopupMenu::Item theme;
@@ -462,6 +582,23 @@ void LibraryActivity::showSettings()
         s.save();
     };
     qrFormat.keepOpen = true;
-    brls::Application::pushActivity(new PopupMenu("settings/title"_i18n, { theme, renderer, qrFormat }),
+    PopupMenu::Item musicItem;
+    musicItem.text = [] {
+        static const char* names[] = { "settings/music_none", "settings/music_wii", "settings/music_3ds", "settings/music_wiiu" };
+        return "settings/music"_i18n + ": " + brls::getStr(names[Settings::get().music]);
+    };
+    musicItem.action = [] {
+        Settings& s = Settings::get();
+        s.music = (s.music + 1) % (int)music::Track::COUNT;
+        s.save();
+        std::string missing;
+        if (!music::Player::instance().play((music::Track)s.music, &missing))
+            brls::Application::notify("settings/music_missing"_i18n + " " + missing);
+    };
+    musicItem.keepOpen = true;
+    PopupMenu::Item skin = PopupMenu::item("settings/skin"_i18n, [] {
+        brls::Application::pushActivity(new SkinTonePicker(), brls::TransitionAnimation::NONE);
+    });
+    brls::Application::pushActivity(new PopupMenu("settings/title"_i18n, { theme, renderer, qrFormat, skin, musicItem }),
         brls::TransitionAnimation::NONE);
 }

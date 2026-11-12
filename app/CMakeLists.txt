@@ -68,6 +68,8 @@ if (PLATFORM_PSV)
     # sending Miis to another Vita (ad-hoc wireless)
     target_link_libraries(${PROJECT_NAME} PRIVATE ScePspnetAdhoc_stub SceNet_stub SceSysmodule_stub SceAppUtil_stub
         SceCommonDialog_stub)
+    # background music
+    target_link_libraries(${PROJECT_NAME} PRIVATE SceAudio_stub)
     set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d ATTRIBUTE2=12")
     vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
     vita_create_vpk(${PROJECT_NAME}.vpk ${PSN_TITLE_ID} ${PROJECT_NAME}.self

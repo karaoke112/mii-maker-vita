@@ -16,6 +16,7 @@ bool GpuRenderer::init(const mii3d_res*, const mii3d_res*, const std::string&)
 }
 int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, float, bool, uint32_t) { return -1; }
 void GpuRenderer::release(const void*) { }
+int GpuRenderer::imageOf(const void*) { return -1; }
 
 #else
 
@@ -1047,6 +1048,14 @@ void GpuRenderer::release(const void* owner)
 {
     if (impl)
         impl->release(owner);
+}
+
+int GpuRenderer::imageOf(const void* owner)
+{
+    if (!impl)
+        return -1;
+    auto it = impl->targets.find(owner);
+    return it == impl->targets.end() ? -1 : it->second.nvgImage;
 }
 
 #endif

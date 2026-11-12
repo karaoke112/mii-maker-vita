@@ -1,6 +1,7 @@
 #include "head_renderer.hpp"
 
 #include <dirent.h>
+#include <sys/stat.h>
 
 #include <borealis.hpp>
 #include <mii3d/mii3d.h>
@@ -8,13 +9,15 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <climits>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
 static constexpr size_t kCacheBytes = 40u << 20; // icons of a few tabs + thumbnails
 static constexpr int kWorkers = 2;
 // bump when icon rendering changes, so old files on the card are not reused
-static constexpr uint64_t kIconCacheVersion = 4;
+static constexpr uint64_t kIconCacheVersion = 5;
 
 // Render passes. A preview is drawn quickly first, then sharper. The Vita
 // gets a half-size first pass and a plain full-size one; PCs can afford a
@@ -48,8 +51,8 @@ static uint64_t hashKey(const HeadRenderer::Spec& spec, int pass)
         mix(bytes, sizeof(bytes));
     else
         mix(&spec.mii, sizeof(spec.mii));
-    const int v[8] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
-                       spec.icon, pass, spec.fullBody ? 1 : 0 };
+    const int v[9] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
+                       spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0 };
     mix(v, sizeof(v));
     return h;
 }
@@ -133,6 +136,9 @@ void HeadRenderer::init(const std::string& dataDir, const std::string& iconCache
             gpuOn = gpu.init(res, bodyRes, gpuLog);
             statusText += gpuOn ? ". Renderer: GPU" : ". Renderer: software (" + gpu.reason() + ")";
         }
+        // before the workers start: they own the renderers afterwards
+        for (int type = 0; type <= mii_field_max(MII_FIELD_MOUTH_TYPE); type++)
+            mouthColor.push_back(mii3d_part_shows_color(renderers[0], MII3D_ICON_MOUTH, type) != 0);
         for (mii3d_renderer* r : renderers)
             threads.emplace_back(&HeadRenderer::worker, this, r);
         // icons already on the memory card come from their own thread, so
@@ -207,6 +213,40 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
         wake.notify_all();
 }
 
+void HeadRenderer::setPriority(const void* owner, int p)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    priority[owner] = p;
+}
+
+HeadRenderer::Job HeadRenderer::takeBest(std::deque<Job>& q)
+{
+    size_t best = 0;
+    int bestP = INT32_MAX;
+    for (size_t i = 0; i < q.size(); i++) {
+        auto it = priority.find(q[i].owner);
+        const int p = it == priority.end() ? INT32_MAX - 1 : it->second;
+        if (p < bestP) {
+            bestP = p;
+            best = i;
+        }
+    }
+    Job job = std::move(q[best]);
+    q.erase(q.begin() + (long)best);
+    return job;
+}
+
+void HeadRenderer::invalidate(const void* owner)
+{
+    live[owner] = nextGeneration++;
+    gpuPending.erase(owner);
+    std::lock_guard<std::mutex> lock(mutex);
+    auto mine = [owner](const Job& j) { return j.owner == owner; };
+    high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
+    low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
+    disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
+}
+
 void HeadRenderer::forget(const void* owner)
 {
     live.erase(owner);
@@ -217,6 +257,7 @@ void HeadRenderer::forget(const void* owner)
     high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
     low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
     disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
+    priority.erase(owner);
 }
 
 std::string HeadRenderer::timings() const
@@ -280,14 +321,27 @@ void HeadRenderer::pruneDiskCache()
     if (!d)
         return;
     std::vector<std::string> old;
+    std::vector<std::pair<time_t, std::string>> current;
     while (struct dirent* e = readdir(d)) {
         const std::string name = e->d_name;
         if (name == "." || name == "..")
             continue;
-        if (name.compare(0, 9, prefix) != 0 || name.size() < 2 || name.compare(name.size() - 2, 2, ".z") != 0)
+        if (name.compare(0, 9, prefix) != 0 || name.size() < 2 || name.compare(name.size() - 2, 2, ".z") != 0) {
             old.push_back(name);
+        } else {
+            struct stat st;
+            current.push_back({ stat((cacheDir + "/" + name).c_str(), &st) == 0 ? st.st_mtime : 0, name });
+        }
     }
     closedir(d);
+    // keep the newest few thousand (a few MB): thumbnails of Miis since
+    // edited or deleted, and look-alikes, are not needed for ever
+    const size_t kKeep = 4000;
+    if (current.size() > kKeep) {
+        std::sort(current.begin(), current.end());
+        for (size_t i = 0; i + kKeep < current.size(); i++)
+            old.push_back(current[i].second);
+    }
     for (const std::string& name : old)
         std::remove((cacheDir + "/" + name).c_str());
     if (!old.empty())
@@ -304,8 +358,7 @@ void HeadRenderer::diskWorker()
             wake.wait(lock, [this] { return stopping || !disk.empty(); });
             if (stopping)
                 return;
-            job = std::move(disk.front());
-            disk.pop_front();
+            job = takeBest(disk);
         }
         const int size = passSize(job.spec, job.pass);
         auto pixels = std::make_shared<std::vector<uint8_t>>();
@@ -379,8 +432,12 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
             if (stopping)
                 return;
             std::deque<Job>& q = high.empty() ? low : high;
-            job = std::move(q.front());
-            q.pop_front();
+            if (&q == &low) {
+                job = takeBest(low);
+            } else {
+                job = std::move(q.front());
+                q.pop_front();
+            }
         }
         const Spec& sp = job.spec;
         const bool icon = isIcon(sp);
@@ -401,7 +458,8 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 view.zoom = sp.zoom;
                 view.center_y = sp.centerY;
                 view.full_body = sp.fullBody && bodyRes;
-                view.supersample = job.pass == PASS_SMOOTH ? 2 : 1;
+                // thumbnails are drawn once (then cached): smooth them
+                view.supersample = job.pass == PASS_SMOOTH || sp.smooth ? 2 : 1;
                 // small images do not need a detailed face texture
                 view.face_texture_size = size <= 200 ? 128 : 256;
                 r = mii3d_render_head(renderer, &sp.mii, &view, pixels->data(), size, size);

@@ -5,6 +5,8 @@
 
 #include "head_renderer.hpp"
 
+#include <map>
+
 // Live preview of a Mii: the head rendered in 3D by HeadRenderer (on a
 // worker thread) from the face resource the user installed. Without that
 // file it shows a short note saying where to put it.
@@ -35,6 +37,10 @@ class MiiPreview : public brls::View
     // While *source is true the Mii turns smoothly back to face the front
     // (then it is set to false).
     void setFrontSource(bool* source) { frontSource = source; }
+    // Previews with the same share key (the editor's screens) use one
+    // render: a new screen shows the latest picture at once instead of
+    // nothing, and a screen shown again redraws if another one rendered.
+    void setShareKey(const void* key);
     // How far the right stick tilts the Mii up or down.
     static constexpr float kMaxPitch = 15.0f;
     // Stage mode: no card backdrop or name, the head drawn large, and the
@@ -61,6 +67,12 @@ class MiiPreview : public brls::View
 
   private:
     void request3D();
+    const void* owner() const { return shareKey ? shareKey : this; }
+    const void* shareKey = nullptr;
+    uint64_t shareEpoch = 0;
+    inline static std::map<const void*, int> shareCount;
+    inline static std::map<const void*, uint64_t> shareEpochs;
+    inline static std::map<const void*, std::pair<HeadRenderer::Image, int>> shareImages; // CPU renders
     float& yawRef() { return yawSource ? *yawSource : yaw; }
     float& pitchRef() { return pitchSource ? *pitchSource : pitch; }
     void pollStick();

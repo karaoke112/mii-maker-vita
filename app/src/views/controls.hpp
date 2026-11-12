@@ -50,12 +50,16 @@ class OptionGrid : public brls::Box
     {
         if (mii_field_get(mii, field) != shown)
             refresh();
+        updatePriorities();
         brls::Box::draw(vg, x, y, width, height, style, ctx);
     }
 
   private:
     void refresh();
+    // icons nearest the cursor (or the chosen tile) load first
+    void updatePriorities();
     uint8_t shown = 0;
+    int prioritiesFrom = -2;
 
     mii_charinfo_t* mii;
     mii_field_t field;

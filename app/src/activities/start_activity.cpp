@@ -1,5 +1,7 @@
 #include "activities/start_activity.hpp"
 
+#include "settings.hpp"
+
 #include "ui_theme.hpp"
 #include "views/controls.hpp"
 #include "views/mii_preview.hpp"
@@ -17,8 +19,10 @@ StartActivity::StartActivity(OnPicked onPicked, bool lookalike)
     if (lookalike) {
         shuffle();
     } else {
-        for (int g = 0; g < 2; g++)
+        for (int g = 0; g < 2; g++) {
             mii_charinfo_init_default(&choices[g], g);
+            choices[g].faceline_color = Settings::get().skinTone; // Settings: default skin tone
+        }
     }
 }
 
