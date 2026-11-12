@@ -29,13 +29,15 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   laid out like the Switch 2 Mii editor: a large preview with a two-column
   category menu, nickname and Done button; each category opens a page with
   Types / Position / Color tabs (L / R) and picture tiles; Style, Body and
-  Favorite Color are single prompt pages. The right stick (or L / R on the
-  menu) turns the Mii. Saves Miis to `ux0:data/mii/database.nfdb` (shared
-  with other apps; the app's own files go in `ux0:data/mii-maker-vita/`); export
-  `.charinfo` / `.nfsd` / `.ffsd`, delete. Icons come from openly licensed,
+  Favorite Color are single prompt pages. The right stick or a finger drag
+  turns the Mii. "Add Mii" starts from scratch or imports `.charinfo` /
+  `.nfsd` / `.ffsd` files from `ux0:data/mii/import/`; "Send Mii" exports
+  them to `ux0:data/mii/export/`. Miis are saved to
+  `ux0:data/mii/database.nfdb` (shared with other apps; the app's own files
+  go in `ux0:data/mii-maker-vita/`). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,
-  Tabler) and the button glyphs from PromptFont. Builds to a `.vpk` (it has not been run on real
-  Vita hardware yet).
+  Tabler) and the button glyphs from PromptFont. Builds to a `.vpk`, tested
+  on a real Vita by the project owner.
 - **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face
   resources (including untiling Wii U GPU-tiled textures) and draws a Mii,
   head and (with `FFLBodyRes.dat`) body, with the Switch's lighting model in

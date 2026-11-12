@@ -196,6 +196,14 @@ void HeadRenderer::forget(const void* owner)
     low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
 }
 
+std::string HeadRenderer::timings() const
+{
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "quick %d ms   full %d ms   icon %d ms", lastUs[0].load() / 1000,
+        lastUs[1].load() / 1000, lastUs[2].load() / 1000);
+    return buf;
+}
+
 // Icons on the memory card: zlib-compressed RGBA, named by their key.
 bool HeadRenderer::loadIcon(uint64_t key, int size, std::vector<uint8_t>* out)
 {
@@ -251,6 +259,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
         auto pixels = std::make_shared<std::vector<uint8_t>>((size_t)size * size * 4);
         const uint64_t diskKey = hashKey(sp, job.pass) ^ (resourceSalt * 0x9E3779B97F4A7C15ull);
         bool ok = icon && loadIcon(diskKey, size, pixels.get());
+        const brls::Time started = brls::getCPUTimeUsec();
         if (!ok) {
             mii3d_result_t r;
             if (sp.icon >= 0) {
@@ -268,6 +277,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 r = mii3d_render_head(renderer, &sp.mii, &view, pixels->data(), size, size);
             }
             ok = r == MII3D_OK;
+            lastUs[icon ? 2 : (job.pass == PASS_HALF ? 0 : 1)] = (int)(brls::getCPUTimeUsec() - started);
             if (ok && icon)
                 saveIcon(diskKey, *pixels);
         }

@@ -225,20 +225,15 @@ brls::View* EditorActivity::createContentView()
 
     MiiPreview* preview = nullptr;
     brls::AppletFrame* frame = editorFrame(*session, menu, &preview);
+    frame->registerAction("", brls::BUTTON_BACK, [](brls::View*) {
+        MiiPreview::showTimings = !MiiPreview::showTimings;
+        return true;
+    }, true);
     frame->registerAction("editor/save"_i18n, brls::BUTTON_START, [this](brls::View*) { return save(); }, true);
     // Keyboard shortcut for desktop builds (no START key there).
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_S, brls::BRLS_KBD_MODIFIER_CTRL),
         [this](brls::View*) { return save(); });
     frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [this](brls::View*) { return close(); });
-    // L / R turn the Mii (the right stick does too, smoothly).
-    frame->registerAction("editor/rotate"_i18n, brls::BUTTON_RB, [s](brls::View*) {
-        s->yaw = wrapYaw(s->yaw + 20.0f);
-        return true;
-    }, false, true);
-    frame->registerAction("editor/rotate"_i18n, brls::BUTTON_LB, [s](brls::View*) {
-        s->yaw = wrapYaw(s->yaw - 20.0f);
-        return true;
-    }, true, true);
     return frame;
 }
 
@@ -383,6 +378,8 @@ static brls::View* page(Fill fill, bool scroll)
     box->setPadding(24, 30, 40, 30);
     fill(box);
     auto* frame = new brls::ScrollingFrame();
+    // follow the focus (the grids route up / down themselves)
+    frame->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
     frame->setContentView(box);
     return frame;
 }
@@ -491,14 +488,6 @@ void CategoryActivity::addTabs()
         tabs.push_back({ color, [s] {
             return page([s](brls::Box* b) {
                 b->addView(colorGrid(s, MII_FIELD_HAIR_COLOR));
-                auto* flip = new brls::BooleanCell();
-                flip->init("editor/flip_part"_i18n, s->mii.hair_flip, [s](bool on) {
-                    s->mii.hair_flip = on;
-                    s->dirty = true;
-                });
-                flip->setWidth(600);
-                flip->setMarginTop(24);
-                b->addView(flip);
             }, true);
         } });
         break;
@@ -684,6 +673,19 @@ brls::View* CategoryActivity::createContentView()
         brls::Application::popActivity(brls::TransitionAnimation::NONE);
         return true;
     });
+    frame->registerAction("", brls::BUTTON_BACK, [](brls::View*) {
+        MiiPreview::showTimings = !MiiPreview::showTimings;
+        return true;
+    }, true);
+    if (category == Category::HAIR) {
+        // Square flips the hair's part on any hair tab
+        std::shared_ptr<EditorSession> s = session;
+        frame->registerAction("editor/flip_part"_i18n, brls::BUTTON_X, [s](brls::View*) {
+            s->mii.hair_flip = !s->mii.hair_flip;
+            s->dirty = true;
+            return true;
+        });
+    }
     if (tabs.size() > 1) {
         // the tab bar shows the L / R glyphs, so no hints for these
         frame->registerAction("", brls::BUTTON_LB, [this](brls::View*) {
@@ -723,9 +725,24 @@ void CategoryActivity::setTab(int index)
     if (tabBar)
         tabBar->setActive(index);
     if (old) {
-        // move focus off the old page before freeing it
+        // Move focus off the old page before freeing it. If the new page
+        // cannot take focus yet, focus the page box itself, so focus never
+        // stays on a view that is about to be freed.
         brls::Application::giveFocus(next);
+        if (isInside(brls::Application::getCurrentFocus(), old)) {
+            next->setFocusable(true);
+            brls::Application::giveFocus(next);
+        }
+        old->setVisibility(brls::Visibility::GONE);
         body->removeView(old);
     }
+}
+
+bool CategoryActivity::isInside(brls::View* view, brls::View* ancestor)
+{
+    for (; view; view = view->hasParent() ? view->getParent() : nullptr)
+        if (view == ancestor)
+            return true;
+    return false;
 }
 

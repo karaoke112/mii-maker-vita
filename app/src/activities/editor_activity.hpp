@@ -75,6 +75,7 @@ class CategoryActivity : public brls::Activity
     };
     void addTabs();
     void setTab(int index);
+    static bool isInside(brls::View* view, brls::View* ancestor);
 
     std::shared_ptr<EditorSession> session;
     Category category;

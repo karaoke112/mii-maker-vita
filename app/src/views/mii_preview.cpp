@@ -11,6 +11,13 @@ MiiPreview::MiiPreview(const mii_charinfo_t* mii, int renderSize)
 {
     this->setFocusable(false);
     std::memset(&requested, 0, sizeof(requested));
+    // stages turn by dragging across the Mii
+    this->addGestureRecognizer(new brls::PanGestureRecognizer(
+        [this](brls::PanGestureStatus status, brls::Sound*) {
+            if (stage && interactive && status.state != brls::GestureState::UNSURE)
+                yawRef() = wrapYaw(yawRef() + status.delta.x * 0.6f);
+        },
+        brls::PanAxis::HORIZONTAL));
 }
 
 MiiPreview::~MiiPreview()
@@ -51,6 +58,7 @@ void MiiPreview::request3D()
         spec.zoom = 0.8f; // room for long hair
         spec.centerY = -4.0f;
     }
+    spec.zoom *= extraZoom;
     hr.request(this, spec, [this](HeadRenderer::Image img, int size) {
         image = img;
         imageSize = size;
@@ -89,7 +97,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     const float cx = x + width / 2;
     const float nameHeight = stage ? 0.0f : 40.0f;
 
-    if (stage)
+    if (stage && interactive)
         pollStick();
 
     // Backdrop
@@ -140,8 +148,15 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         }
     }
 
-    if (stage)
+    if (stage) {
+        if (showTimings) {
+            nvgFontSize(vg, 16);
+            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+            nvgFillColor(vg, nvgRGB(120, 120, 120));
+            nvgText(vg, x + 8, y + 8, HeadRenderer::instance().timings().c_str(), nullptr);
+        }
         return;
+    }
 
     // Name
     char name[64];
