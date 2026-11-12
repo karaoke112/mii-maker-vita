@@ -124,6 +124,9 @@ class MiiPreview : public brls::View
     int nvgImageSize = 0;
     int imageSize = 0; // side of `image` (a quick pass is smaller)
     float imageZoom = 0.0f; // the framing zoom the shown picture was drawn with
+    float shownSide = 0.0f; // the picture's side on screen, last frame
+    int requestedSize = 0;
+    int gpuSize() const;
     int gpuImage = -1; // a GPU render (owned by GpuRenderer)
     NVGcolor backdrop {};
     bool hasBackdrop = false;

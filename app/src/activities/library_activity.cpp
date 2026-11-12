@@ -110,6 +110,7 @@ brls::View* LibraryActivity::createContentView()
     auto* frame = new brls::AppletFrame(scroll);
     frame->setTitle("library/title"_i18n);
     rootFrame = frame;
+    settingsShown = false; // a new frame (the theme changed): no actions yet
     // This is the root screen: "back" only leaves "choose a Mii" mode (popping
     // the last activity would leave borealis with input blocked). The app is
     // closed from the system (PS button), like other Vita apps.

@@ -208,6 +208,7 @@ struct GpuRenderer::Impl {
     std::map<const mii3d_image_t*, Texture> dynamic; // composed face textures
     std::map<const void*, Target> targets;
     std::vector<Target> released;
+    std::vector<NVGXMtexture*> retired; // textures to free after the next scene
     std::map<int, SizeResources> sizes;
     std::map<int, Readback> readbacks;
     bool drawFailed = false;
@@ -361,7 +362,7 @@ bool GpuRenderer::Impl::upload(Texture* t, const mii3d_image_t* img)
 {
     if (!t->tex || t->width != img->width || t->height != img->height) {
         if (t->tex)
-            gxmDeleteTexture(t->tex);
+            retired.push_back(t->tex); // freed when the GPU is done
         t->tex = gxmCreateTexture(img->width, img->height, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR, nullptr);
         if (!t->tex)
             return false;
@@ -399,9 +400,10 @@ const SceGxmTexture* GpuRenderer::Impl::textureFor(const mii3d_image_t* img, boo
     if (it != textures.end())
         return &it->second.tex->tex;
     if (textures.size() >= kMaxCachedTextures) {
-        // simple: start over (safe: the GPU is idle between renders)
+        // start over; the textures go once the GPU is done, as draws of
+        // this scene that are not drawn yet may use them
         for (auto& kv : textures)
-            gxmDeleteTexture(kv.second.tex);
+            retired.push_back(kv.second.tex);
         textures.clear();
     }
     Texture t;
@@ -578,6 +580,9 @@ bool GpuRenderer::Impl::scene(Target* t, SizeResources* sr, uint32_t background,
     for (Target& old : released)
         freeTarget(old);
     released.clear();
+    for (NVGXMtexture* tex : retired)
+        gxmDeleteTexture(tex);
+    retired.clear();
     return !drawFailed;
 }
 
@@ -1081,9 +1086,10 @@ bool GpuRenderer::readBack(int size, const std::function<int()>& draws, uint8_t*
     auto it = g.readbacks.find(size);
     if (it == g.readbacks.end()) {
         Readback rb;
-        rb.stridePx = (size + 7) & ~7;
+        // memory for whole 32 x 32 tiles, in case the GPU writes them whole
+        rb.stridePx = (size + 31) & ~31;
         rb.mem = (uint8_t*)gpu_alloc_map(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, SCE_GXM_MEMORY_ATTRIB_RW,
-            (size_t)rb.stridePx * size * 4, &rb.uid);
+            (size_t)rb.stridePx * ((size + 31) & ~31) * 4, &rb.uid);
         if (!rb.mem) {
             g.log("icon surface %d: out of memory", size);
             return false;

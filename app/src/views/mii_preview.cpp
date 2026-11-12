@@ -73,12 +73,14 @@ void MiiPreview::request3D()
     const Frame& fr = frameRef();
     const float pivot = std::round(fr.pivot * 4.0f) / 4.0f, zoom = std::round(fr.zoom * 400.0f) / 400.0f;
     const bool sharedChanged = shareKey && shareEpochs[shareKey] != shareEpoch;
-    if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch &&
+    const int size = stage && hr.gpuActive() ? gpuSize() : renderSize;
+    if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch && requestedSize == size &&
         (!stage || !hr.hasBody() || (requestedPivot == pivot && requestedZoom == zoom)) &&
         std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
     requestedPivot = pivot;
     requestedZoom = zoom;
+    requestedSize = size;
     if (shareKey)
         shareEpoch = ++shareEpochs[shareKey];
     requested = *mii;
@@ -89,7 +91,7 @@ void MiiPreview::request3D()
     spec.mii = *mii;
     // the GPU draws stages at about the size they are shown (sharp, and
     // its multisampling smooths the edges); the CPU keeps to renderSize
-    spec.size = stage && hr.gpuActive() ? (compact ? 256 : 512) : renderSize;
+    spec.size = stage && hr.gpuActive() ? gpuSize() : renderSize;
     spec.yaw = yaw;
     spec.pitch = pitch;
     // thumbnails (not stages) are drawn once and kept on the memory card,
@@ -129,6 +131,17 @@ void MiiPreview::request3D()
                 shareImages[shareKey] = { img, size };
         }
     });
+}
+
+// The GPU draws a stage at about the size it is shown (in steps, so a few
+// render targets serve every screen), so it is sharp and its multisampling
+// smooths the edges.
+int MiiPreview::gpuSize() const
+{
+    if (shownSide <= 0.0f)
+        return compact ? 256 : 512;
+    const int steps = (int)std::ceil(shownSide / 64.0f);
+    return std::max(2, std::min(8, steps)) * 64;
 }
 
 // Where the stage camera looks and how close: the bust centers on the head
@@ -313,7 +326,9 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
                 iy = y + (height - side) / 2 - 12.0f * (1.0f - t);
                 // a soft light behind the head (a shadow on the light theme)
                 const bool dark = ui::theme() != ui::Theme::LIGHT;
-                const float gx = cx, gy = iy + side * (0.5f - 0.18f * (1.0f - t)), gr = side * (0.22f + 0.06f * t);
+                // fixed where the head is in the close-up: it stays put while
+                // the Mii moves (the Body page)
+                const float gx = cx, gy = y + height / 2, gr = height * 0.29f;
                 // the stage and its shadow stay above the button bar
                 nvgSave(vg);
                 nvgIntersectScissor(vg, x - width, y - height, width * 3, height * 2);
@@ -329,6 +344,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
                 side = stage ? std::fmin(width, height) * 0.95f : std::fmin(width * 1.15f, height - nameHeight);
                 iy = y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
             }
+            shownSide = side;
             const float ix = ix0 - side / 2;
             nvgBeginPath(vg);
             nvgRect(vg, ix, iy, side, side);
