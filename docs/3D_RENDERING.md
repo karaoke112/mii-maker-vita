@@ -69,6 +69,31 @@ shape, wrinkles, makeup, nose, beard) as small heads framed on the part,
 in neutral colors (black hair and lines, light skin; eyes and lips keep the
 Mii's colors), and only for tiles on screen.
 
+### GPU previews (Vita)
+
+The large previews (editor, Start from Scratch, look-alikes) can be drawn by
+the Vita's GPU. This needs Sony's shader compiler from your own console,
+`libshacccg.suprx`, which [ShaRKF00D](https://github.com/Rinnegatamante/ShaRKF00D)
+extracts to `ur0:data/libshacccg.suprx` (many vitaGL ports need the same
+file; `ur0:data/external/` and `ux0:data/mii-maker-vita/dat/` work too).
+The app compiles its two small shaders with it at start-up.
+
+libmii3d still does everything except filling pixels:
+`mii3d_render_head_draws` hands over each mesh as transformed, lit vertices
+and a material, and the fragment shader (`app/src/gpu_renderer.cpp`) repeats
+the CPU rasterizer's per-pixel step; a test replays those draws through the
+CPU rasterizer and checks they give the same image. Each preview renders into
+its own 4x-multisampled texture between UI frames, shown through NanoVG.
+
+Without the file, or if anything fails (logged to
+`ux0:data/mii-maker-vita/gpu.log`), the software renderer below is used. The
+line under the library buttons says which renderer is active, and Settings
+(START in the library) can switch to Software; if the app ever fails to
+start with the GPU, put `renderer=software` in
+`ux0:data/mii-maker-vita/settings.txt`.
+
+### Software renderer
+
 The app's `HeadRenderer` runs this on a worker thread: a quick pass shows up
 first, then a 2x-supersampled pass replaces it, and results are cached so
 library thumbnails are only rendered once.

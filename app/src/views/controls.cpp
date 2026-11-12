@@ -101,7 +101,7 @@ class GridCell : public brls::Box
                 spec.icon != requested.icon) {
                 requested = spec;
                 hasRequested = true;
-                hr.request(this, spec, [this](HeadRenderer::Image img, int) {
+                hr.request(this, spec, [this](HeadRenderer::Image img, int, int) {
                     image = img;
                     dirty = true;
                 });

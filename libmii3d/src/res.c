@@ -298,6 +298,14 @@ mii3d_result_t mii3d_res_texture(const mii3d_res_t *res, mii3d_tex_kind_t kind, 
     out->height = (uint16_t)h;
     out->channels = k_channels[fmt];
     out->pixels = (uint8_t *)malloc((size_t)w * h * out->channels);
+    {
+        static uint32_t next_serial;
+#if defined(__GNUC__)
+        out->serial = __atomic_add_fetch(&next_serial, 1, __ATOMIC_RELAXED);
+#else
+        out->serial = ++next_serial;
+#endif
+    }
     if (!out->pixels) {
         free(raw);
         return MII3D_ERR_MEMORY;

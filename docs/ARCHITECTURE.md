@@ -62,8 +62,10 @@ shaders. The Vita has no free shader compiler: `.gxp` files need Sony's
 tools, or a runtime compiler extracted from the console. A head is a few
 thousand triangles, and the editor only re-renders on change, on a worker
 thread, quick pass first and smooth pass after. The result is uploaded as an
-ordinary NanoVG image, so it works with any borealis backend. A GXM backend
-could be added later behind the same API if profiling on hardware calls for it.
+ordinary NanoVG image, so it works with any borealis backend. On the Vita,
+large previews can instead be drawn with GXM when the user has
+`libshacccg.suprx` (see 3D_RENDERING.md): the CPU still prepares vertices and
+materials, the GPU fills pixels.
 
 Whole Miis come from the optional `FFLBodyRes.dat` (see 3D_RENDERING.md).
 Next steps: expressions.

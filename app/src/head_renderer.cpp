@@ -2,6 +2,7 @@
 
 #include <borealis.hpp>
 #include <mii3d/mii3d.h>
+#include "gpu_renderer.hpp"
 #include <zlib.h>
 
 #include <algorithm>
@@ -87,7 +88,8 @@ HeadRenderer::~HeadRenderer()
     mii3d_res_close(bodyRes);
 }
 
-void HeadRenderer::init(const std::string& dataDir, const std::string& iconCacheDir)
+void HeadRenderer::init(const std::string& dataDir, const std::string& iconCacheDir, const std::string& gpuLog,
+    bool useGpu)
 {
     if (res)
         return;
@@ -121,6 +123,11 @@ void HeadRenderer::init(const std::string& dataDir, const std::string& iconCache
         brls::Logger::info("Loaded face resource {}", path);
         loadBody(dataDir);
         resourceSalt = kIconCacheVersion * 1000003u + file.size() * 31u + bodyFile.size() + (uint64_t)name[0];
+        if (useGpu) {
+            GpuRenderer& gpu = GpuRenderer::instance();
+            gpuOn = gpu.init(res, bodyRes, gpuLog);
+            statusText += gpuOn ? ". Renderer: GPU" : ". Renderer: software (" + gpu.reason() + ")";
+        }
         for (mii3d_renderer* r : renderers)
             threads.emplace_back(&HeadRenderer::worker, this, r);
         return;
@@ -155,6 +162,10 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
     const uint64_t generation = nextGeneration++;
     live[owner] = generation;
     const bool icon = isIcon(spec);
+    if (gpuOn && !icon && (spec.background >> 24) == 0xFFu) {
+        gpuPending[owner] = Job { owner, generation, spec, PASS_FULL, cb };
+        return;
+    }
     const int first = icon ? PASS_FULL : kFirstPreviewPass, last = icon ? PASS_FULL : kLastPreviewPass;
     Image cached;
     int cachedPass = -1;
@@ -182,7 +193,7 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
             q.push_back(Job { owner, generation, spec, cachedPass + 1, cb });
     }
     if (cached)
-        cb(cached, passSize(spec, cachedPass));
+        cb(cached, passSize(spec, cachedPass), -1);
     if (!cached || cachedPass < last)
         wake.notify_one();
 }
@@ -190,6 +201,8 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
 void HeadRenderer::forget(const void* owner)
 {
     live.erase(owner);
+    gpuPending.erase(owner);
+    GpuRenderer::instance().release(owner);
     std::lock_guard<std::mutex> lock(mutex);
     auto mine = [owner](const Job& j) { return j.owner == owner; };
     high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
@@ -202,6 +215,41 @@ std::string HeadRenderer::timings() const
     std::snprintf(buf, sizeof(buf), "quick %d ms   full %d ms   icon %d ms", lastUs[0].load() / 1000,
         lastUs[1].load() / 1000, lastUs[2].load() / 1000);
     return buf;
+}
+
+void HeadRenderer::pumpGpu()
+{
+    if (gpuPending.empty())
+        return;
+    std::map<const void*, Job> work;
+    work.swap(gpuPending);
+    GpuRenderer& gpu = GpuRenderer::instance();
+    for (auto& kv : work) {
+        Job& job = kv.second;
+        auto it = live.find(job.owner);
+        if (it == live.end() || it->second != job.generation)
+            continue;
+        const Spec& sp = job.spec;
+        const brls::Time started = brls::getCPUTimeUsec();
+        const int image = gpu.render(job.owner, sp.mii, sp.size, sp.yaw, sp.zoom, sp.centerY, sp.fullBody && bodyRes,
+            sp.background & 0xFFFFFFu);
+        lastUs[1] = (int)(brls::getCPUTimeUsec() - started);
+        if (image > 0) {
+            job.cb(nullptr, (sp.size + 7) & ~7, image);
+            continue;
+        }
+        // GPU trouble: draw this one (and, if the GPU gave up, all later
+        // ones) on the CPU
+        if (!gpu.ready()) {
+            gpuOn = false;
+            statusText += " (GPU stopped: " + gpu.reason() + ")";
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            high.push_back(Job { job.owner, job.generation, sp, kFirstPreviewPass, job.cb });
+        }
+        wake.notify_one();
+    }
 }
 
 // Icons on the memory card: zlib-compressed RGBA, named by their key.
@@ -310,7 +358,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
             // the view may have gone away, or asked for something newer
             auto it = live.find(owner);
             if (it != live.end() && it->second == generation)
-                cb(image, size);
+                cb(image, size, -1);
         });
     }
 }
