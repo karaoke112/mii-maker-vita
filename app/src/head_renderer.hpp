@@ -2,6 +2,7 @@
 
 #include <mii/mii.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -60,6 +61,9 @@ class HeadRenderer
     bool available() const { return res != nullptr; }
     bool hasBody() const { return bodyRes != nullptr; }
     const std::string& status() const { return statusText; }
+    // How long the latest renders took, in ms (quick preview pass, full
+    // preview pass, icon), for the SELECT timing readout.
+    std::string timings() const;
 
     // Asks for a render; the callback runs later on the UI thread. Previews
     // come first as a quick image and then again sharper. A newer request
@@ -108,4 +112,5 @@ class HeadRenderer
     // the UI thread.
     std::map<const void*, uint64_t> live;
     uint64_t nextGeneration = 1;
+    std::atomic<int> lastUs[3] = { { 0 }, { 0 }, { 0 } };
 };

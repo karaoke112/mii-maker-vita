@@ -1,7 +1,5 @@
 {
   "title": "Your Miis",
-  "new_male": "Create (male base)",
-  "new_female": "Create (female base)",
   "empty": "No Miis yet. Create one to get started!",
   "delete": "Delete",
   "delete_confirm": "Delete this Mii? This cannot be undone.",
@@ -9,10 +7,21 @@
   "export": "Export",
   "exported": "Exported to",
   "export_failed": "Export failed.",
-  "import": "Import",
   "edit": "Edit",
   "import_none": "No Mii files (.charinfo, .nfsd, .ffsd) found in",
   "import_done": "Mii(s) imported",
   "import_failed": "file(s) could not be read",
-  "import_full": "The database is full (100 Miis)"
+  "import_full": "The database is full (100 Miis)",
+  "add": "Add Mii",
+  "send": "Send Mii",
+  "add_scratch": "Start from Scratch",
+  "add_lookalike": "Choose a Look-Alike",
+  "add_import": "Import from SD Card",
+  "add_qr": "Scan QR Code",
+  "add_receive": "Receive from Another Vita",
+  "send_export": "Export to SD Card",
+  "send_qr": "Create QR Code",
+  "send_vita": "Send to Another Vita",
+  "pick_export": "Choose a Mii to export (B: cancel)",
+  "coming_soon": "Coming soon!"
 }

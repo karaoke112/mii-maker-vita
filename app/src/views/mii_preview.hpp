@@ -17,17 +17,33 @@ class MiiPreview : public brls::View
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override;
 
-    void setYaw(float degrees) { yawRef() = degrees; }
+    // Stages take touches (to turn the Mii) though they are not focusable.
+    brls::View* hitTest(brls::Point point) override
+    {
+        if (stage && interactive && this->getVisibility() == brls::Visibility::VISIBLE &&
+            this->getFrame().pointInside(point))
+            return this;
+        return brls::View::hitTest(point);
+    }
+
+        void setYaw(float degrees) { yawRef() = degrees; }
     float getYaw() { return yawRef(); }
     // Shares the turn angle with other previews (the editor's pages).
     void setYawSource(float* source) { yawSource = source; }
     // Stage mode: no card backdrop or name, the head drawn large, and the
     // right stick turns it.
     void setStage(bool on) { stage = on; }
+    // Whether a stage turns with the right stick and by dragging (default).
+    void setInteractive(bool on) { interactive = on; }
     // How much of the Mii a stage shows once FFLBodyRes.dat is installed
     // (until then, the head).
     enum class Framing { BUST, FULL_BODY };
     void setFraming(Framing f) { framing = f; }
+    // SELECT in the editor shows render times on the stage.
+    inline static bool showTimings = false;
+
+    // Extra magnification on top of the framing (1 = none).
+    void setZoom(float z) { extraZoom = z; }
 
   private:
     void request3D();
@@ -39,6 +55,8 @@ class MiiPreview : public brls::View
     float yaw = 0.0f;
     float* yawSource = nullptr;
     bool stage = false;
+    bool interactive = true;
+    float extraZoom = 1.0f;
     Framing framing = Framing::BUST;
     bool requestedBust = false;
     brls::Time lastPoll = 0;

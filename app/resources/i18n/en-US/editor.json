@@ -24,7 +24,7 @@
   "makeup": "Makeup",
   "style": "Style",
   "color": "Color",
-  "flip_part": "Flip the hair part",
+  "flip_part": "Flip Part",
   "adjust": "Adjust",
   "size": "Size",
   "thickness": "Thickness",
@@ -40,7 +40,6 @@
   "body": "Body",
   "build": "Build",
   "done": "Done",
-  "rotate": "Rotate",
   "menu": {
     "face": "Face",
     "hair": "Hairstyle",
