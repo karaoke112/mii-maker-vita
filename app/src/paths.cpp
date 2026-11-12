@@ -73,6 +73,7 @@ void prepare()
     makeDir(appDir());
     makeDir(datDir());
     makeDir(cacheDir());
+    makeDir(appDir() + "/music");
 
     moveIfPresent(miiDir() + "/author_id.bin", appDir() + "/author_id.bin");
     for (const char* name : { "AFLResHigh_2_3.dat", "AFLResHigh.dat", "FFLResHigh.dat", "FFLResMiddle.dat",

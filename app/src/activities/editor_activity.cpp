@@ -1,6 +1,7 @@
 #include "activities/editor_activity.hpp"
 
 #include "mii_library.hpp"
+#include "settings.hpp"
 #include "ui_theme.hpp"
 #include "views/controls.hpp"
 #include "views/icon.hpp"
@@ -40,6 +41,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     preview->setYawSource(&s.yaw);
     preview->setPitchSource(&s.pitch);
     preview->setFrontSource(&s.facingFront);
+    preview->setShareKey(&s); // all of this Mii's editor screens share one picture
     preview->setWidth(520);
     preview->setGrow(0);
     root->addView(preview);
@@ -288,21 +290,33 @@ bool EditorActivity::close()
 }
 
 // ---- tile icons --------------------------------------------------------
-// Like the Switch 2 editor, style tiles are drawn in neutral colors (black
-// hair and lines, light skin) so the shapes read clearly; eyes and lips
-// keep the Mii's own colors.
+// Each icon depends only on what it shows, so icons are shared between Miis
+// (and cached once on the memory card): whole-face tiles show the default
+// Mii of the current gender in the default skin tone (Settings), with black
+// hair; part tiles show the part alone, in black where the Switch 2 draws it
+// so (eyebrows, facial hair), in the Mii's color where it shows (eyes, lips
+// of mouths that have lips).
 
-static mii_charinfo_t iconBase(const mii_charinfo_t& cur)
+static constexpr uint8_t kBlack = 8; // common color 8
+
+static mii_charinfo_t faceBase(const mii_charinfo_t& cur)
 {
     mii_charinfo_t m;
     mii_charinfo_init_default(&m, cur.gender);
-    m.faceline_color = 0;
-    m.hair_color = 0;
-    m.eyebrow_color = 0;
-    m.beard_color = 0;
+    m.faceline_color = Settings::get().skinTone;
+    m.hair_color = kBlack;
+    m.eyebrow_color = kBlack;
+    m.beard_color = kBlack;
+    return m;
+}
+
+static mii_charinfo_t partBase()
+{
+    mii_charinfo_t m;
+    mii_charinfo_init_default(&m, 0);
+    m.eyebrow_color = kBlack;
+    m.beard_color = kBlack;
     m.glass_color = 0;
-    m.eye_color = cur.eye_color;
-    m.mouth_color = cur.mouth_color;
     return m;
 }
 
@@ -311,16 +325,18 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
     using Spec = HeadRenderer::Spec;
     auto head = [](float zoom, float centerY, void (*set)(mii_charinfo_t&, uint8_t, const mii_charinfo_t&)) {
         return OptionGrid::IconOf([=](uint8_t v, const mii_charinfo_t& cur, Spec* spec) {
-            spec->mii = iconBase(cur);
+            spec->mii = faceBase(cur);
             set(spec->mii, v, cur);
             spec->zoom = zoom;
             spec->centerY = centerY;
         });
     };
-    auto part = [](mii3d_icon_part_t which, mii_field_t f) {
+    auto part = [](mii3d_icon_part_t which, mii_field_t f, void (*set)(mii_charinfo_t&, const mii_charinfo_t&)) {
         return OptionGrid::IconOf([=](uint8_t v, const mii_charinfo_t& cur, Spec* spec) {
-            spec->mii = iconBase(cur);
+            spec->mii = partBase();
             mii_field_set(&spec->mii, f, v);
+            if (set)
+                set(spec->mii, cur);
             spec->icon = which;
         });
     };
@@ -358,12 +374,17 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
             m.mole_y = c.mole_y;
             m.hair_type = 30;
         });
-    case MII_FIELD_EYE_TYPE:      return part(MII3D_ICON_EYE, field);
-    case MII_FIELD_EYEBROW_TYPE:  return part(MII3D_ICON_EYEBROW, field);
-    case MII_FIELD_MOUTH_TYPE:    return part(MII3D_ICON_MOUTH, field);
-    case MII_FIELD_MUSTACHE_TYPE: return part(MII3D_ICON_MUSTACHE, field);
-    case MII_FIELD_GLASS_TYPE:    return part(MII3D_ICON_GLASSES, field);
-    case MII_FIELD_NOSE_TYPE:     return part(MII3D_ICON_NOSE, field);
+    case MII_FIELD_EYE_TYPE:
+        return part(MII3D_ICON_EYE, field, [](mii_charinfo_t& m, const mii_charinfo_t& c) { m.eye_color = c.eye_color; });
+    case MII_FIELD_EYEBROW_TYPE:  return part(MII3D_ICON_EYEBROW, field, nullptr);
+    case MII_FIELD_MOUTH_TYPE:
+        return part(MII3D_ICON_MOUTH, field, [](mii_charinfo_t& m, const mii_charinfo_t& c) {
+            if (HeadRenderer::instance().mouthShowsColor(m.mouth_type))
+                m.mouth_color = c.mouth_color;
+        });
+    case MII_FIELD_MUSTACHE_TYPE: return part(MII3D_ICON_MUSTACHE, field, nullptr);
+    case MII_FIELD_GLASS_TYPE:    return part(MII3D_ICON_GLASSES, field, nullptr);
+    case MII_FIELD_NOSE_TYPE:     return part(MII3D_ICON_NOSE, field, nullptr);
     default:                      return nullptr;
     }
 }

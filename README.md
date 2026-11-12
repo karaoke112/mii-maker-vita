@@ -43,7 +43,12 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   **Send to / Receive from Another Vita** trades Miis over ad-hoc wireless
   (the receiver is asked before each Mii is saved).
   In the list, Triangle picks a Mii up to move it (Cross places it,
-  Triangle swaps it with the Mii under the cursor, Circle puts it back). Miis are saved to
+  Triangle swaps it with the Mii under the cursor, Circle puts it back).
+  Settings (START): theme, renderer, QR code format, default skin tone, and
+  background music from your own Ogg Vorbis files in
+  `ux0:data/mii-maker-vita/music/` (`mii_channel.ogg`, `mii_maker_3ds.ogg`,
+  `mii_maker_wiiu.ogg`; loop points from `LOOPSTART` / `LOOPLENGTH` or
+  `LOOPEND` comments, in samples; not included). Miis are saved to
   `ux0:data/mii/database.nfdb` (shared with other apps; the app's own files
   go in `ux0:data/mii-maker-vita/`). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,

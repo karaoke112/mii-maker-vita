@@ -132,9 +132,9 @@ from the documented tiling rules and only *checked* against ninTexUtils
   the license is in the file headers.
 - **quirc** (`third_party/quirc/`, QR code recognition): ISC License,
   © 2010-2012 Daniel Beer; license text in `third_party/quirc/LICENSE`.
-- **stb_image_write** (`third_party/stb/`, saves QR code pictures): public
-  domain or MIT (the reader's choice), Sean Barrett; terms at the end of the
-  file. (Pictures are read with the stb_image that borealis' NanoVG
+- **stb_image_write** and **stb_vorbis** (`third_party/stb/`: saving QR
+  code pictures, decoding music): public domain or MIT (the reader's
+  choice), Sean Barrett and contributors; terms at the end of each file. (Pictures are read with the stb_image that borealis' NanoVG
   includes.)
 - **Material Icons** (`app/resources/material/`): Apache License 2.0,
   © Google; license text alongside.

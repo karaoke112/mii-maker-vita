@@ -7,6 +7,13 @@
   "gpu": "GPU",
   "software": "Software",
   "qr": "QR Codes",
+  "skin": "Default Skin Tone",
+  "music": "Music",
+  "music_none": "No Music",
+  "music_wii": "Mii Channel (Wii)",
+  "music_3ds": "Mii Maker (3DS)",
+  "music_wiiu": "Mii Maker (Wii U)",
+  "music_missing": "Music file not found:",
   "qr_switch2": "Switch 2 (all colors)",
   "qr_3ds": "3DS / Wii U",
   "restart": "Restart the app to switch renderers. The GPU renderer needs libshacccg.suprx."

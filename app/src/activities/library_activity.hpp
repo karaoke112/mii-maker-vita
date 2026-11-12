@@ -1,8 +1,11 @@
 #pragma once
 
 #include <borealis.hpp>
+
+#include "views/mii_preview.hpp"
 #include <mii/mii.h>
 
+#include <memory>
 #include <vector>
 
 // Home screen: every saved Mii as a card, with "Add Mii" (start from
@@ -43,9 +46,11 @@ class LibraryActivity : public brls::Activity
     void showHeldAt(int index);
     void endHold(bool place);
     void swapHeld(int index);
+    void reloadOrder();
     int held = -1;   // where the held Mii is in the library, or -1
-    int heldAt = -1; // where it would go (the card under the cursor)
-    std::vector<mii_charinfo_t> base; // the order without the held Mii moved
+    int heldAt = -1; // the card under the cursor
+    mii_charinfo_t heldMii {};
+    std::unique_ptr<MiiPreview> floating; // the held Mii, drawn lifted
     std::vector<std::vector<brls::ActionIdentifier>> cardActionIds;
 
     brls::Box* grid = nullptr;
@@ -55,5 +60,7 @@ class LibraryActivity : public brls::Activity
     Pick pick = Pick::NONE;
     bool stale = false;
     std::vector<brls::View*> cards;
+    std::vector<brls::View*> thumbs; // the cards' previews
+    void thumbPriorities(int focus);
     std::vector<mii_charinfo_t> miis;
 };

@@ -1,5 +1,6 @@
 #include "views/mii_preview.hpp"
 
+#include "gpu_renderer.hpp"
 #include "ui_theme.hpp"
 
 #include <cmath>
@@ -25,9 +26,29 @@ MiiPreview::MiiPreview(const mii_charinfo_t* mii, int renderSize)
         brls::PanAxis::HORIZONTAL));
 }
 
-MiiPreview::~MiiPreview()
+void MiiPreview::setShareKey(const void* key)
 {
     HeadRenderer::instance().forget(this);
+    shareKey = key;
+    shareCount[key]++;
+}
+
+MiiPreview::~MiiPreview()
+{
+    if (shareKey) {
+        if (--shareCount[shareKey] == 0) {
+            shareCount.erase(shareKey);
+            shareEpochs.erase(shareKey);
+            shareImages.erase(shareKey);
+            HeadRenderer::instance().forget(shareKey);
+        } else {
+            // the others keep the picture; they ask again when shown
+            HeadRenderer::instance().invalidate(shareKey);
+            shareEpochs[shareKey]++;
+        }
+    } else {
+        HeadRenderer::instance().forget(this);
+    }
     if (nvgImage >= 0)
         nvgDeleteImage(brls::Application::getNVGContext(), nvgImage);
 }
@@ -40,9 +61,12 @@ void MiiPreview::request3D()
     // whole steps, so turning reuses cached renders
     const float yaw = std::round(yawRef() / 5.0f) * 5.0f;
     const float pitch = std::round(pitchRef() / 2.5f) * 2.5f;
-    if (hasRequested && requestedYaw == yaw && requestedPitch == pitch &&
+    const bool sharedChanged = shareKey && shareEpochs[shareKey] != shareEpoch;
+    if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch &&
         std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
+    if (shareKey)
+        shareEpoch = ++shareEpochs[shareKey];
     requested = *mii;
     requestedYaw = yaw;
     requestedPitch = pitch;
@@ -52,6 +76,10 @@ void MiiPreview::request3D()
     spec.size = renderSize;
     spec.yaw = yaw;
     spec.pitch = pitch;
+    // thumbnails (not stages) are drawn once and kept on the memory card,
+    // nearest the cursor first
+    spec.lowPriority = !stage;
+    spec.smooth = !stage;
     requestedBust = false;
     if (stage && hr.hasBody()) {
         spec.fullBody = true;
@@ -74,7 +102,7 @@ void MiiPreview::request3D()
         spec.background = 0xFF000000u | ((uint32_t)(bg.r * 255.0f + 0.5f) << 16) |
             ((uint32_t)(bg.g * 255.0f + 0.5f) << 8) | (uint32_t)(bg.b * 255.0f + 0.5f);
     }
-    hr.request(this, spec, [this](HeadRenderer::Image img, int size, int gpu) {
+    hr.request(owner(), spec, [this](HeadRenderer::Image img, int size, int gpu) {
         imageSize = size;
         if (gpu > 0) {
             gpuImage = gpu;
@@ -83,6 +111,8 @@ void MiiPreview::request3D()
             gpuImage = -1;
             image = img;
             imageDirty = true;
+            if (shareKey)
+                shareImages[shareKey] = { img, size };
         }
     });
 }
@@ -166,6 +196,21 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
             (large ? "preview/no_resource"_i18n : "preview/no_preview"_i18n).c_str(), nullptr);
     } else {
         request3D();
+        // a shared render may have been redrawn (or remade) by another screen
+        if (shareKey && gpuImage > 0) {
+            const int latest = GpuRenderer::instance().imageOf(shareKey);
+            if (latest > 0)
+                gpuImage = latest;
+        } else if (shareKey && gpuImage <= 0 && !image) {
+            // a new screen: the latest picture
+            gpuImage = GpuRenderer::instance().imageOf(shareKey);
+            auto it = shareImages.find(shareKey);
+            if (gpuImage <= 0 && it != shareImages.end() && it->second.first) {
+                image = it->second.first;
+                imageSize = it->second.second;
+                imageDirty = true;
+            }
+        }
         if (image) {
             if (nvgImage < 0 || nvgImageSize != imageSize) {
                 if (nvgImage >= 0)

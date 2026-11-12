@@ -53,12 +53,20 @@ class HeadRenderer
         bool fullBody = false;
         // icons: queued behind previews, one pass, kept on the memory card
         bool lowPriority = false;
+        // one-pass renders (icons, thumbnails): smooth edges (costs 4x)
+        bool smooth = false;
         // 0xFFRRGGBB: an opaque backdrop, which lets the GPU draw it (stage
         // previews); 0: transparent, CPU only
         uint32_t background = 0;
     };
 
     static HeadRenderer& instance();
+    // Whether a mouth type shows the lip color (icons of the others are the
+    // same in every color). True when unknown.
+    // Icons load in order of priority (lower first; the grids use the
+    // distance from the cursor), then in the order asked. UI thread.
+    void setPriority(const void* owner, int priority);
+    bool mouthShowsColor(int type) const { return type < 0 || type >= (int)mouthColor.size() || mouthColor[type]; }
 
     // Looks for the resource files in `datDir` and starts the workers;
     // rendered icons are kept in `cacheDir`.
@@ -78,6 +86,9 @@ class HeadRenderer
     // delivered after a newer one.
     void request(const void* owner, const Spec& spec, Callback cb);
     // Drops queued work for `owner` and guarantees its callbacks never run.
+    // Drops the owner's pending work and results but keeps its GPU image
+    // (owners shared by several views: one of them went away).
+    void invalidate(const void* owner);
     void forget(const void* owner);
 
   private:
@@ -126,4 +137,7 @@ class HeadRenderer
     std::atomic<int> lastUs[3] = { { 0 }, { 0 }, { 0 } };
     std::map<const void*, Job> gpuPending; // UI thread only
     bool gpuOn = false;
+    std::vector<bool> mouthColor;
+    std::map<const void*, int> priority; // guarded by `mutex`
+    Job takeBest(std::deque<Job>& q); // with `mutex` held
 };
