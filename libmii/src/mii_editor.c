@@ -138,6 +138,14 @@ static const uint8_t k_grid_glass[20] = {
 
 uint32_t mii_common_color_rgb(uint8_t c)    { return c < 100 ? k_common_colors[c] : 0; }
 uint32_t mii_faceline_color_rgb(uint8_t c)  { return c < 10 ? k_faceline_colors[c] : 0; }
+
+/* the favorite colors (red, orange, yellow, light green, green, blue,
+ * light blue, pink, purple, brown, white, black) */
+static const uint32_t k_favorite_colors[12] = {
+    0xD21E14, 0xFF6E19, 0xFFD820, 0x78D220, 0x00782D, 0x0A48B4,
+    0x3CAADE, 0xF55A7D, 0x7328AD, 0x483818, 0xE0E0E0, 0x181814,
+};
+uint32_t mii_favorite_color_rgb(uint8_t c) { return c < 12 ? k_favorite_colors[c] : 0; }
 uint32_t mii_upper_lip_color_rgb(uint8_t c) { return c < 100 ? k_upper_lip_colors[c] : 0; }
 
 #define GRID(arr, cols) { arr, (uint8_t)(sizeof(arr) / sizeof(arr[0])), cols }

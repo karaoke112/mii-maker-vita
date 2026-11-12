@@ -51,6 +51,12 @@ struct mii3d_renderer {
     int composed_valid, composed_has_faceline;
     m3_vertex *verts;
     int verts_cap;
+    /* body: per gender, the mesh and its indices split into shirt / pants */
+    const mii3d_res_t *body_res;
+    mii3d_mesh_t body[2];
+    uint16_t *body_idx[2];
+    int body_shirt_count[2], body_pants_count[2];
+    int body_loaded[2];
 };
 
 static const mii3d_tex_kind_t k_slot_kind[SLOT_TEX_COUNT] = {
@@ -100,10 +106,64 @@ mii3d_result_t mii3d_renderer_create(mii3d_renderer_t **out, const mii3d_res_t *
     return MII3D_OK;
 }
 
+static void body_free(mii3d_renderer_t *r)
+{
+    for (int g = 0; g < 2; g++) {
+        mii3d_mesh_free(&r->body[g]);
+        free(r->body_idx[g]);
+        r->body_idx[g] = NULL;
+        r->body_loaded[g] = 0;
+    }
+}
+
+void mii3d_renderer_set_body(mii3d_renderer_t *r, const mii3d_res_t *body)
+{
+    if (!r)
+        return;
+    body_free(r);
+    r->body_res = body;
+}
+
+/* The body meshes are laid out for a texture atlas whose bottom band
+ * (v > ~0.718) holds the legs and feet: those triangles, and the soles,
+ * are the pants. */
+static const mii3d_mesh_t *get_body(mii3d_renderer_t *r, int gender)
+{
+    gender = gender ? 1 : 0;
+    if (!r->body_res)
+        return NULL;
+    if (!r->body_loaded[gender]) {
+        mii3d_mesh_t *m = &r->body[gender];
+        if (mii3d_res_body(r->body_res, gender, m) != MII3D_OK || !m->uvs)
+            return NULL;
+        uint16_t *idx = (uint16_t *)malloc(sizeof(uint16_t) * (size_t)(m->index_count ? m->index_count : 1));
+        if (!idx) {
+            mii3d_mesh_free(m);
+            return NULL;
+        }
+        int shirt = 0, pants = m->index_count;
+        for (int i = 0; i < m->index_count; i += 3) {
+            const float v = (m->uvs[2 * m->indices[i] + 1] + m->uvs[2 * m->indices[i + 1] + 1] +
+                             m->uvs[2 * m->indices[i + 2] + 1]) / 3.0f;
+            const float *p = m->positions;
+            const int foot = p[3 * m->indices[i] + 1] < 7.0f && p[3 * m->indices[i + 1] + 1] < 7.0f &&
+                             p[3 * m->indices[i + 2] + 1] < 7.0f; /* shoes and soles */
+            uint16_t *dst = (v > 0.718f || foot) ? idx + (pants -= 3) : idx + (shirt += 3) - 3;
+            dst[0] = m->indices[i]; dst[1] = m->indices[i + 1]; dst[2] = m->indices[i + 2];
+        }
+        r->body_idx[gender] = idx;
+        r->body_shirt_count[gender] = shirt;
+        r->body_pants_count[gender] = m->index_count - shirt;
+        r->body_loaded[gender] = 1;
+    }
+    return &r->body[gender];
+}
+
 void mii3d_renderer_destroy(mii3d_renderer_t *r)
 {
     if (!r)
         return;
+    body_free(r);
     for (int i = 0; i < SLOT_TEX_COUNT; i++)
         mii3d_image_free(&r->tex[i].img);
     for (int i = 0; i < MS_COUNT; i++)
@@ -377,6 +437,9 @@ mii3d_result_t mii3d_render_face_texture(mii3d_renderer_t *r, const mii_charinfo
 typedef struct camera {
     float rot[9];       /* model rotation */
     float pivot[3];
+    /* where the current model sits: the head on the body's neck, or the
+     * body scaled for height and build */
+    float mscale[3], moffset[3];
     float eye_dist;
     float f, aspect, znear, zfar;
     float light[3], half[3];   /* view space */
@@ -395,12 +458,23 @@ static void setup_camera(camera *c, const mii3d_view_t *view, int w, int h)
     /* R = Rx(pitch) * Ry(yaw) */
     const float r[9] = { cy, 0, sy, sp * sy, cp, -sp * cy, -cp * sy, sp, cp * cy };
     memcpy(c->rot, r, sizeof(r));
+    for (int k = 0; k < 3; k++) {
+        c->mscale[k] = 1.0f;
+        c->moffset[k] = 0.0f;
+    }
     c->pivot[0] = 0.0f; c->pivot[1] = 33.0f + view->center_y; c->pivot[2] = 0.0f;
     c->eye_dist = 330.0f;
     c->f = (view->zoom > 0 ? view->zoom : 1.0f) / tanf(8.4f * (float)M_PI / 180.0f);
     c->aspect = (float)w / (float)h;
     c->znear = 100.0f;
     c->zfar = 600.0f;
+    if (view->full_body) {
+        /* the same lens from further back: room for the tallest Mii */
+        c->pivot[1] = 92.0f + view->center_y;
+        c->eye_dist = 720.0f;
+        c->znear = 450.0f;
+        c->zfar = 1000.0f;
+    }
     /* nn::mii's icon light direction (view space) */
     c->light[0] = -0.1227878f; c->light[1] = 0.70710677f; c->light[2] = 0.6963642f;
     normalize3(c->light);
@@ -416,8 +490,9 @@ static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const plac
     for (int i = 0; i < mesh->vertex_count; i++) {
         float p[3], n[3], q[3], m[3];
         for (int k = 0; k < 3; k++) {
-            p[k] = mesh->positions[3 * i + k] * pl->scale[k] + pl->translate[k] - c->pivot[k];
-            n[k] = mesh->normals[3 * i + k] * (pl->scale[k] < 0 ? -1.0f : 1.0f);
+            p[k] = (mesh->positions[3 * i + k] * pl->scale[k] + pl->translate[k]) * c->mscale[k] + c->moffset[k] -
+                   c->pivot[k];
+            n[k] = mesh->normals[3 * i + k] * (pl->scale[k] < 0 ? -1.0f : 1.0f) / c->mscale[k];
         }
         for (int k = 0; k < 3; k++) {
             q[k] = c->rot[3 * k] * p[0] + c->rot[3 * k + 1] * p[1] + c->rot[3 * k + 2] * p[2];
@@ -479,6 +554,52 @@ static void placement_identity(placement *p)
 
 static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *ci, const mii3d_view_t *view,
                                      uint8_t *rgba, int width, int height);
+
+/* Body proportions from height and build (0-127), as in nn::mii's
+ * GetBodyScale (see Arian Kordi's FFL-Testing, public domain). */
+static void body_scale(const mii_charinfo_t *ci, float out[3])
+{
+    const float h = (float)ci->height, b = (float)ci->build;
+    out[0] = b * (h * 0.003671875f + 0.4f) / 128.0f + h * 0.001796875f + 0.4f;
+    out[1] = h * 0.006015625f + 0.5f;
+    out[2] = out[0];
+}
+
+/* The neck in body space (FFLBodyRes head height x the body-to-head scale
+ * used for these meshes, per FFL-Testing's body table). */
+#define BODY_HEAD_Y (10.7766f * 8.715f)
+/* nn::mii's normal ("own Mii") pants color */
+#define PANTS_RGB 0x40464Eu
+
+/* Draws the body and leaves the camera set to put the head on its neck. */
+static void draw_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_charinfo_t *ci)
+{
+    float scale[3];
+    body_scale(ci, scale);
+    const mii3d_mesh_t *body = get_body(r, ci->gender);
+    if (body) {
+        const int g = ci->gender ? 1 : 0;
+        memcpy(c->mscale, scale, sizeof(scale));
+        placement pl;
+        placement_identity(&pl);
+        m3_vertex *v = ensure_verts(r, body->vertex_count);
+        if (v) {
+            m3_material m;
+            memset(&m, 0, sizeof(m));
+            m3_rgb(m.base, mii_favorite_color_rgb(ci->favorite_color), 1.0f);
+            m.lit = 1;
+            m.depth_test = m.depth_write = 1;
+            transform_mesh(c, body, &pl, &k_mat_body[ci->favorite_color % 12], v);
+            m3_draw(t, v, r->body_idx[g], r->body_shirt_count[g], &m);
+            m3_rgb(m.base, PANTS_RGB, 1.0f);
+            transform_mesh(c, body, &pl, &k_mat_pants[0], v);
+            m3_draw(t, v, r->body_idx[g] + r->body_shirt_count[g], r->body_pants_count[g], &m);
+        }
+    }
+    for (int k = 0; k < 3; k++)
+        c->mscale[k] = 1.0f;
+    c->moffset[1] = BODY_HEAD_Y * scale[1];
+}
 
 /* Box-filters an (w*ss) x (h*ss) image down to w x h. Color is weighted by
  * alpha so transparent background does not darken the edges. */
@@ -582,6 +703,9 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
 
     placement pl;
     m3_material m;
+
+    if (view->full_body)
+        draw_body(r, &t, &cam, ci);
 
     /* faceline */
     placement_identity(&pl);

@@ -13,11 +13,6 @@
 
 using namespace brls::literals;
 
-static const uint32_t kFavoriteSwatch[12] = {
-    0xD21E14, 0xFF6E19, 0xFFD820, 0x78D220, 0x00782D, 0x0A48B4,
-    0x3CAADE, 0xF55A7D, 0x7328AD, 0x483818, 0xE0E0E0, 0x181814,
-};
-
 static std::vector<uint8_t> gridItems(mii_grid_kind_t kind, int* columns)
 {
     const mii_grid_t* g = mii_editor_grid(kind);
@@ -34,12 +29,14 @@ static NVGcolor rgb(uint32_t c)
 
 // The preview on the left and `right` beside it, in a frame with no title
 // bar and the button hints along the bottom.
-static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPreview** previewOut)
+static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPreview** previewOut,
+    MiiPreview::Framing framing = MiiPreview::Framing::BUST)
 {
     auto* root = new brls::Box(brls::Axis::ROW);
 
     auto* preview = new MiiPreview(&s.mii, 384);
     preview->setStage(true);
+    preview->setFraming(framing);
     preview->setYawSource(&s.yaw);
     preview->setWidth(520);
     preview->setGrow(0);
@@ -173,7 +170,7 @@ brls::View* EditorActivity::createContentView()
     // the star shows the favorite color
     if (star) {
         GlyphView* g = star->glyph();
-        g->setFillColor(rgb(kFavoriteSwatch[session->mii.favorite_color % 12]));
+        g->setFillColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
         favoriteStar = g;
     }
 
@@ -238,7 +235,7 @@ void EditorActivity::onResume()
 {
     // the favorite color may have changed on its page
     if (favoriteStar)
-        favoriteStar->setFillColor(rgb(kFavoriteSwatch[session->mii.favorite_color % 12]));
+        favoriteStar->setFillColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
 }
 
 bool EditorActivity::save()
@@ -654,7 +651,7 @@ void CategoryActivity::addTabs()
                 b->addView(makePrompt("editor/prompt/favorite_color"_i18n));
                 OptionGrid::Options o;
                 o.columns = 6;
-                o.colorOf = [](uint8_t v) { return kFavoriteSwatch[v % 12]; };
+                o.colorOf = [](uint8_t v) { return mii_favorite_color_rgb(v); };
                 b->addView(new OptionGrid(&s->mii, MII_FIELD_FAVORITE_COLOR, OptionGrid::range(MII_FIELD_FAVORITE_COLOR),
                     o, [s] { s->dirty = true; }));
             }, false);
@@ -683,7 +680,10 @@ brls::View* CategoryActivity::createContentView()
     body->setGrow(1);
     right->addView(body);
 
-    brls::AppletFrame* frame = editorFrame(*session, right, nullptr);
+    // the Style and Body pages show the whole Mii
+    const bool whole = category == Category::STYLE || category == Category::BODY;
+    brls::AppletFrame* frame = editorFrame(*session, right, nullptr,
+        whole ? MiiPreview::Framing::FULL_BODY : MiiPreview::Framing::BUST);
     frame->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
         brls::Application::popActivity(brls::TransitionAnimation::NONE);
         return true;

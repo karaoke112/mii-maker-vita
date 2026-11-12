@@ -2,6 +2,8 @@
  *
  *   miirender FFLResHigh.dat out.ppm [mii.charinfo|.ffsd|.nfsd|default|female] [size] [yaw]
  *   miirender FFLResHigh.dat --face out.ppm [mii] [size]     (face texture only)
+ *   miirender FFLResHigh.dat --body FFLBodyRes.dat out.ppm [mii] [size] [yaw]
+ *                                                            (whole Mii)
  *
  * Output is binary PPM (P6) on a light background, or PAM (P7, RGBA) when
  * the name ends in .pam.
@@ -82,11 +84,14 @@ int main(int argc, char **argv)
 {
     if (argc < 3) {
         fprintf(stderr, "usage: %s FFLResHigh.dat out.ppm [mii] [size] [yaw]\n"
-                        "       %s FFLResHigh.dat --face out.ppm [mii] [size]\n", argv[0], argv[0]);
+                        "       %s FFLResHigh.dat --face out.ppm [mii] [size]\n"
+                        "       %s FFLResHigh.dat --body FFLBodyRes.dat out.ppm [mii] [size] [yaw]\n",
+                argv[0], argv[0], argv[0]);
         return 2;
     }
     const int face_only = !strcmp(argv[2], "--face");
-    const int a = face_only ? 3 : 2;
+    const char *body_path = !strcmp(argv[2], "--body") && argc > 3 ? argv[3] : NULL;
+    const int a = face_only ? 3 : body_path ? 4 : 2;
     if (argc <= a) {
         fprintf(stderr, "missing output path\n");
         return 2;
@@ -111,6 +116,17 @@ int main(int argc, char **argv)
     const int px = argc > a + 2 ? atoi(argv[a + 2]) : 256;
     mii3d_renderer_t *ren;
     mii3d_renderer_create(&ren, res);
+    uint8_t *body_file = NULL;
+    mii3d_res_t *body = NULL;
+    if (body_path) {
+        size_t body_size;
+        body_file = read_all(body_path, &body_size);
+        if (!body_file || (r = mii3d_res_open_body(&body, body_file, body_size)) != MII3D_OK) {
+            fprintf(stderr, "%s: %s\n", body_path, body_file ? mii3d_result_string(r) : "cannot read");
+            return 1;
+        }
+        mii3d_renderer_set_body(ren, body);
+    }
     uint8_t *rgba = (uint8_t *)malloc((size_t)px * px * 4);
     if (face_only) {
         r = mii3d_render_face_texture(ren, &ci, rgba, px);
@@ -119,6 +135,8 @@ int main(int argc, char **argv)
         mii3d_view_init_default(&view);
         if (argc > a + 3)
             view.yaw_deg = (float)atof(argv[a + 3]);
+        view.full_body = body != NULL;
+        view.supersample = 2;
         r = mii3d_render_head(ren, &ci, &view, rgba, px, px);
     }
     if (r != MII3D_OK) {
@@ -128,6 +146,8 @@ int main(int argc, char **argv)
     write_image(argv[a], rgba, px, px);
     free(rgba);
     mii3d_renderer_destroy(ren);
+    mii3d_res_close(body);
+    free(body_file);
     mii3d_res_close(res);
     free(file);
     return 0;

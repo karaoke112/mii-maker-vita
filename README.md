@@ -10,8 +10,8 @@ ports can then use them from a shared database.
 
 > **Mii previews** need a face resource from hardware or software you own,
 > `AFLResHigh_2_3.dat` (Miitomo) or `FFLResHigh.dat` (Wii U), in
-> `ux0:data/mii/`. It is not included. See [3D_RENDERING.md](docs/3D_RENDERING.md).
-> The screenshots show the app without one installed.
+> `ux0:data/mii/`, plus `FFLBodyRes.dat` for whole Miis. They are not
+> included. See [3D_RENDERING.md](docs/3D_RENDERING.md).
 
 ## What works
 
@@ -30,8 +30,9 @@ ports can then use them from a shared database.
   original vector drawings. Builds to a `.vpk` (it has not been run on real
   Vita hardware yet).
 - **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face
-  resources (including untiling Wii U GPU-tiled textures) and draws a Mii
-  head with the Switch's lighting model in a small software rasterizer, so
+  resources (including untiling Wii U GPU-tiled textures) and draws a Mii,
+  head and (with `FFLBodyRes.dat`) body, with the Switch's lighting model in
+  a small software rasterizer, so
   it runs the same on the Vita and on a PC.
   The app renders on a worker thread: a quick image first, then a smoother one.
 - **`miitool`**: PC command-line tool to inspect and convert Mii files and

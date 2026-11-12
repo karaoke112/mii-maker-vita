@@ -25,8 +25,8 @@ static uint64_t hashKey(const HeadRenderer::Spec& spec, int supersample)
         mix(bytes, sizeof(bytes));
     else
         mix(&spec.mii, sizeof(spec.mii));
-    const int v[6] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
-                       spec.icon, supersample };
+    const int v[7] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
+                       spec.icon, supersample, spec.fullBody ? 1 : 0 };
     mix(v, sizeof(v));
     return h;
 }
@@ -65,6 +65,7 @@ HeadRenderer::~HeadRenderer()
         thread.join();
     mii3d_renderer_destroy(renderer);
     mii3d_res_close(res);
+    mii3d_res_close(bodyRes);
 }
 
 void HeadRenderer::init(const std::string& dataDir)
@@ -92,9 +93,30 @@ void HeadRenderer::init(const std::string& dataDir)
         res = opened;
         statusText = std::string("Face resource: ") + name;
         brls::Logger::info("Loaded face resource {}", path);
+        loadBody(dataDir);
         thread = std::thread(&HeadRenderer::worker, this);
         return;
     }
+}
+
+// The body resource is optional: without it, whole-Mii views show the head.
+void HeadRenderer::loadBody(const std::string& dataDir)
+{
+    const std::string path = dataDir + "/FFLBodyRes.dat";
+    if (!readFile(path, &bodyFile))
+        return;
+    mii3d_res_t* opened = nullptr;
+    mii3d_result_t r = mii3d_res_open_body(&opened, bodyFile.data(), bodyFile.size());
+    if (r != MII3D_OK) {
+        brls::Logger::error("{}: {}", path, mii3d_result_string(r));
+        statusText += " (FFLBodyRes.dat is not a body resource this app can read)";
+        bodyFile.clear();
+        return;
+    }
+    bodyRes = opened;
+    mii3d_renderer_set_body(renderer, bodyRes);
+    statusText += ", body resource: FFLBodyRes.dat";
+    brls::Logger::info("Loaded body resource {}", path);
 }
 
 void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
@@ -168,6 +190,7 @@ void HeadRenderer::worker()
             view.yaw_deg = sp.yaw;
             view.zoom = sp.zoom;
             view.center_y = sp.centerY;
+            view.full_body = sp.fullBody && bodyRes;
             view.supersample = job.supersample;
             r = mii3d_render_head(renderer, &sp.mii, &view, pixels->data(), sp.size, sp.size);
         }

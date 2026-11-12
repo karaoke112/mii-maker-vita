@@ -3,6 +3,7 @@
  *
  *   test_mii3d                  run the tests
  *   MII3D_RES=FFLResHigh.dat test_mii3d   also smoke-test a real resource
+ *   MII3D_BODY=FFLBodyRes.dat (with MII3D_RES) also draw whole Miis
  */
 #include "../src/mii3d_internal.h"
 #include "../src/raster.h"
@@ -288,6 +289,70 @@ static void test_raster(void)
 
 /* ---- optional: real resource -------------------------------------------- */
 
+static uint8_t *read_file(const char *path, size_t *size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    uint8_t *buf = malloc((size_t)n);
+    if (buf && fread(buf, 1, (size_t)n, f) != (size_t)n) {
+        free(buf);
+        buf = NULL;
+    }
+    fclose(f);
+    *size = (size_t)n;
+    return buf;
+}
+
+/* Whole Miis: the body shows below the head, taller Miis are taller, and
+ * the two kinds of resource file are not mistaken for each other. */
+static void test_real_body(mii3d_renderer_t *r, const char *path, const uint8_t *face_file, size_t face_size)
+{
+    size_t n;
+    uint8_t *buf = read_file(path, &n);
+    if (!buf) {
+        fprintf(stderr, "MII3D_BODY: cannot open %s\n", path);
+        g_failed++;
+        return;
+    }
+    mii3d_res_t *body, *wrong;
+    CHECK(mii3d_res_open_body(&body, buf, n) == MII3D_OK);
+    CHECK(mii3d_res_open(&wrong, buf, n) == MII3D_ERR_FORMAT);
+    CHECK(mii3d_res_open_body(&wrong, face_file, face_size) == MII3D_ERR_FORMAT);
+    mii3d_renderer_set_body(r, body);
+
+    enum { W = 96 };
+    uint8_t *px = malloc(W * W * 4);
+    mii3d_view_t view;
+    mii3d_view_init_default(&view);
+    view.full_body = 1;
+    int top[2];
+    for (int tall = 0; tall < 2; tall++) {
+        mii_charinfo_t ci;
+        mii_charinfo_init_default(&ci, tall);
+        ci.height = tall ? 127 : 0;
+        CHECK(mii3d_render_head(r, &ci, &view, px, W, W) == MII3D_OK);
+        top[tall] = W;
+        int lowest = -1;
+        for (int y = 0; y < W; y++)
+            for (int x = 0; x < W; x++)
+                if (px[4 * (y * W + x) + 3]) {
+                    if (y < top[tall]) top[tall] = y;
+                    lowest = y;
+                }
+        CHECK(lowest > W * 3 / 4); /* feet near the bottom */
+    }
+    CHECK(top[1] < top[0] - 5); /* the tall Mii's head is higher */
+    printf("real body %s: ok\n", path);
+    mii3d_renderer_set_body(r, NULL);
+    free(px);
+    mii3d_res_close(body);
+    free(buf);
+}
+
 static void test_real_resource(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -316,6 +381,9 @@ static void test_real_resource(const char *path)
         CHECK(covered > 128 * 128 / 4 && covered < 128 * 128 * 9 / 10);
     }
     printf("real resource %s: ok (variant %d)\n", path, (int)mii3d_res_variant(res));
+    const char *body = getenv("MII3D_BODY");
+    if (body && *body)
+        test_real_body(r, body, buf, (size_t)n);
     free(px);
     mii3d_renderer_destroy(r);
     mii3d_res_close(res);

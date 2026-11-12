@@ -156,6 +156,54 @@ mii3d_result_t mii3d_res_open(mii3d_res_t **out, const uint8_t *file, size_t siz
     return MII3D_ERR_FORMAT;
 }
 
+/* FFLBodyRes.dat (from Nintendo Web Framework titles) uses the Wii U layout
+ * with no textures; the two static body meshes sit in the nose shape slots
+ * 3 and 4 (male, female). */
+#define BODY_SLOT 3
+
+static int body_works(const mii3d_res_t *res)
+{
+    for (int g = 0; g < 2; g++) {
+        mii3d_mesh_t m;
+        if (mii3d_res_shape(res, MII3D_SHAPE_NOSE, BODY_SLOT + g, &m) != MII3D_OK)
+            return 0;
+        const int ok = m.vertex_count > 100 && m.bbox_max[1] - m.bbox_min[1] > 40.0f;
+        mii3d_mesh_free(&m);
+        if (!ok)
+            return 0;
+    }
+    return 1;
+}
+
+mii3d_result_t mii3d_res_open_body(mii3d_res_t **out, const uint8_t *file, size_t size)
+{
+    mii3d_res_t *res;
+
+    if (!out || !file)
+        return MII3D_ERR_ARGUMENT;
+    *out = NULL;
+    if (size < 0x14 || memcmp(file, "FFRA", 4) != 0 || m3_be32(file + 4) != 0x00070000u)
+        return MII3D_ERR_FORMAT;
+    res = (mii3d_res_t *)calloc(1, sizeof(*res));
+    if (!res)
+        return MII3D_ERR_MEMORY;
+    res->file = file;
+    res->size = size;
+    if (apply_layout(res, &k_layouts[0]) && body_works(res)) {
+        *out = res;
+        return MII3D_OK;
+    }
+    free(res);
+    return MII3D_ERR_FORMAT;
+}
+
+mii3d_result_t mii3d_res_body(const mii3d_res_t *res, int gender, mii3d_mesh_t *out)
+{
+    if (!res || !out || gender < 0 || gender > 1)
+        return MII3D_ERR_ARGUMENT;
+    return mii3d_res_shape(res, MII3D_SHAPE_NOSE, BODY_SLOT + gender, out);
+}
+
 void mii3d_res_close(mii3d_res_t *res)
 {
     free(res);
@@ -298,7 +346,9 @@ mii3d_result_t mii3d_res_shape(const mii3d_res_t *res, mii3d_shape_kind_t kind, 
     raw = load_part(res, info, &err);
     if (!raw)
         return err;
-    if (info.size < 0x90) {
+    /* 0x48 bytes of offsets, sizes and bounding box; face shapes add a
+     * transform block (to 0x90), body shapes do not */
+    if (info.size < (kind == MII3D_SHAPE_FACELINE ? 0x90u : 0x48u)) {
         free(raw);
         return MII3D_ERR_DATA;
     }
