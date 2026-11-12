@@ -29,7 +29,8 @@
   can be dropped into a Vita app, a decompiled game, a PC tool or a Switch
   homebrew without dragging dependencies along.
 - **No Nintendo assets in the repo or the `.vpk`.** Fonts, icons and LiveArea
-  art are original or openly licensed. The 3D renderer will load
+  art come from openly licensed, human-made sets (see
+  THIRD_PARTY_NOTICES.md). The 3D renderer will load
   resource files the user dumps from their own hardware.
 - **Match the Switch editor's information layout** (categories, grid order,
   100-color palette, adjustment ranges) so Miis made on a Switch can be

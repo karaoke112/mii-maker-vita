@@ -65,4 +65,8 @@ For 3D heads, copy your `FFLResHigh.dat` into `build/desktop/mii-data/`.
 
 ## Regenerating assets
 
-- Button glyph font: `pip install fonttools && python3 app/tools/make_button_font.py`
+- Button glyph font (from PromptFont): see the comment at the top of
+  `app/tools/make_button_font.py` (`npm pack promptfont`, then run it).
+- Icons, app icon and LiveArea images (from Material Symbols, MDI,
+  game-icons.net, Tabler): see the top of `app/tools/make_icons.py`
+  (`npm pack @iconify-json/<set>` for the four sets, then run it).

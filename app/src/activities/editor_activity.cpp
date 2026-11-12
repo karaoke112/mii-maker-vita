@@ -3,7 +3,7 @@
 #include "mii_library.hpp"
 #include "ui_theme.hpp"
 #include "views/controls.hpp"
-#include "views/glyphs.hpp"
+#include "views/icon.hpp"
 #include "views/mii_preview.hpp"
 
 #include <mii/mii_editor.h>
@@ -58,7 +58,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
 class MenuRow : public brls::Box
 {
   public:
-    MenuRow(Glyph glyph, const std::string& text, bool topRule)
+    MenuRow(const char* iconName, const std::string& text, bool topRule)
         : brls::Box(brls::Axis::ROW)
         , topRule(topRule)
     {
@@ -67,7 +67,9 @@ class MenuRow : public brls::Box
         this->setPadding(0, 12, 0, 14);
         this->setFocusable(true);
         this->setHighlightCornerRadius(4);
-        icon = new GlyphView(glyph, 40);
+        icon = new IconView(iconName ? iconName : "", 40, ui::kText);
+        if (!iconName)
+            icon->setVisibility(brls::Visibility::GONE);
         this->addView(icon);
         label = new brls::Label();
         label->setText(text);
@@ -78,7 +80,7 @@ class MenuRow : public brls::Box
         this->addGestureRecognizer(new brls::TapGestureRecognizer(this));
     }
 
-    GlyphView* glyph() { return icon; }
+    IconView* iconView() { return icon; }
 
     // a value shown at the right end (the nickname)
     brls::Label* addValue()
@@ -91,7 +93,6 @@ class MenuRow : public brls::Box
         return v;
     }
 
-    void hideIcon() { icon->setVisibility(brls::Visibility::GONE); label->setMarginLeft(10); }
 
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override
@@ -107,29 +108,29 @@ class MenuRow : public brls::Box
 
   private:
     bool topRule;
-    GlyphView* icon;
+    IconView* icon;
     brls::Label* label;
 };
 
 struct MenuEntry {
     Category category;
-    Glyph glyph;
+    const char* icon; // resources/icons/<icon>.png
     const char* key;
 };
 
 static const MenuEntry kMenu[] = {
-    { Category::FACE, Glyph::FACE, "editor/menu/face" },
-    { Category::HAIR, Glyph::HAIR, "editor/menu/hair" },
-    { Category::EYEBROWS, Glyph::EYEBROWS, "editor/menu/eyebrows" },
-    { Category::EYES, Glyph::EYES, "editor/menu/eyes" },
-    { Category::NOSE, Glyph::NOSE, "editor/menu/nose" },
-    { Category::MOUTH, Glyph::MOUTH, "editor/menu/mouth" },
-    { Category::FACIAL_HAIR, Glyph::FACIAL_HAIR, "editor/menu/facial_hair" },
-    { Category::MOLE, Glyph::MOLE, "editor/menu/mole" },
-    { Category::STYLE, Glyph::STYLE, "editor/menu/style" },
-    { Category::BODY, Glyph::BODY, "editor/menu/body" },
-    { Category::GLASSES, Glyph::GLASSES, "editor/menu/glasses" },
-    { Category::FAVORITE_COLOR, Glyph::STAR, "editor/menu/favorite_color" },
+    { Category::FACE, "face", "editor/menu/face" },
+    { Category::HAIR, "hair", "editor/menu/hair" },
+    { Category::EYEBROWS, "eyebrows", "editor/menu/eyebrows" },
+    { Category::EYES, "eyes", "editor/menu/eyes" },
+    { Category::NOSE, "nose", "editor/menu/nose" },
+    { Category::MOUTH, "mouth", "editor/menu/mouth" },
+    { Category::FACIAL_HAIR, "facial_hair", "editor/menu/facial_hair" },
+    { Category::MOLE, "mole", "editor/menu/mole" },
+    { Category::STYLE, "style", "editor/menu/style" },
+    { Category::BODY, "body", "editor/menu/body" },
+    { Category::GLASSES, "glasses", "editor/menu/glasses" },
+    { Category::FAVORITE_COLOR, "star", "editor/menu/favorite_color" },
 };
 
 EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved)
@@ -151,7 +152,7 @@ brls::View* EditorActivity::createContentView()
         auto* line = new brls::Box(brls::Axis::ROW);
         for (int j = i; j < i + 2 && j < n; j++) {
             const MenuEntry& e = kMenu[j];
-            auto* row = new MenuRow(e.glyph, brls::getStr(e.key), i == 0);
+            auto* row = new MenuRow(e.icon, brls::getStr(e.key), i == 0);
             row->setGrow(1);
             row->setWidthPercentage(50);
             if (j > i)
@@ -161,7 +162,7 @@ brls::View* EditorActivity::createContentView()
                 brls::Application::pushActivity(new CategoryActivity(s, cat), brls::TransitionAnimation::NONE);
                 return true;
             });
-            if (e.glyph == Glyph::STAR)
+            if (e.category == Category::FAVORITE_COLOR)
                 star = row;
             line->addView(row);
         }
@@ -169,13 +170,13 @@ brls::View* EditorActivity::createContentView()
     }
     // the star shows the favorite color
     if (star) {
-        GlyphView* g = star->glyph();
-        g->setFillColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
+        IconView* g = star->iconView();
+        g->setOverlay("star_outline", ui::kText);
+        g->setColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
         favoriteStar = g;
     }
 
-    auto* nameRow = new MenuRow(Glyph::FACE, "editor/nickname"_i18n, false);
-    nameRow->hideIcon();
+    auto* nameRow = new MenuRow(nullptr, "editor/nickname"_i18n, false);
     brls::Label* nameValue = nameRow->addValue();
     auto showName = [s, nameValue] {
         char buf[64];
@@ -235,7 +236,7 @@ void EditorActivity::onResume()
 {
     // the favorite color may have changed on its page
     if (favoriteStar)
-        favoriteStar->setFillColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
+        favoriteStar->setColor(rgb(mii_favorite_color_rgb(session->mii.favorite_color)));
 }
 
 bool EditorActivity::save()
@@ -336,6 +337,14 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
             m.beard_type = v;
             m.hair_type = 30; // keep the hair out of the way
         });
+    case MII_FIELD_MOLE_TYPE:
+        return head(2.2f, -6.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t& c) {
+            m.mole_type = v; // where the Mii's mole is
+            m.mole_scale = c.mole_scale;
+            m.mole_x = c.mole_x;
+            m.mole_y = c.mole_y;
+            m.hair_type = 30;
+        });
     case MII_FIELD_EYE_TYPE:      return part(MII3D_ICON_EYE, field);
     case MII_FIELD_EYEBROW_TYPE:  return part(MII3D_ICON_EYEBROW, field);
     case MII_FIELD_MOUTH_TYPE:    return part(MII3D_ICON_MOUTH, field);
@@ -345,15 +354,6 @@ static OptionGrid::IconOf iconFor(mii_field_t field)
     }
 }
 
-// a light gray circle standing in for the face
-static void paintRing(NVGcontext* vg, float x, float y, float s)
-{
-    nvgBeginPath(vg);
-    nvgCircle(vg, x + s / 2, y + s / 2, s * 0.33f);
-    nvgStrokeColor(vg, ui::kRing);
-    nvgStrokeWidth(vg, s * 0.045f);
-    nvgStroke(vg);
-}
 
 // ---- page building blocks ----------------------------------------------
 
@@ -387,8 +387,8 @@ static OptionGrid* partsGrid(EditorSession* s, mii_field_t field, mii_grid_kind_
     if (field == MII_FIELD_EYE_TYPE || field == MII_FIELD_EYEBROW_TYPE)
         o.iconScale = 0.86f;
     if (field == MII_FIELD_GLASS_TYPE) {
-        o.paint = [](NVGcontext* vg, uint8_t, float x, float y, float sz) { paintRing(vg, x, y, sz); };
-        o.iconScale = 0.6f;
+        o.noneIcon = true;
+        o.iconScale = 0.8f;
     }
     return new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
 }
@@ -549,9 +549,8 @@ void CategoryActivity::addTabs()
                 OptionGrid::Options o;
                 o.columns = 3;
                 o.iconOf = iconFor(MII_FIELD_MUSTACHE_TYPE);
-                o.paint = [](NVGcontext* vg, uint8_t, float x, float y, float sz) { paintRing(vg, x, y, sz); };
-                o.iconScale = 0.36f;
-                o.iconDy = 0.1f;
+                o.noneIcon = true;
+                o.iconScale = 0.6f;
                 b->addView(new OptionGrid(&s->mii, MII_FIELD_MUSTACHE_TYPE,
                     OptionGrid::range(MII_FIELD_MUSTACHE_TYPE), o, [s] { s->dirty = true; }));
                 auto* beard = makeSectionTitle("editor/beard"_i18n);
@@ -572,15 +571,7 @@ void CategoryActivity::addTabs()
             return page([s](brls::Box* b) {
                 OptionGrid::Options o;
                 o.columns = 2;
-                o.paint = [](NVGcontext* vg, uint8_t v, float x, float y, float sz) {
-                    paintRing(vg, x, y, sz);
-                    if (v) {
-                        nvgBeginPath(vg);
-                        nvgCircle(vg, x + sz * 0.42f, y + sz * 0.56f, sz * 0.035f);
-                        nvgFillColor(vg, ui::kText);
-                        nvgFill(vg);
-                    }
-                };
+                o.iconOf = iconFor(MII_FIELD_MOLE_TYPE);
                 b->addView(new OptionGrid(&s->mii, MII_FIELD_MOLE_TYPE, { 0, 1 }, o, [s] { s->dirty = true; }));
             }, false);
         } });
@@ -610,8 +601,7 @@ void CategoryActivity::addTabs()
                 o.cell = 200;
                 o.gap = 16;
                 o.paint = [](NVGcontext* vg, uint8_t v, float x, float y, float sz) {
-                    drawGlyph(vg, v ? Glyph::PERSON_B : Glyph::PERSON_A, x + sz * 0.15f, y + sz * 0.15f, sz * 0.7f,
-                        ui::kText, ui::kText);
+                    drawIcon(vg, v ? "woman" : "man", x + sz * 0.1f, y + sz * 0.1f, sz * 0.8f, ui::kText);
                 };
                 b->addView(new OptionGrid(&s->mii, MII_FIELD_GENDER, { 0, 1 }, o, [s] { s->dirty = true; }));
                 auto* note = new brls::Label();
@@ -627,19 +617,15 @@ void CategoryActivity::addTabs()
         tabs.push_back({ "", [s] {
             return page([s](brls::Box* b) {
                 b->addView(makePrompt("editor/prompt/body"_i18n));
-                auto glyph = [](Glyph g) {
-                    auto* v = new GlyphView(g, 84);
-                    v->setGlyphColor(nvgRGB(110, 110, 110));
-                    return v;
-                };
+                auto icon = [](const char* name) { return new IconView(name, 56, nvgRGB(110, 110, 110)); };
                 auto changed = [s] { s->dirty = true; };
-                auto* height = new FieldSlider(&s->mii, MII_FIELD_HEIGHT, glyph(Glyph::BODY_SHORT),
-                    glyph(Glyph::BODY_TALL), changed);
-                height->setWidth(620);
+                b->addView(makeSectionTitle("editor/height"_i18n));
+                auto* height = new FieldSlider(&s->mii, MII_FIELD_HEIGHT, icon("shorter"), icon("taller"), changed);
+                height->setWidth(600);
                 b->addView(height);
-                auto* build = new FieldSlider(&s->mii, MII_FIELD_BUILD, glyph(Glyph::BODY_THIN),
-                    glyph(Glyph::BODY_WIDE), changed);
-                build->setWidth(620);
+                b->addView(makeSectionTitle("editor/build"_i18n));
+                auto* build = new FieldSlider(&s->mii, MII_FIELD_BUILD, icon("thinner"), icon("wider"), changed);
+                build->setWidth(600);
                 b->addView(build);
             }, false);
         } });

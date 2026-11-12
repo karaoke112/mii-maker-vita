@@ -65,7 +65,8 @@ The line under the "Create" buttons shows which files are in use.
 Editor grid icons come from the same renderer: flat parts (eyes, brows,
 mouth, mustache, glasses) via `mii3d_render_part_icon`, shapes (hair, face
 shape, wrinkles, makeup, nose, beard) as small heads framed on the part,
-all in the Mii's current colors and only for tiles on screen.
+in neutral colors (black hair and lines, light skin; eyes and lips keep the
+Mii's colors), and only for tiles on screen.
 
 The app's `HeadRenderer` runs this on a worker thread: a quick pass shows up
 first, then a 2x-supersampled pass replaces it, and results are cached so

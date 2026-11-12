@@ -21,8 +21,8 @@ Two caveats found while building:
 - `third_party/borealis/resources/font/` contains Nintendo's system fonts
   (`switch_font.ttf` is Morisawa UD Shin Go licensed to Nintendo,
   `switch_icons.ttf` is "NintendoExt", © Nintendo). This app ships its own
-  `resources/` with M PLUS Rounded 1c (OFL) and a generated PlayStation
-  button-glyph font instead, and never packages borealis' `resources/`.
+  `resources/` with M PLUS Rounded 1c (OFL) and PlayStation button glyphs
+  from PromptFont (OFL) instead, and never packages borealis' `resources/`.
 - On desktop, borealis' global quit binds START on every screen, which would
   steal the editor's START = save; the app binds it per screen instead.
 

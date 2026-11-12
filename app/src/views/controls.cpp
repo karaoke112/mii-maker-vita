@@ -1,6 +1,7 @@
 #include "views/controls.hpp"
 
 #include "ui_theme.hpp"
+#include "views/icon.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -59,8 +60,13 @@ class GridCell : public brls::Box
             opt.paint(vg, value, sx, sy, side);
 
         bool drewIcon = false;
-        if (opt.iconOf)
+        if (opt.noneIcon && value == 0) {
+            const float s = side * 0.42f;
+            ::drawIcon(vg, "none", sx + (side - s) / 2, sy + (side - s) / 2, s, ui::kRing);
+            drewIcon = true;
+        } else if (opt.iconOf) {
             drewIcon = drawIcon(vg, sx, sy, side);
+        }
         if (!drewIcon && !opt.colorOf && !opt.paint)
             brls::Box::draw(vg, x, y, width, height, style, ctx);
 
