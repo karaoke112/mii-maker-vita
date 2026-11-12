@@ -7,8 +7,9 @@
 // The user's Miis, persisted as an official Switch Mii database (NFDB) in a
 // location shared with other homebrew:
 //
-//   Vita:    ux0:data/mii/database.nfdb   (+ author_id.bin, export/)
-//   Desktop: ./mii-data/database.nfdb
+//   Vita:    ux0:data/mii/database.nfdb   (+ .bak, export/)
+//   Desktop: ./data/mii/database.nfdb
+// (the author id lives in the app's own folder; see paths.hpp)
 //
 // See docs/SHARED_DATABASE.md for the contract other apps and game ports
 // can rely on.

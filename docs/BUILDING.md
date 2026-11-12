@@ -57,11 +57,11 @@ Linux needs GLFW's X11 dependencies and D-Bus headers, e.g. on Ubuntu:
 ```sh
 cmake -S app -B build/desktop -DPLATFORM_DESKTOP=ON -DGLFW_BUILD_WAYLAND=OFF
 cmake --build build/desktop -j
-cd build/desktop && ./mii_maker_vita        # data goes to ./mii-data/
+cd build/desktop && ./mii_maker_vita        # data goes to ./data/ (like ux0:data/)
 ```
 
 Keys: arrows navigate, Enter = ✕ (confirm), Esc = ○ (back), Ctrl+S = save.
-For 3D heads, copy your `FFLResHigh.dat` into `build/desktop/mii-data/`.
+For 3D Miis, copy your `.dat` files into `build/desktop/data/mii-maker-vita/dat/`.
 
 ## Regenerating assets
 

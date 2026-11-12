@@ -15,8 +15,8 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
 
 > **Mii previews** need a face resource from hardware or software you own,
 > `AFLResHigh_2_3.dat` (Miitomo) or `FFLResHigh.dat` (Wii U), in
-> `ux0:data/mii/`, plus `FFLBodyRes.dat` for whole Miis. They are not
-> included. See [3D_RENDERING.md](docs/3D_RENDERING.md).
+> `ux0:data/mii-maker-vita/dat/`, plus `FFLBodyRes.dat` for whole Miis.
+> They are not included. See [3D_RENDERING.md](docs/3D_RENDERING.md).
 
 ## What works
 
@@ -30,7 +30,8 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   category menu, nickname and Done button; each category opens a page with
   Types / Position / Color tabs (L / R) and picture tiles; Style, Body and
   Favorite Color are single prompt pages. The right stick (or L / R on the
-  menu) turns the Mii. Saves to `ux0:data/mii/database.nfdb`; export
+  menu) turns the Mii. Saves Miis to `ux0:data/mii/database.nfdb` (shared
+  with other apps; the app's own files go in `ux0:data/mii-maker-vita/`); export
   `.charinfo` / `.nfsd` / `.ffsd`, delete. Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, game-icons.net,
   Tabler) and the button glyphs from PromptFont. Builds to a `.vpk` (it has not been run on real

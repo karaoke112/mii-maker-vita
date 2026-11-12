@@ -66,7 +66,7 @@ ordinary NanoVG image, so it works with any borealis backend. A GXM backend
 could be added later behind the same API if profiling on hardware calls for it.
 
 Whole Miis come from the optional `FFLBodyRes.dat` (see 3D_RENDERING.md).
-Next steps: saving rendered grid icons to `ux0:data/mii/cache/`, expressions.
+Next steps: saving rendered grid icons to `ux0:data/mii-maker-vita/cache/`, expressions.
 
 ## QR codes
 
@@ -78,7 +78,7 @@ print, and create QR codes those consoles can scan, both on the Vita.
   the clear, then the ciphertext and its tag; exact layout to be confirmed
   against MiiJS while implementing). The key is Nintendo's "Mii QR key";
   like MiiPort, the app will ask users to provide it in
-  `ux0:data/mii/qrkey.txt` rather than shipping it. Reference: jaames'
+  `ux0:data/mii-maker-vita/qrkey.txt` rather than shipping it. Reference: jaames'
   [Mii QR gist](https://gist.github.com/jaames/96ce8daa11b61b758b6b0227b55f9f78)
   and MiiJS' `miiCrypto.js`.
 - **libmii-qr** (C): AES-128 + CCM (small public-domain/MIT AES core),
