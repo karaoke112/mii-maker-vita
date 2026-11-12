@@ -81,6 +81,9 @@ class MiiPreview : public brls::View
     struct Frame {
         float pivot = 0, zoom = 0; // camera height (model units), zoom
         bool set = false;
+        // the screen whose framing it follows: the newest one (the others
+        // are on their way out, or hidden behind it)
+        const MiiPreview* leader = nullptr;
     };
     Frame frame;
     inline static std::map<const void*, Frame> shareFrames;
@@ -120,6 +123,7 @@ class MiiPreview : public brls::View
     int nvgImage = -1;
     int nvgImageSize = 0;
     int imageSize = 0; // side of `image` (a quick pass is smaller)
+    float imageZoom = 0.0f; // the framing zoom the shown picture was drawn with
     int gpuImage = -1; // a GPU render (owned by GpuRenderer)
     NVGcolor backdrop {};
     bool hasBackdrop = false;

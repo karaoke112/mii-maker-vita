@@ -55,6 +55,10 @@ class LibraryActivity : public brls::Activity
 
     brls::Box* grid = nullptr;
     brls::View* createButton = nullptr;
+    brls::View* rootFrame = nullptr; // holds the START (settings) action
+    brls::ActionIdentifier settingsActionId = 0;
+    bool settingsShown = false;
+    void settingsAction();
     brls::Label* empty = nullptr;
     brls::Label* pickLabel = nullptr;
     Pick pick = Pick::NONE;

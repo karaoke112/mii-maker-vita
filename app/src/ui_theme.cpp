@@ -18,7 +18,8 @@ const Palette kDark = {
 };
 
 const Palette kDarkBlue = {
-    kDark.background, kDark.tile, kDark.text, kDark.textDim, kDark.rule, kDark.ring, kLight.accent, kDark.sliderEmpty,
+    // a little lighter and greener than the light theme's blue, for a dark page
+    kDark.background, kDark.tile, kDark.text, kDark.textDim, kDark.rule, kDark.ring, nvgRGB(32, 132, 232), kDark.sliderEmpty,
 };
 
 Theme current = Theme::LIGHT;

@@ -184,7 +184,7 @@ brls::View* EditorActivity::createContentView()
                 spec.icon = MII3D_ICON_NOSE;
                 spec.size = 96;
                 spec.lowPriority = true;
-                row->iconView()->setRendered(spec, 2.0f);
+                row->iconView()->setRendered(spec, 1.75f);
             }
             line->addView(row);
             rows.push_back(row);
