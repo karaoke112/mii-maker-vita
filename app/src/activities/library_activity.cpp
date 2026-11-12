@@ -95,22 +95,16 @@ void LibraryActivity::onContentAvailable()
     rebuild();
 }
 
-void LibraryActivity::onResume()
+// Some borealis views take their colors when created: build the screen again
+// in the new theme. Focus moves to the new screen while the old one still
+// exists, then they swap.
+void LibraryActivity::rebuildForTheme()
 {
-    if (!themeChanged)
-        return;
-    themeChanged = false;
-    // Some borealis views take their colors when created: build the screen
-    // again in the new theme (after the settings menu has fully closed), and
-    // put focus on the new screen at once.
-    brls::sync([this] {
-        pick = Pick::NONE;
-        brls::View* fresh = createContentView();
-        // focus the new screen while the old one still exists, then swap
-        brls::Application::giveFocus(createButton);
-        setContentView(fresh);
-        rebuild();
-    });
+    pick = Pick::NONE;
+    brls::View* fresh = createContentView();
+    brls::Application::giveFocus(createButton);
+    setContentView(fresh);
+    rebuild();
 }
 
 void LibraryActivity::openEditor(const mii_charinfo_t& start)
@@ -270,15 +264,17 @@ void LibraryActivity::showSettings()
         return "settings/theme"_i18n + ": " +
             (Settings::get().theme == ui::Theme::DARK ? "settings/dark"_i18n : "settings/light"_i18n);
     };
+    // Picking it closes the menu; the screen is then rebuilt in the new
+    // theme and the menu opens again, so everything switches at once.
     theme.action = [this] {
-        themeChanged = true;
         Settings& s = Settings::get();
         s.theme = s.theme == ui::Theme::DARK ? ui::Theme::LIGHT : ui::Theme::DARK;
         s.save();
         ui::applyTheme(s.theme);
         ui::applyVariant();
+        rebuildForTheme();
+        showSettings();
     };
-    theme.keepOpen = true;
     PopupMenu::Item renderer;
     renderer.text = [] {
         return "settings/renderer"_i18n + ": " + (Settings::get().gpu ? "settings/gpu"_i18n : "settings/software"_i18n);
