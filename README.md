@@ -8,9 +8,10 @@ ports can then use them from a shared database.
 | --- | --- |
 | ![Library screen](docs/images/library.png) | ![Editor screen](docs/images/editor.png) |
 
-> **3D heads** need the Wii U face resource (`FFLResHigh.dat`) from your own
-> console in `ux0:data/mii/`. It is not included. Without it the app uses a
-> built-in 2D renderer instead. See [3D_RENDERING.md](docs/3D_RENDERING.md).
+> **Mii previews** need a face resource from hardware or software you own,
+> `AFLResHigh_2_3.dat` (Miitomo) or `FFLResHigh.dat` (Wii U), in
+> `ux0:data/mii/`. It is not included. See [3D_RENDERING.md](docs/3D_RENDERING.md).
+> The screenshots show the app without one installed.
 
 ## What works
 
@@ -24,9 +25,10 @@ ports can then use them from a shared database.
   eyebrows, eyes, nose, mouth, facial hair, glasses, mole, body), save to
   `ux0:data/mii/database.nfdb`, export `.charinfo` / `.nfsd` / `.ffsd`, delete.
   Builds to a `.vpk` (it has not been run on real Vita hardware yet).
-- **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U face resource
-  (including untiling the GPU-tiled textures) and draws a Mii head with a
-  small software rasterizer, so it runs the same on the Vita and on a PC.
+- **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face
+  resources (including untiling Wii U GPU-tiled textures) and draws a Mii
+  head with the Switch's lighting model in a small software rasterizer, so
+  it runs the same on the Vita and on a PC.
   The app renders on a worker thread: a quick image first, then a smoother one.
 - **`miitool`**: PC command-line tool to inspect and convert Mii files and
   list a database. **`miirender`** renders a Mii to an image.

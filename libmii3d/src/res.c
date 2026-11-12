@@ -25,11 +25,24 @@
 #include <stdlib.h>
 #include <zlib.h>
 
-#define HEADER_SIZE      0x4A00u
 #define TEX_HEADER_OFS   0x14u
-#define SHAPE_HEADER_OFS 0x1410u
 
-static const int k_tex_counts[MII3D_TEX_KIND_COUNT] = { 3, 132, 62, 24, 12, 12, 9, 2, 37, 6, 18 };
+/* Texture table sizes differ between variants; the shape table follows it.
+ * Wii U files (FFLRes*.dat) store GX2-tiled textures; Miitomo files
+ * (AFLResHigh*.dat) store them linearly with more eyes, eyebrows, mouths
+ * and (in 2_3) the Switch's 20 glasses. */
+typedef struct layout {
+    mii3d_variant_t variant;
+    int tex_counts[MII3D_TEX_KIND_COUNT];
+    int linear;
+} layout;
+
+static const layout k_layouts[] = {
+    { MII3D_VARIANT_WIIU,          { 3, 132, 62, 24, 12, 12, 9, 2, 37, 6, 18 }, 0 },
+    { MII3D_VARIANT_MIITOMO_2_3,   { 3, 132, 80, 28, 12, 12, 20, 2, 52, 6, 18 }, 1 },
+    { MII3D_VARIANT_MIITOMO,       { 3, 132, 80, 28, 12, 12, 9, 2, 52, 6, 18 }, 1 },
+};
+
 static const int k_shape_counts[MII3D_SHAPE_KIND_COUNT] = { 4, 132, 132, 12, 1, 12, 18, 18, 132, 132, 132, 132 };
 
 typedef struct part_info {
@@ -40,6 +53,7 @@ typedef struct part_info {
 struct mii3d_res {
     const uint8_t *file;
     size_t size;
+    const layout *layout;
     const uint8_t *tex_info[MII3D_TEX_KIND_COUNT];
     const uint8_t *shape_info[MII3D_SHAPE_KIND_COUNT];
 };
@@ -57,9 +71,14 @@ const char *mii3d_result_string(mii3d_result_t r)
     return "unknown error";
 }
 
-int mii3d_res_texture_count(mii3d_tex_kind_t kind)
+int mii3d_res_texture_count(const mii3d_res_t *res, mii3d_tex_kind_t kind)
 {
-    return (unsigned)kind < MII3D_TEX_KIND_COUNT ? k_tex_counts[kind] : 0;
+    return res && (unsigned)kind < MII3D_TEX_KIND_COUNT ? res->layout->tex_counts[kind] : 0;
+}
+
+mii3d_variant_t mii3d_res_variant(const mii3d_res_t *res)
+{
+    return res ? res->layout->variant : MII3D_VARIANT_WIIU;
 }
 
 int mii3d_res_shape_count(mii3d_shape_kind_t kind)
@@ -67,34 +86,74 @@ int mii3d_res_shape_count(mii3d_shape_kind_t kind)
     return (unsigned)kind < MII3D_SHAPE_KIND_COUNT ? k_shape_counts[kind] : 0;
 }
 
+static int apply_layout(mii3d_res_t *res, const layout *l)
+{
+    size_t ofs = TEX_HEADER_OFS + 4 * MII3D_TEX_KIND_COUNT;
+    res->layout = l;
+    for (int k = 0; k < MII3D_TEX_KIND_COUNT; k++) {
+        res->tex_info[k] = res->file + ofs;
+        ofs += 16 * (size_t)l->tex_counts[k];
+    }
+    ofs += 4 * MII3D_SHAPE_KIND_COUNT; /* shape max sizes */
+    for (int k = 0; k < MII3D_SHAPE_KIND_COUNT; k++) {
+        res->shape_info[k] = res->file + ofs;
+        ofs += 16 * (size_t)k_shape_counts[k];
+    }
+    return ofs + 0x30 <= res->size;
+}
+
+/* A wrong layout can still point at real (but different) parts, so a
+ * layout is only accepted if typical parts decode as what they should be. */
+static int layout_works(const mii3d_res_t *res)
+{
+    for (int k = 0; k < MII3D_SHAPE_KIND_COUNT; k++)
+        for (int i = 0; i < k_shape_counts[k]; i++) {
+            const uint8_t *p = res->shape_info[k] + 16 * i;
+            if ((uint64_t)m3_be32(p) + m3_be32(p + 8) > res->size)
+                return 0;
+        }
+    mii3d_mesh_t m;
+    if (mii3d_res_shape(res, MII3D_SHAPE_FACELINE, 0, &m) != MII3D_OK)
+        return 0;
+    int ok = m.vertex_count > 0 && m.uvs != NULL && m.bbox_max[1] > m.bbox_min[1];
+    mii3d_mesh_free(&m);
+    if (!ok || mii3d_res_shape(res, MII3D_SHAPE_MASK, 0, &m) != MII3D_OK)
+        return 0;
+    mii3d_mesh_free(&m);
+    mii3d_image_t img;
+    if (mii3d_res_texture(res, MII3D_TEX_EYE, 1, &img) != MII3D_OK)
+        return 0;
+    ok = img.channels == 4;
+    mii3d_image_free(&img);
+    if (!ok || mii3d_res_texture(res, MII3D_TEX_NOSELINE, 1, &img) != MII3D_OK)
+        return 0;
+    ok = img.channels == 1;
+    mii3d_image_free(&img);
+    return ok;
+}
+
 mii3d_result_t mii3d_res_open(mii3d_res_t **out, const uint8_t *file, size_t size)
 {
     mii3d_res_t *res;
-    const uint8_t *p;
 
     if (!out || !file)
         return MII3D_ERR_ARGUMENT;
     *out = NULL;
-    if (size < HEADER_SIZE || memcmp(file, "FFRA", 4) != 0 || m3_be32(file + 4) != 0x00070000u)
+    if (size < 0x14 || memcmp(file, "FFRA", 4) != 0 || m3_be32(file + 4) != 0x00070000u)
         return MII3D_ERR_FORMAT;
     res = (mii3d_res_t *)calloc(1, sizeof(*res));
     if (!res)
         return MII3D_ERR_MEMORY;
     res->file = file;
     res->size = size;
-
-    p = file + TEX_HEADER_OFS + 4 * MII3D_TEX_KIND_COUNT;
-    for (int k = 0; k < MII3D_TEX_KIND_COUNT; k++) {
-        res->tex_info[k] = p;
-        p += 16 * k_tex_counts[k];
+    for (size_t i = 0; i < sizeof(k_layouts) / sizeof(k_layouts[0]); i++) {
+        if (apply_layout(res, &k_layouts[i]) && layout_works(res)) {
+            *out = res;
+            return MII3D_OK;
+        }
     }
-    p = file + SHAPE_HEADER_OFS + 4 * MII3D_SHAPE_KIND_COUNT;
-    for (int k = 0; k < MII3D_SHAPE_KIND_COUNT; k++) {
-        res->shape_info[k] = p;
-        p += 16 * k_shape_counts[k];
-    }
-    *out = res;
-    return MII3D_OK;
+    free(res);
+    return MII3D_ERR_FORMAT;
 }
 
 void mii3d_res_close(mii3d_res_t *res)
@@ -171,7 +230,7 @@ mii3d_result_t mii3d_res_texture(const mii3d_res_t *res, mii3d_tex_kind_t kind, 
     if (!res || !out || (unsigned)kind >= MII3D_TEX_KIND_COUNT)
         return MII3D_ERR_ARGUMENT;
     memset(out, 0, sizeof(*out));
-    if (index < 0 || index >= k_tex_counts[kind])
+    if (index < 0 || index >= res->layout->tex_counts[kind])
         return MII3D_ERR_RANGE;
     info = read_info(res->tex_info[kind] + 16 * index);
     raw = load_part(res, info, &err);
@@ -195,8 +254,16 @@ mii3d_result_t mii3d_res_texture(const mii3d_res_t *res, mii3d_tex_kind_t kind, 
         free(raw);
         return MII3D_ERR_MEMORY;
     }
-    /* the base level is everything before the mip chain / footer */
-    if (mii3d_gx2_untile(out->pixels, raw, info.size - 12, w, h, out->channels) != 0) {
+    /* the base level comes first; mips (ignored) follow */
+    if (res->layout->linear) {
+        const size_t n = (size_t)w * h * out->channels;
+        if (n > info.size - 12) {
+            free(raw);
+            mii3d_image_free(out);
+            return MII3D_ERR_DATA;
+        }
+        memcpy(out->pixels, raw, n);
+    } else if (mii3d_gx2_untile(out->pixels, raw, info.size - 12, w, h, out->channels) != 0) {
         free(raw);
         mii3d_image_free(out);
         return MII3D_ERR_DATA;
@@ -268,7 +335,12 @@ mii3d_result_t mii3d_res_shape(const mii3d_res_t *res, mii3d_shape_kind_t kind, 
     out->normals = (float *)calloc((size_t)(nv ? nv : 1) * 3, sizeof(float));
     out->uvs = size[EL_TEXCOORD] ? (float *)malloc(sizeof(float) * 2 * (size_t)nv) : NULL;
     out->indices = (uint16_t *)malloc(sizeof(uint16_t) * (size_t)(ni ? ni : 1));
-    if (!out->positions || !out->normals || !out->indices || (size[EL_TEXCOORD] && !out->uvs)) {
+    /* per-vertex parameters (hair: specular blend) when present */
+    const int has_params = nv > 0 && size[EL_COLOR] == (uint32_t)nv * 4u &&
+                           (size_t)pos[EL_COLOR] + (size_t)nv * 4 <= info.size;
+    out->params = has_params ? (uint8_t *)malloc((size_t)nv) : NULL;
+    if (!out->positions || !out->normals || !out->indices || (size[EL_TEXCOORD] && !out->uvs) ||
+        (has_params && !out->params)) {
         free(raw);
         mii3d_mesh_free(out);
         return MII3D_ERR_MEMORY;
@@ -285,6 +357,8 @@ mii3d_result_t mii3d_res_shape(const mii3d_res_t *res, mii3d_shape_kind_t kind, 
             out->normals[3 * v + 1] = (float)ny / 511.0f;
             out->normals[3 * v + 2] = (float)nz / 511.0f;
         }
+        if (out->params)
+            out->params[v] = raw[pos[EL_COLOR] + 4 * v];
         if (out->uvs) {
             const uint8_t *t = raw + pos[EL_TEXCOORD] + 8 * v;
             out->uvs[2 * v + 0] = m3_bef(t);
@@ -310,6 +384,7 @@ void mii3d_mesh_free(mii3d_mesh_t *mesh)
         free(mesh->positions);
         free(mesh->normals);
         free(mesh->uvs);
+        free(mesh->params);
         free(mesh->indices);
         memset(mesh, 0, sizeof(*mesh));
     }

@@ -15,6 +15,18 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/* Switch Mii shading parameters per part (see raster.h for the formula). */
+typedef struct m3_shading {
+    float hl_factor, sss_blend;
+    float sss[3];
+    float spec[3];
+    float spec_a, spec_b, shininess;
+    float rim[3];
+    float rim_power, rim_width;
+} m3_shading;
+
+#include "materials.inc"
+
 /* ---- part cache --------------------------------------------------------- */
 
 typedef struct tex_slot { int index; mii3d_image_t img; int ok; } tex_slot;
@@ -195,8 +207,9 @@ static void draw_part(m3_target *t, float res, const part *p, const m3_material 
         v[i].w = 1.0f;
         v[i].u = lu[i];
         v[i].v = lv[i];
-        v[i].shade = 1.0f;
-        v[i].spec = 0.0f;
+        v[i].hl = 1.0f;
+        for (int c = 0; c < 3; c++)
+            v[i].add[c] = v[i].rim[c] = 0.0f;
     }
     static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
     m3_draw(t, v, idx, 6, mat);
@@ -305,12 +318,13 @@ static int compose_faceline(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_ta
     const int beard_tex = ci->beard_type >= 4 ? ci->beard_type - 3 : 0;
     if (ci->faceline_wrinkle == 0 && ci->faceline_make == 0 && beard_tex == 0)
         return 0;
-    m3_clear(t, 0xFF000000u | mii_faceline_color_rgb(ci->faceline_color));
+    /* skin color everywhere, alpha = where layers were drawn: the Switch
+     * shader uses that alpha to mute specular/SSS on those regions */
+    m3_clear(t, mii_faceline_color_rgb(ci->faceline_color));
     static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
-    const m3_vertex quad[4] = {
-        { -1, -1, 0, 1, 0, 1, 1, 0 }, { 1, -1, 0, 1, 1, 1, 1, 0 },
-        { 1, 1, 0, 1, 1, 0, 1, 0 }, { -1, 1, 0, 1, 0, 0, 1, 0 },
-    };
+#define QV(X, Y, U, V) { .x = X, .y = Y, .z = 0, .w = 1, .u = U, .v = V, .hl = 1, .add = { 0, 0, 0 }, .rim = { 0, 0, 0 } }
+    const m3_vertex quad[4] = { QV(-1, -1, 0, 1), QV(1, -1, 1, 1), QV(1, 1, 1, 0), QV(-1, 1, 0, 0) };
+#undef QV
     m3_material m;
     if (ci->faceline_wrinkle != 0) {
         const mii3d_image_t *tex = get_tex(r, SLOT_WRINKLE, ci->faceline_wrinkle);
@@ -362,7 +376,7 @@ typedef struct camera {
     float pivot[3];
     float eye_dist;
     float f, aspect, znear, zfar;
-    float light[3], half[3];
+    float light[3], half[3];   /* view space */
 } camera;
 
 static void normalize3(float v[3])
@@ -384,7 +398,8 @@ static void setup_camera(camera *c, const mii3d_view_t *view, int w, int h)
     c->aspect = (float)w / (float)h;
     c->znear = 100.0f;
     c->zfar = 600.0f;
-    c->light[0] = -0.35f; c->light[1] = 0.55f; c->light[2] = 1.0f;
+    /* nn::mii's icon light direction (view space) */
+    c->light[0] = -0.1227878f; c->light[1] = 0.70710677f; c->light[2] = 0.6963642f;
     normalize3(c->light);
     c->half[0] = c->light[0]; c->half[1] = c->light[1]; c->half[2] = c->light[2] + 1.0f;
     normalize3(c->half);
@@ -392,7 +407,7 @@ static void setup_camera(camera *c, const mii3d_view_t *view, int w, int h)
 
 typedef struct placement { float scale[3]; float translate[3]; } placement;
 
-static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const placement *pl, float spec_amount,
+static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const placement *pl, const m3_shading *sh,
                            m3_vertex *out)
 {
     for (int i = 0; i < mesh->vertex_count; i++) {
@@ -405,6 +420,8 @@ static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const plac
             q[k] = c->rot[3 * k] * p[0] + c->rot[3 * k + 1] * p[1] + c->rot[3 * k + 2] * p[2];
             m[k] = c->rot[3 * k] * n[0] + c->rot[3 * k + 1] * n[1] + c->rot[3 * k + 2] * n[2];
         }
+        if (m[0] == 0.0f && m[1] == 0.0f && m[2] == 0.0f)
+            m[2] = 1.0f; /* the glasses quad has no normals */
         normalize3(m);
         /* camera on +z looking at the pivot */
         const float vz = q[2] - c->eye_dist;
@@ -415,22 +432,39 @@ static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const plac
         out[i].z = c->zfar * (w - c->znear) / (c->zfar - c->znear);
         out[i].u = mesh->uvs ? mesh->uvs[2 * i] : 0.0f;
         out[i].v = mesh->uvs ? mesh->uvs[2 * i + 1] : 0.0f;
+        if (!sh) {
+            out[i].hl = 1.0f;
+            for (int k = 0; k < 3; k++)
+                out[i].add[k] = out[i].rim[k] = 0.0f;
+            continue;
+        }
         float ndl = m[0] * c->light[0] + m[1] * c->light[1] + m[2] * c->light[2];
         float ndh = m[0] * c->half[0] + m[1] * c->half[1] + m[2] * c->half[2];
         if (ndl < 0) ndl = 0;
         if (ndh < 0) ndh = 0;
-        out[i].shade = 0.62f + 0.48f * ndl;
-        out[i].spec = spec_amount > 0 ? spec_amount * powf(ndh, 20.0f) : 0.0f;
+        const float hl = ndl * sh->hl_factor + (1.0f - sh->hl_factor);
+        float factor = sh->spec_a;
+        if (mesh->params) /* hair: blend between the two specular strengths */
+            factor += (sh->spec_b - sh->spec_a) * (mesh->params[i] / 255.0f);
+        const float spec = powf(ndh, sh->shininess) * factor;
+        const float nz = m[2] < 0 ? 0 : (m[2] > 1 ? 1 : m[2]);
+        const float rim_base = sh->rim_width * (1.0f - nz);
+        const float rim = rim_base > 0 ? powf(rim_base, sh->rim_power) : 0.0f;
+        out[i].hl = hl;
+        for (int k = 0; k < 3; k++) {
+            out[i].add[k] = spec * sh->spec[k] + sh->sss[k] * (1.0f - hl);
+            out[i].rim[k] = sh->rim[k] * rim;
+        }
     }
 }
 
 static void draw_mesh(mii3d_renderer_t *r, m3_target *t, const camera *c, const mii3d_mesh_t *mesh,
-                      const placement *pl, const m3_material *mat, float spec)
+                      const placement *pl, const m3_material *mat, const m3_shading *sh)
 {
     m3_vertex *v = ensure_verts(r, mesh->vertex_count);
     if (!v)
         return;
-    transform_mesh(c, mesh, pl, spec, v);
+    transform_mesh(c, mesh, pl, (mat->lit || mat->faceline) ? sh : NULL, v);
     m3_draw(t, v, mesh->indices, mesh->index_count, mat);
 }
 
@@ -548,12 +582,20 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
 
     /* faceline */
     placement_identity(&pl);
+    const m3_shading *skin_mat = &k_mat_faceline[ci->faceline_color % 10];
     memset(&m, 0, sizeof(m));
-    memcpy(m.base, skin, sizeof(skin));
-    m.mode = has_faceline_tex ? M3_MOD_DIRECT : M3_MOD_NONE;
-    m.tex = has_faceline_tex ? &r->faceline_tex : NULL;
+    if (has_faceline_tex) {
+        /* the texture carries the skin color; its alpha masks spec/SSS */
+        m.mode = M3_MOD_DIRECT;
+        m.tex = &r->faceline_tex;
+        m.faceline = 1;
+        m.sss_blend = skin_mat->sss_blend;
+    } else {
+        memcpy(m.base, skin, sizeof(skin));
+        m.lit = 1;
+    }
     m.depth_test = m.depth_write = 1;
-    draw_mesh(r, &t, &cam, faceline, &pl, &m, 0.0f);
+    draw_mesh(r, &t, &cam, faceline, &pl, &m, skin_mat);
 
     /* forehead (skin under the hair) and hair, both follow the hair anchor */
     placement hair_pl;
@@ -565,15 +607,17 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
     if (forehead) {
         memset(&m, 0, sizeof(m));
         memcpy(m.base, skin, sizeof(skin));
+        m.lit = 1;
         m.depth_test = m.depth_write = 1;
-        draw_mesh(r, &t, &cam, forehead, &hair_pl, &m, 0.0f);
+        draw_mesh(r, &t, &cam, forehead, &hair_pl, &m, skin_mat);
     }
     const mii3d_mesh_t *hair = get_mesh(r, MS_HAIR, ci->hair_type);
     if (hair) {
         memset(&m, 0, sizeof(m));
         common(m.base, ci->hair_color);
+        m.lit = 1;
         m.depth_test = m.depth_write = 1;
-        draw_mesh(r, &t, &cam, hair, &hair_pl, &m, 0.12f);
+        draw_mesh(r, &t, &cam, hair, &hair_pl, &m, &k_mat_hair[ci->hair_color % 100]);
     }
 
     /* beard shape (types 1-3) */
@@ -584,8 +628,9 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
             memcpy(pl.translate, faceline->beard_translate, sizeof(pl.translate));
             memset(&m, 0, sizeof(m));
             common(m.base, ci->beard_color);
+            m.lit = 1;
             m.depth_test = m.depth_write = 1;
-            draw_mesh(r, &t, &cam, beard, &pl, &m, 0.05f);
+            draw_mesh(r, &t, &cam, beard, &pl, &m, &k_mat_beard[ci->beard_color % 100]);
         }
     }
 
@@ -598,7 +643,7 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
         m.mode = M3_MOD_DIRECT;
         m.depth_test = 1;
         m.depth_bias = 0.002f;
-        draw_mesh(r, &t, &cam, mask, &pl, &m, 0.0f);
+        draw_mesh(r, &t, &cam, mask, &pl, &m, NULL); /* the mask material is unlit */
     }
 
     /* nose and nose line */
@@ -614,8 +659,9 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
     if (nose) {
         memset(&m, 0, sizeof(m));
         memcpy(m.base, skin, sizeof(skin));
+        m.lit = 1;
         m.depth_test = m.depth_write = 1;
-        draw_mesh(r, &t, &cam, nose, &nose_pl, &m, 0.0f);
+        draw_mesh(r, &t, &cam, nose, &nose_pl, &m, &k_mat_nose[ci->faceline_color % 10]);
     }
     const mii3d_mesh_t *noseline = get_mesh(r, MS_NOSELINE, ci->nose_type);
     const mii3d_image_t *noseline_tex = get_tex(r, SLOT_NOSELINE, ci->nose_type);
@@ -626,13 +672,16 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
         black(m.c[0]);
         m.depth_test = 1;
         m.depth_bias = 0.002f;
-        draw_mesh(r, &t, &cam, noseline, &nose_pl, &m, 0.0f);
+        draw_mesh(r, &t, &cam, noseline, &nose_pl, &m, NULL);
     }
 
     /* glasses: one lens texture, mirrored across the quad */
     if (ci->glass_type != 0) {
         const mii3d_mesh_t *glass = get_mesh(r, MS_GLASS, 0);
-        const mii3d_image_t *glass_tex = get_tex(r, SLOT_GLASS, mii_glass_type_to_ver3(ci->glass_type));
+        /* Miitomo 2_3 has all 20 Switch styles; Wii U has the 9 Ver3 ones */
+        const int glass_index = mii3d_res_texture_count(r->res, MII3D_TEX_GLASS) >= 20
+            ? ci->glass_type : mii_glass_type_to_ver3(ci->glass_type);
+        const mii3d_image_t *glass_tex = get_tex(r, SLOT_GLASS, glass_index);
         if (glass && glass_tex) {
             const float s = 0.15f * ci->glass_scale + 0.4f;
             pl.scale[0] = pl.scale[1] = pl.scale[2] = s;
@@ -646,8 +695,9 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
             m.mode = M3_MOD_ALPHA_LUM;
             common(m.c[0], ci->glass_color);
             m.mirror_u = 1;
+            m.lit = 1;
             m.depth_test = 1;
-            draw_mesh(r, &t, &cam, glass, &pl, &m, 0.0f);
+            draw_mesh(r, &t, &cam, glass, &pl, &m, &k_mat_glass[0]);
         }
     }
     return MII3D_OK;

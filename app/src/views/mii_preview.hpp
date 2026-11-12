@@ -5,12 +5,9 @@
 
 #include "head_renderer.hpp"
 
-// Live preview of a Mii.
-//
-// With the user's Wii U face resource installed, the head is rendered in 3D
-// (HeadRenderer, on a worker thread) and drawn over a simple body. Without
-// it, or while the first 3D image is still being made, a 2D stand-in drawn
-// with NanoVG is shown instead; it reflects every field too.
+// Live preview of a Mii: the head rendered in 3D by HeadRenderer (on a
+// worker thread) from the face resource the user installed. Without that
+// file it shows a short note saying where to put it.
 class MiiPreview : public brls::View
 {
   public:
@@ -24,7 +21,6 @@ class MiiPreview : public brls::View
     float getYaw() const { return yaw; }
 
   private:
-    void drawFallbackHead(NVGcontext* vg, float cx, float hy, float r, float jaw);
     void request3D();
 
     const mii_charinfo_t* mii;

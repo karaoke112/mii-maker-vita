@@ -147,6 +147,19 @@ static size_t make_texture(uint8_t *out)
     return (size_t)n + 12;
 }
 
+/* R8 96x96 noseline-like texture. */
+static size_t make_r8_texture(uint8_t *out)
+{
+    const unsigned w = 96, h = 96;
+    static uint8_t lin[96 * 96];
+    for (unsigned i = 0; i < w * h; i++)
+        lin[i] = (uint8_t)i;
+    int n = mii3d_gx2_tile(out, 1 << 16, lin, w, h, 1);
+    uint8_t *f = out + n;
+    wbe32(f, 0); wbe16(f + 4, (uint16_t)w); wbe16(f + 6, (uint16_t)h); f[8] = 1; f[9] = 0; f[10] = f[11] = 0;
+    return (size_t)n + 12;
+}
+
 static builder make_resource(void)
 {
     builder b = { 0 };
@@ -161,6 +174,9 @@ static builder make_resource(void)
     add_part(&b, info_offset_shape(MII3D_SHAPE_MASK, 0), tmp, n);
     n = make_texture(tmp);
     add_part(&b, info_offset_tex(MII3D_TEX_EYE, 2), tmp, n);
+    add_part(&b, info_offset_tex(MII3D_TEX_EYE, 1), tmp, n);
+    n = make_r8_texture(tmp);
+    add_part(&b, info_offset_tex(MII3D_TEX_NOSELINE, 1), tmp, n);
     return b;
 }
 
@@ -170,6 +186,8 @@ static void test_resource(void)
     mii3d_res_t *res;
     CHECK(mii3d_res_open(&res, b.buf, 100) == MII3D_ERR_FORMAT);
     CHECK(mii3d_res_open(&res, b.buf, b.size) == MII3D_OK);
+    CHECK(mii3d_res_variant(res) == MII3D_VARIANT_WIIU);
+    CHECK(mii3d_res_texture_count(res, MII3D_TEX_GLASS) == 9);
 
     mii3d_mesh_t m;
     CHECK(mii3d_res_shape(res, MII3D_SHAPE_FACELINE, 0, &m) == MII3D_OK);
@@ -277,7 +295,7 @@ static void test_real_resource(const char *path)
         for (int i = 0; i < 128 * 128; i++) covered += px[4 * i + 3] > 0;
         CHECK(covered > 128 * 128 / 4 && covered < 128 * 128 * 9 / 10);
     }
-    printf("real resource %s: ok\n", path);
+    printf("real resource %s: ok (variant %d)\n", path, (int)mii3d_res_variant(res));
     free(px);
     mii3d_renderer_destroy(r);
     mii3d_res_close(res);
