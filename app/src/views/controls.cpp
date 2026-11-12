@@ -1,11 +1,80 @@
 #include "views/controls.hpp"
 
 #include <cmath>
+#include <cstring>
 
 static NVGcolor rgb(uint32_t c)
 {
     return nvgRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
 }
+
+// A grid tile that shows a rendered icon once HeadRenderer delivers it.
+// Icons are requested lazily, when the tile is first drawn, so only what is
+// on screen gets rendered; the spec is re-checked every frame, so icons
+// follow color changes.
+class IconCell : public brls::Box
+{
+  public:
+    IconCell(const mii_charinfo_t* mii, uint8_t value, int iconSize, OptionGrid::IconOf iconOf)
+        : mii(mii), value(value), iconSize(iconSize), iconOf(std::move(iconOf))
+    {
+        std::memset(&requested.mii, 0, sizeof(requested.mii));
+    }
+
+    ~IconCell() override
+    {
+        HeadRenderer::instance().forget(this);
+        if (nvgImage >= 0)
+            nvgDeleteImage(brls::Application::getNVGContext(), nvgImage);
+    }
+
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override
+    {
+        HeadRenderer& hr = HeadRenderer::instance();
+        if (hr.available()) {
+            HeadRenderer::Spec spec;
+            spec.size = iconSize;
+            spec.lowPriority = true;
+            iconOf(value, *mii, &spec);
+            if (!hasRequested || std::memcmp(&spec.mii, &requested.mii, sizeof(spec.mii)) != 0 ||
+                spec.icon != requested.icon) {
+                requested = spec;
+                hasRequested = true;
+                hr.request(this, spec, [this](HeadRenderer::Image img, int) {
+                    image = img;
+                    dirty = true;
+                });
+            }
+        }
+        if (image) {
+            if (nvgImage < 0)
+                nvgImage = nvgCreateImageRGBA(vg, iconSize, iconSize, 0, image->data());
+            else if (dirty)
+                nvgUpdateImage(vg, nvgImage, image->data());
+            dirty = false;
+            const float side = std::fmin(width, height) - 4;
+            const float ix = x + (width - side) / 2, iy = y + (height - side) / 2;
+            nvgBeginPath(vg);
+            nvgRect(vg, ix, iy, side, side);
+            nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, nvgImage, 1.0f));
+            nvgFill(vg);
+            return; // the icon replaces the number
+        }
+        brls::Box::draw(vg, x, y, width, height, style, ctx);
+    }
+
+  private:
+    const mii_charinfo_t* mii;
+    uint8_t value;
+    int iconSize;
+    OptionGrid::IconOf iconOf;
+    HeadRenderer::Spec requested;
+    bool hasRequested = false;
+    HeadRenderer::Image image;
+    bool dirty = false;
+    int nvgImage = -1;
+};
 
 std::vector<uint8_t> OptionGrid::range(mii_field_t field)
 {
@@ -16,7 +85,7 @@ std::vector<uint8_t> OptionGrid::range(mii_field_t field)
 }
 
 OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8_t> items, int columns,
-    float cellSize, ColorOf colorOf, LabelOf labelOf, std::function<void()> onChange)
+    float cellSize, ColorOf colorOf, LabelOf labelOf, std::function<void()> onChange, IconOf iconOf)
     : brls::Box(brls::Axis::COLUMN)
     , mii(mii)
     , field(field)
@@ -31,7 +100,9 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
             this->addView(row);
         }
         const uint8_t value = values[i];
-        auto* cell = new brls::Box();
+        brls::Box* cell = iconOf && !colorOf
+            ? new IconCell(this->mii, value, 96, iconOf)
+            : new brls::Box();
         cell->setDimensions(labelOf && !colorOf ? cellSize * 1.6f : cellSize, cellSize);
         cell->setMarginRight(8);
         cell->setCornerRadius(colorOf ? cellSize / 2 : 10);

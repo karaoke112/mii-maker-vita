@@ -5,6 +5,7 @@
 #include "views/mii_preview.hpp"
 
 #include <mii/mii_editor.h>
+#include <mii3d/mii3d.h>
 
 #include <cmath>
 
@@ -38,20 +39,95 @@ brls::View* EditorActivity::makeTab(Fill fill)
     return scroll;
 }
 
+// ---- grid icons --------------------------------------------------------
+// Like the Switch editor, each style tile shows that style in the Mii's
+// current colors. Shapes are drawn as small heads framed on the part;
+// flat parts (eyes, brows, mouth, mustache, glasses) as the part alone.
+
+static mii_charinfo_t iconBase(const mii_charinfo_t& cur)
+{
+    mii_charinfo_t m;
+    mii_charinfo_init_default(&m, cur.gender);
+    m.faceline_color = cur.faceline_color;
+    m.hair_color = cur.hair_color;
+    m.eyebrow_color = cur.eyebrow_color;
+    m.beard_color = cur.beard_color;
+    return m;
+}
+
+static OptionGrid::IconOf iconFor(mii_field_t field)
+{
+    using Spec = HeadRenderer::Spec;
+    auto head = [](float zoom, float centerY, void (*set)(mii_charinfo_t&, uint8_t, const mii_charinfo_t&)) {
+        return OptionGrid::IconOf([=](uint8_t v, const mii_charinfo_t& cur, Spec* spec) {
+            spec->mii = iconBase(cur);
+            set(spec->mii, v, cur);
+            spec->zoom = zoom;
+            spec->centerY = centerY;
+        });
+    };
+    auto part = [](mii3d_icon_part_t which, mii_field_t f) {
+        return OptionGrid::IconOf([=](uint8_t v, const mii_charinfo_t& cur, Spec* spec) {
+            spec->mii = cur;
+            mii_field_set(&spec->mii, f, v);
+            spec->icon = which;
+        });
+    };
+    switch (field) {
+    case MII_FIELD_HAIR_TYPE:
+        return head(1.12f, 2.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t& c) {
+            m.hair_type = v;
+            m.hair_flip = c.hair_flip;
+        });
+    case MII_FIELD_FACELINE_TYPE:
+        return head(1.0f, 0.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) {
+            m.faceline_type = v;
+            m.hair_type = 30; // bald, so the shape shows
+        });
+    case MII_FIELD_FACELINE_WRINKLE:
+        return head(2.0f, -6.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) {
+            m.faceline_wrinkle = v;
+            m.hair_type = 30;
+        });
+    case MII_FIELD_FACELINE_MAKE:
+        return head(1.8f, -6.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) {
+            m.faceline_make = v;
+            m.hair_type = 30;
+        });
+    case MII_FIELD_NOSE_TYPE:
+        return head(3.0f, -9.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) { m.nose_type = v; });
+    case MII_FIELD_BEARD_TYPE:
+        return head(1.7f, -14.0f, [](mii_charinfo_t& m, uint8_t v, const mii_charinfo_t&) {
+            m.beard_type = v;
+            m.hair_type = 30; // keep the hair out of the way
+        });
+    case MII_FIELD_EYE_TYPE:      return part(MII3D_ICON_EYES, field);
+    case MII_FIELD_EYEBROW_TYPE:  return part(MII3D_ICON_EYEBROWS, field);
+    case MII_FIELD_MOUTH_TYPE:    return part(MII3D_ICON_MOUTH, field);
+    case MII_FIELD_MUSTACHE_TYPE: return part(MII3D_ICON_MUSTACHE, field);
+    case MII_FIELD_GLASS_TYPE:    return part(MII3D_ICON_GLASSES, field);
+    default:                      return nullptr;
+    }
+}
+
 // Adds a parts grid, a color palette and sliders: the common shape of most
 // categories.
 struct Section {
+    static constexpr float kIconCell = 76.0f;
+
     static void parts(EditorActivity* self, brls::Box* box, mii_charinfo_t* mii, mii_field_t field,
         mii_grid_kind_t kind, std::function<void()> changed)
     {
         int cols;
         std::vector<uint8_t> items = gridItems(kind, &cols);
-        box->addView(new OptionGrid(mii, field, items, cols, 60, nullptr, nullptr, changed));
+        box->addView(new OptionGrid(mii, field, items, cols, kIconCell, nullptr, nullptr, changed, iconFor(field)));
     }
     static void range(brls::Box* box, mii_charinfo_t* mii, mii_field_t field, int cols,
         std::function<void()> changed)
     {
-        box->addView(new OptionGrid(mii, field, OptionGrid::range(field), cols, 60, nullptr, nullptr, changed));
+        OptionGrid::IconOf icon = iconFor(field);
+        box->addView(new OptionGrid(mii, field, OptionGrid::range(field), cols, icon ? kIconCell : 60, nullptr,
+            nullptr, changed, icon));
     }
     static void colors(brls::Box* box, mii_charinfo_t* mii, mii_field_t field, std::function<void()> changed)
     {

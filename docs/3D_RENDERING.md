@@ -46,6 +46,11 @@ which file is in use.
    texture beards), then draws faceline, forehead, hair, mask, nose, nose
    line, glasses and beard shapes.
 
+Editor grid icons come from the same renderer: flat parts (eyes, brows,
+mouth, mustache, glasses) via `mii3d_render_part_icon`, shapes (hair, face
+shape, wrinkles, makeup, nose, beard) as small heads framed on the part,
+all in the Mii's current colors and only for tiles on screen.
+
 The app's `HeadRenderer` runs this on a worker thread: a quick pass shows up
 first, then a 2x-supersampled pass replaces it, and results are cached so
 library thumbnails are only rendered once.
@@ -70,5 +75,5 @@ MII3D_RES=FFLResHigh.dat build/mii3d/test_mii3d                       # also tes
 - No hats and no expressions other than the default.
 - Miitomo's older `AFLResHigh.dat` (9 glasses) is recognised by layout but
   has not been tested with a real file.
-- Part grids in the editor still show numbers; rendering part thumbnails is
-  the next step.
+- Part icons are rendered at runtime (and cached in memory), not saved to
+  disk yet, so the first visit to a tab fills its grid progressively.
