@@ -36,10 +36,10 @@ int main(int argc, char* argv[])
     MiiLibrary::instance().load();
     // 3D heads need a face resource the user provides; without it the
     // previews say where to put it.
-    HeadRenderer::instance().init(paths::datDir(), paths::cacheDir());
+    HeadRenderer::instance().init(paths::datDir(), paths::cacheDir(), paths::appDir() + "/gpu.log", Settings::get().gpu);
 
     brls::Application::pushActivity(new LibraryActivity());
     while (brls::Application::mainLoop())
-        ;
+        HeadRenderer::instance().pumpGpu(); // GPU previews, between frames
     return EXIT_SUCCESS;
 }

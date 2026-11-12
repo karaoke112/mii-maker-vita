@@ -42,6 +42,13 @@ class MiiPreview : public brls::View
     // SELECT in the editor shows render times on the stage.
     inline static bool showTimings = false;
 
+    // The plain color behind a stage (default: the page background).
+    void setBackdrop(NVGcolor c)
+    {
+        backdrop = c;
+        hasBackdrop = true;
+    }
+
     // Extra magnification on top of the framing (1 = none).
     void setZoom(float z) { extraZoom = z; }
 
@@ -72,6 +79,9 @@ class MiiPreview : public brls::View
     int nvgImage = -1;
     int nvgImageSize = 0;
     int imageSize = 0; // side of `image` (a quick pass is smaller)
+    int gpuImage = -1; // a GPU render (owned by GpuRenderer)
+    NVGcolor backdrop {};
+    bool hasBackdrop = false;
 };
 
 // Keeps an angle in [-180, 180).

@@ -79,6 +79,9 @@ typedef struct mii3d_image {
     uint16_t width, height;
     uint8_t channels;
     uint8_t *pixels;
+    /* a number unique to each image read from a resource (0 for others):
+     * lets a GPU backend cache textures safely */
+    uint32_t serial;
 } mii3d_image_t;
 
 mii3d_result_t mii3d_res_texture(const mii3d_res_t *res, mii3d_tex_kind_t kind, int index, mii3d_image_t *out);
@@ -131,6 +134,60 @@ void mii3d_view_init_default(mii3d_view_t *view);
  * non-premultiplied). */
 mii3d_result_t mii3d_render_head(mii3d_renderer_t *r, const mii_charinfo_t *mii, const mii3d_view_t *view,
                                  uint8_t *rgba, int width, int height);
+
+/* ---- drawing with your own rasterizer (e.g. a GPU) ----------------------
+ *
+ * mii3d_render_head_draws() does everything mii3d_render_head() does except
+ * filling pixels: it hands each mesh to `fn` as transformed vertices and a
+ * material, in drawing order, for a GPU (or any rasterizer) to draw. The
+ * caller clears the target (and depth) first. Reproducing the image:
+ *
+ *  - vertices: 15 floats each: clip-space x y z w (y up; z/w is 0 at the
+ *    near plane and 1 at the far one), texture u v (v = 0 at the top row),
+ *    hl (diffuse factor), add r g b (specular + subsurface, linear), rim
+ *    r g b (linear). The lighting terms interpolate linearly.
+ *  - fragment color: see mii3d_draw_t's fields; colors and textures are
+ *    sRGB, lighting happens in linear space (gamma 2.2) and the result is
+ *    converted back to sRGB before blending "over" the target.
+ */
+typedef enum mii3d_modulate {
+    MII3D_MOD_NONE,        /* base color only */
+    MII3D_MOD_DIRECT,      /* texture RGBA as is */
+    MII3D_MOD_LAYERED_RGB, /* rgb = r*c0 + g*c1 + b*c2, a = texture a */
+    MII3D_MOD_ALPHA,       /* rgb = c0, a = texture r */
+    MII3D_MOD_LUM_ALPHA,   /* rgb = r*c0, a = texture g */
+    MII3D_MOD_LUM,         /* rgb = r*c0, a = 1 */
+    MII3D_MOD_ALPHA_LUM    /* rgb = g*c0, a = texture r */
+} mii3d_modulate_t;
+
+typedef struct mii3d_draw {
+    const float *vertices; /* 15 floats per vertex, see above */
+    int vertex_count;
+    const uint16_t *indices; /* triangle list */
+    int index_count;
+    /* 1-, 2- or 4-channel; a channel that is missing reads as 0 (g, b) or 1
+     * (a). NULL: untextured. */
+    const mii3d_image_t *texture;
+    int texture_dynamic; /* the same image object gets new contents (the
+                            composed face textures): upload it every time */
+    int mirror_u;        /* u repeats mirrored (0..1 then 1..0); otherwise clamp */
+    mii3d_modulate_t mode;
+    /* shaded = texture over base when base a > 0 (rgb = mix(base, tex, tex a),
+     * a = base a + (1 - base a) * tex a), the texture alone otherwise */
+    float base[4];
+    float c[3][4];
+    int lit;      /* rgb = linear(rgb) * hl + add + rim; skip if a <= 0.004 */
+    int faceline; /* rgb = linear(rgb) * hl + add * (1 - a * sss_blend) + rim; a = 1 */
+    float sss_blend;
+    int depth_test;   /* pass when z - depth_bias <= stored depth */
+    int depth_write;  /* store z where a > 0.5 */
+    float depth_bias;
+} mii3d_draw_t;
+
+typedef void (*mii3d_draw_fn)(void *user, const mii3d_draw_t *draw);
+
+mii3d_result_t mii3d_render_head_draws(mii3d_renderer_t *r, const mii_charinfo_t *mii, const mii3d_view_t *view,
+                                       int width, int height, mii3d_draw_fn fn, void *user);
 
 /* Icons for the editor's part grids, in the Mii's current colors with the
  * part at its default size and position: the part is drawn alone, cropped

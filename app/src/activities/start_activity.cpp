@@ -60,6 +60,7 @@ brls::View* StartActivity::createContentView()
         auto* preview = new MiiPreview(&choices[i], lookalike ? 192 : 256);
         preview->setStage(true);
         preview->setInteractive(false);
+        preview->setBackdrop(ui::tile());
         preview->setFraming(lookalike ? MiiPreview::Framing::BUST : MiiPreview::Framing::FULL_BODY);
         preview->setDimensions(w, h);
         if (!lookalike)

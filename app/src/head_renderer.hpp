@@ -35,8 +35,9 @@ class HeadRenderer
   public:
     using Image = std::shared_ptr<const std::vector<uint8_t>>; // size*size*4 RGBA
     // `size` is the image's side, which can be smaller than asked for in a
-    // preview's first, quick pass.
-    using Callback = std::function<void(Image image, int size)>;
+    // preview's first, quick pass. GPU renders come as a NanoVG image id
+    // (`gpuImage` > 0, owned by the renderer; `image` is empty).
+    using Callback = std::function<void(Image image, int size, int gpuImage)>;
 
     // What to draw: a head (icon < 0) framed by zoom/centerY, or a part
     // icon (a mii3d_icon_part_t value).
@@ -51,13 +52,18 @@ class HeadRenderer
         bool fullBody = false;
         // icons: queued behind previews, one pass, kept on the memory card
         bool lowPriority = false;
+        // 0xFFRRGGBB: an opaque backdrop, which lets the GPU draw it (stage
+        // previews); 0: transparent, CPU only
+        uint32_t background = 0;
     };
 
     static HeadRenderer& instance();
 
     // Looks for the resource files in `datDir` and starts the workers;
     // rendered icons are kept in `cacheDir`.
-    void init(const std::string& datDir, const std::string& cacheDir);
+    void init(const std::string& datDir, const std::string& cacheDir, const std::string& gpuLog, bool useGpu);
+    // Main thread, between frames: draws pending GPU previews.
+    void pumpGpu();
     bool available() const { return res != nullptr; }
     bool hasBody() const { return bodyRes != nullptr; }
     const std::string& status() const { return statusText; }
@@ -113,4 +119,6 @@ class HeadRenderer
     std::map<const void*, uint64_t> live;
     uint64_t nextGeneration = 1;
     std::atomic<int> lastUs[3] = { { 0 }, { 0 }, { 0 } };
+    std::map<const void*, Job> gpuPending; // UI thread only
+    bool gpuOn = false;
 };

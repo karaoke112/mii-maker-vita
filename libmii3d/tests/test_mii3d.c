@@ -353,6 +353,56 @@ static void test_real_body(mii3d_renderer_t *r, const char *path, const uint8_t 
     free(buf);
 }
 
+/* mii3d_render_head_draws, replayed through the CPU rasterizer, gives the
+ * same image as mii3d_render_head: the draws carry everything needed. */
+static void replay_draw(void *user, const mii3d_draw_t *d)
+{
+    m3_target *t = (m3_target *)user;
+    m3_material m;
+    memset(&m, 0, sizeof(m));
+    m.tex = d->texture;
+    m.mode = (m3_modulate)d->mode;
+    memcpy(m.base, d->base, sizeof(m.base));
+    memcpy(m.c, d->c, sizeof(m.c));
+    m.mirror_u = d->mirror_u;
+    m.depth_test = d->depth_test;
+    m.depth_write = d->depth_write;
+    m.depth_bias = d->depth_bias;
+    m.lit = d->lit;
+    m.faceline = d->faceline;
+    m.sss_blend = d->sss_blend;
+    m3_draw(t, (const m3_vertex *)d->vertices, d->indices, d->index_count, &m);
+}
+
+static void test_draws_match(mii3d_renderer_t *r)
+{
+    enum { W = 160 };
+    uint8_t *a = malloc(W * W * 4), *b = malloc(W * W * 4);
+    float *depth = malloc(sizeof(float) * W * W);
+    for (int g = 0; g < 2; g++) {
+        mii_charinfo_t ci;
+        mii_charinfo_init_default(&ci, g);
+        ci.glass_type = 3;
+        ci.beard_type = g ? 0 : 4;
+        ci.faceline_make = 2;
+        mii3d_view_t view;
+        mii3d_view_init_default(&view);
+        view.yaw_deg = 20.0f;
+        view.background = 0xFFEBEBEBu;
+        CHECK(mii3d_render_head(r, &ci, &view, a, W, W) == MII3D_OK);
+        m3_target t = { W, W, b, depth };
+        m3_clear(&t, view.background);
+        CHECK(mii3d_render_head_draws(r, &ci, &view, W, W, replay_draw, &t) == MII3D_OK);
+        int differ = 0;
+        for (int i = 0; i < W * W * 4; i++)
+            differ += abs((int)a[i] - (int)b[i]) > 2;
+        CHECK(differ < W * W * 4 / 200); /* only back faces the draws do not cull */
+    }
+    free(a);
+    free(b);
+    free(depth);
+}
+
 static void test_real_resource(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -380,6 +430,7 @@ static void test_real_resource(const char *path)
         for (int i = 0; i < 128 * 128; i++) covered += px[4 * i + 3] > 0;
         CHECK(covered > 128 * 128 / 4 && covered < 128 * 128 * 9 / 10);
     }
+    test_draws_match(r);
     printf("real resource %s: ok (variant %d)\n", path, (int)mii3d_res_variant(res));
     const char *body = getenv("MII3D_BODY");
     if (body && *body)

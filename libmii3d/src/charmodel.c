@@ -57,6 +57,9 @@ struct mii3d_renderer {
     uint16_t *body_idx[2];
     int body_shirt_count[2], body_pants_count[2];
     int body_loaded[2];
+    /* mii3d_render_head_draws: 3D draws go here instead of the rasterizer */
+    mii3d_draw_fn draw_fn;
+    void *draw_user;
 };
 
 static const mii3d_tex_kind_t k_slot_kind[SLOT_TEX_COUNT] = {
@@ -576,6 +579,37 @@ static int cull_for(const mii3d_renderer_t *r, const camera *c, const mii3d_mesh
     return 0;
 }
 
+/* Rasterizes, or hands the draw to mii3d_render_head_draws' callback. */
+static void submit(mii3d_renderer_t *r, m3_target *t, const m3_vertex *v, int vertex_count, const uint16_t *idx,
+                   int index_count, const m3_material *m)
+{
+    if (t->rgba) {
+        m3_draw(t, v, idx, index_count, m);
+        return;
+    }
+    if (!r->draw_fn)
+        return;
+    mii3d_draw_t d;
+    memset(&d, 0, sizeof(d));
+    d.vertices = &v[0].x;
+    d.vertex_count = vertex_count;
+    d.indices = idx;
+    d.index_count = index_count;
+    d.texture = m->mode == M3_MOD_NONE ? NULL : m->tex;
+    d.texture_dynamic = m->tex == &r->face_tex || m->tex == &r->faceline_tex;
+    d.mirror_u = m->mirror_u;
+    d.mode = (mii3d_modulate_t)m->mode;
+    memcpy(d.base, m->base, sizeof(d.base));
+    memcpy(d.c, m->c, sizeof(d.c));
+    d.lit = m->lit;
+    d.faceline = m->faceline;
+    d.sss_blend = m->sss_blend;
+    d.depth_test = m->depth_test;
+    d.depth_write = m->depth_write;
+    d.depth_bias = m->depth_bias;
+    r->draw_fn(r->draw_user, &d);
+}
+
 static void draw_mesh(mii3d_renderer_t *r, m3_target *t, const camera *c, const mii3d_mesh_t *mesh,
                       const placement *pl, const m3_material *mat_in, const m3_shading *sh)
 {
@@ -586,7 +620,7 @@ static void draw_mesh(mii3d_renderer_t *r, m3_target *t, const camera *c, const 
     if (!v)
         return;
     transform_mesh(c, mesh, pl, (mat->lit || mat->faceline) ? sh : NULL, v);
-    m3_draw(t, v, mesh->indices, mesh->index_count, mat);
+    submit(r, t, v, mesh->vertex_count, mesh->indices, mesh->index_count, mat);
 }
 
 static void placement_identity(placement *p)
@@ -633,10 +667,10 @@ static void draw_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_ch
             m.lit = 1;
             m.depth_test = m.depth_write = 1;
             transform_mesh(c, body, &pl, &k_mat_body[ci->favorite_color % 12], v);
-            m3_draw(t, v, r->body_idx[g], r->body_shirt_count[g], &m);
+            submit(r, t, v, body->vertex_count, r->body_idx[g], r->body_shirt_count[g], &m);
             m3_rgb(m.base, PANTS_RGB, 1.0f);
             transform_mesh(c, body, &pl, &k_mat_pants[0], v);
-            m3_draw(t, v, r->body_idx[g] + r->body_shirt_count[g], r->body_pants_count[g], &m);
+            submit(r, t, v, body->vertex_count, r->body_idx[g] + r->body_shirt_count[g], r->body_pants_count[g], &m);
         }
     }
     for (int k = 0; k < 3; k++)
@@ -667,6 +701,24 @@ static void downsample(const uint8_t *src, uint8_t *dst, int w, int h, int ss)
             o[3] = (uint8_t)(alpha / (unsigned)n);
         }
     }
+}
+
+mii3d_result_t mii3d_render_head_draws(mii3d_renderer_t *r, const mii_charinfo_t *ci, const mii3d_view_t *view,
+                                       int width, int height, mii3d_draw_fn fn, void *user)
+{
+    mii3d_view_t def;
+    if (!r || !ci || !fn || width <= 0 || height <= 0)
+        return MII3D_ERR_ARGUMENT;
+    if (!view) {
+        mii3d_view_init_default(&def);
+        view = &def;
+    }
+    r->draw_fn = fn;
+    r->draw_user = user;
+    mii3d_result_t res = render_head_1x(r, ci, view, NULL, width, height);
+    r->draw_fn = NULL;
+    r->draw_user = NULL;
+    return res;
 }
 
 mii3d_result_t mii3d_render_head(mii3d_renderer_t *r, const mii_charinfo_t *ci, const mii3d_view_t *view,
@@ -700,7 +752,7 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
                                      uint8_t *rgba, int width, int height)
 {
     mii3d_view_t def;
-    if (!r || !ci || !rgba || width <= 0 || height <= 0)
+    if (!r || !ci || width <= 0 || height <= 0)
         return MII3D_ERR_ARGUMENT;
     if (mii_verify(ci, 0) != MII_FIELD_COUNT && mii_verify(ci, 0) != MII_FIELD_COUNT + 1)
         return MII3D_ERR_ARGUMENT;
@@ -733,8 +785,10 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
     }
     const int has_faceline_tex = r->composed_has_faceline;
 
-    m3_target t = { width, height, rgba, r->depth };
-    m3_clear(&t, view->background);
+    /* rgba NULL: mii3d_render_head_draws (no pixels, no depth buffer) */
+    m3_target t = { width, height, rgba, rgba ? r->depth : NULL };
+    if (rgba)
+        m3_clear(&t, view->background);
 
     camera cam;
     setup_camera(&cam, view, width, height);

@@ -61,10 +61,22 @@ void MiiPreview::request3D()
         spec.centerY = -4.0f;
     }
     spec.zoom *= extraZoom;
-    hr.request(this, spec, [this](HeadRenderer::Image img, int size) {
-        image = img;
+    if (stage) {
+        // stages sit on a plain color: the GPU can draw them on it
+        const NVGcolor bg = hasBackdrop ? backdrop : ui::background();
+        spec.background = 0xFF000000u | ((uint32_t)(bg.r * 255.0f + 0.5f) << 16) |
+            ((uint32_t)(bg.g * 255.0f + 0.5f) << 8) | (uint32_t)(bg.b * 255.0f + 0.5f);
+    }
+    hr.request(this, spec, [this](HeadRenderer::Image img, int size, int gpu) {
         imageSize = size;
-        imageDirty = true;
+        if (gpu > 0) {
+            gpuImage = gpu;
+            image.reset();
+        } else {
+            gpuImage = -1;
+            image = img;
+            imageDirty = true;
+        }
     });
 }
 
@@ -135,7 +147,8 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
             }
             imageDirty = false;
         }
-        if (nvgImage >= 0) {
+        const int shown = gpuImage > 0 ? gpuImage : nvgImage;
+        if (shown >= 0) {
             // the head fills the middle ~60% of the rendered square
             const bool bust = stage && requestedBust;
             const float side = bust ? std::fmin(width * 1.12f, height)
@@ -147,7 +160,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
                                   : y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
             nvgBeginPath(vg);
             nvgRect(vg, ix, iy, side, side);
-            nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, nvgImage, 1.0f));
+            nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, shown, 1.0f));
             nvgFill(vg);
         }
     }
