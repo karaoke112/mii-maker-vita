@@ -36,7 +36,12 @@ class MiiLibrary
         int failed = 0;   // unreadable or invalid files
         bool full = false; // stopped: the database holds 100 Miis
     };
-    // Adds every Mii file in <data>/import/ (.charinfo, .nfsd, .ffsd) to the
+    // <nickname>_<first 4 bytes of the create id in hex>, safe as a file name
+    static std::string fileName(const mii_charinfo_t& ci);
+    // QR code pictures made by "Create QR Code"
+    std::string qrDir() const { return dir + "/qr"; }
+    // Adds every Mii file in <data>/import/ (.charinfo, .nfsd, .ffsd, and
+    // pictures of Mii QR codes: .png, .jpg, .bmp) to the
     // database, then moves the file to <data>/import/imported/. A Mii that is
     // already in the database (same create id) is updated, not duplicated.
     ImportResult importFolder();

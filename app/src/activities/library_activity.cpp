@@ -1,9 +1,11 @@
 #include "activities/library_activity.hpp"
 
 #include "activities/editor_activity.hpp"
+#include "activities/qr_activity.hpp"
 #include "activities/start_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
+#include "mii_qr.hpp"
 #include "settings.hpp"
 #include "ui_theme.hpp"
 #include "views/popup_menu.hpp"
@@ -153,12 +155,18 @@ void LibraryActivity::rebuild()
             if (pick == Pick::EXPORT) {
                 exportMii(index);
                 setPick(Pick::NONE);
+            } else if (pick == Pick::QR) {
+                const mii_charinfo_t mii = miis[index];
+                setPick(Pick::NONE);
+                brls::Application::pushActivity(new QrShowActivity(mii), brls::TransitionAnimation::NONE);
             } else {
                 openEditor(miis[index]);
             }
             return true;
         });
-        card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n : "library/edit"_i18n);
+        card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
+                : pick == Pick::QR                                      ? "library/qr"_i18n
+                                                                        : "library/edit"_i18n);
         card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
         card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
             auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
@@ -204,11 +212,31 @@ void LibraryActivity::exportMii(int index)
         brls::Application::notify("library/export_failed"_i18n);
 }
 
+// A Mii read from a QR code joins the library (QR codes carry no create id,
+// so it gets a new one).
+void LibraryActivity::addScanned(const mii_charinfo_t& scanned)
+{
+    mii_charinfo_t mii = scanned;
+    MiiLibrary& lib = MiiLibrary::instance();
+    if (!mii_create_id_is_valid(&mii.create_id))
+        lib.newCreateId(&mii.create_id);
+    char name[64];
+    mii_name_get_utf8(&mii, name, sizeof(name));
+    if (lib.put(&mii) < 0) {
+        brls::Application::notify("library/import_full"_i18n);
+        return;
+    }
+    brls::Application::notify("qr/added"_i18n + " " + name);
+    brls::sync([this] { rebuild(); });
+}
+
 // "Choose a Mii" mode: the next card pressed is exported instead of edited.
 void LibraryActivity::setPick(Pick mode)
 {
     pick = mode;
-    pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n : "");
+    pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
+            : mode == Pick::QR              ? "library/pick_qr"_i18n
+                                            : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     brls::View* focus = brls::Application::getCurrentFocus();
     int focusIndex = -1;
@@ -218,6 +246,14 @@ void LibraryActivity::setPick(Pick mode)
     rebuild();
     if (mode != Pick::NONE && !cards.empty())
         brls::Application::giveFocus(cards[focusIndex >= 0 ? focusIndex : 0]);
+}
+
+// Mii QR codes need the user's own copy of the key (like the .dat files).
+static void needKey()
+{
+    auto* dialog = new brls::Dialog("qr/need_key"_i18n + "\n\n" + qr::keyPath());
+    dialog->addButton("hints/ok"_i18n, [] {});
+    dialog->open();
 }
 
 static void comingSoon()
@@ -237,7 +273,14 @@ void LibraryActivity::showAddMenu()
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_import"_i18n, [this] { importMiis(); }),
-        PopupMenu::item("library/add_qr"_i18n, comingSoon),
+        PopupMenu::item("library/add_qr"_i18n, [this] {
+            if (!qr::available()) {
+                needKey();
+                return;
+            }
+            brls::Application::pushActivity(new QrScanActivity([this](const mii_charinfo_t& mii) { addScanned(mii); }),
+                brls::TransitionAnimation::NONE);
+        }),
         PopupMenu::item("library/add_receive"_i18n, comingSoon),
     };
     brls::Application::pushActivity(new PopupMenu("library/add"_i18n, items), brls::TransitionAnimation::NONE);
@@ -251,7 +294,13 @@ void LibraryActivity::showSendMenu()
     }
     std::vector<PopupMenu::Item> items = {
         PopupMenu::item("library/send_export"_i18n, [this] { setPick(Pick::EXPORT); }),
-        PopupMenu::item("library/send_qr"_i18n, comingSoon),
+        PopupMenu::item("library/send_qr"_i18n, [this] {
+            if (!qr::available()) {
+                needKey();
+                return;
+            }
+            setPick(Pick::QR);
+        }),
         PopupMenu::item("library/send_vita"_i18n, comingSoon),
     };
     brls::Application::pushActivity(new PopupMenu("library/send"_i18n, items), brls::TransitionAnimation::NONE);
