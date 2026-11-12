@@ -237,6 +237,11 @@ static void test_resource(void)
         for (int i = 0; i < 48 * 48; i++) covered += icon[4 * i + 3] > 0;
         CHECK(covered > 48 * 48 / 4);
         CHECK(icon[3] == 0); /* margin stays transparent */
+        /* one eye: still fills the icon (it is scaled up on its own) */
+        CHECK(mii3d_render_part_icon(r, &ci, MII3D_ICON_EYE, icon, 48) == MII3D_OK);
+        covered = 0;
+        for (int i = 0; i < 48 * 48; i++) covered += icon[4 * i + 3] > 0;
+        CHECK(covered > 48 * 48 / 8);
         ci.glass_type = 0;
         CHECK(mii3d_render_part_icon(r, &ci, MII3D_ICON_GLASSES, icon, 48) == MII3D_OK);
         covered = 0;

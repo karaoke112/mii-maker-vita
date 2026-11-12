@@ -1,24 +1,17 @@
 {
   "title": "Edit Mii",
   "save": "Save",
-  "turn_left": "Turn",
-  "turn_right": "Turn",
   "invalid": "This Mii has an invalid value or an empty name.",
   "save_failed": "Could not save (is the database full?).",
   "discard": "Discard your changes?",
   "discard_yes": "Discard",
   "tabs": {
-    "profile": "Profile",
-    "face": "Face",
-    "hair": "Hair",
-    "eyebrows": "Eyebrows",
-    "eyes": "Eyes",
-    "nose": "Nose",
-    "mouth": "Mouth",
-    "facial_hair": "Facial hair",
-    "glasses": "Glasses",
-    "mole": "Mole",
-    "body": "Body"
+    "types": "Types",
+    "position": "Position",
+    "color": "Color",
+    "shape": "Shape",
+    "wrinkles": "Wrinkles",
+    "makeup": "Makeup"
   },
   "nickname": "Nickname",
   "gender": "Base",
@@ -31,7 +24,7 @@
   "makeup": "Makeup",
   "style": "Style",
   "color": "Color",
-  "flip_part": "Flip hair part",
+  "flip_part": "Flip the hair part",
   "adjust": "Adjust",
   "size": "Size",
   "thickness": "Thickness",
@@ -45,5 +38,27 @@
   "beard": "Beard",
   "mole": "Mole",
   "body": "Body",
-  "build": "Build"
+  "build": "Build",
+  "done": "Done",
+  "rotate": "Rotate",
+  "menu": {
+    "face": "Face",
+    "hair": "Hairstyle",
+    "eyebrows": "Eyebrows",
+    "eyes": "Eyes",
+    "nose": "Nose",
+    "mouth": "Mouth",
+    "facial_hair": "Facial Hair",
+    "mole": "Mole",
+    "style": "Style",
+    "body": "Body",
+    "glasses": "Glasses",
+    "favorite_color": "Favorite Color"
+  },
+  "prompt": {
+    "style": "Choose this Mii's style.",
+    "style_note": "Some games treat this as the Mii's gender.",
+    "body": "How tall and how wide is this Mii?",
+    "favorite_color": "Which color does this Mii like best?"
+  }
 }

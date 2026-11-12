@@ -25,6 +25,8 @@ void MiiPreview::request3D()
     HeadRenderer& hr = HeadRenderer::instance();
     if (!hr.available())
         return;
+    // whole steps, so turning reuses cached renders
+    const float yaw = std::round(yawRef() / 5.0f) * 5.0f;
     if (hasRequested && requestedYaw == yaw && std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
     requested = *mii;
@@ -34,23 +36,42 @@ void MiiPreview::request3D()
     spec.mii = *mii;
     spec.size = renderSize;
     spec.yaw = yaw;
+    if (stage) {
+        spec.zoom = 0.8f; // room for long hair
+        spec.centerY = -4.0f;
+    }
     hr.request(this, spec, [this](HeadRenderer::Image img, int) {
         image = img;
         imageDirty = true;
     });
 }
 
+void MiiPreview::pollStick()
+{
+    const brls::Time now = brls::getCPUTimeUsec();
+    const float dt = lastPoll ? std::fmin(0.1f, (float)(now - lastPoll) / 1e6f) : 0.0f;
+    lastPoll = now;
+    const float ax = brls::Application::getControllerState().axes[brls::RIGHT_X];
+    if (std::fabs(ax) > 0.3f)
+        yawRef() = std::fmax(-70.0f, std::fmin(70.0f, yawRef() + ax * 120.0f * dt));
+}
+
 void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
     brls::FrameContext* ctx)
 {
     const float cx = x + width / 2;
-    const float nameHeight = 40.0f;
+    const float nameHeight = stage ? 0.0f : 40.0f;
+
+    if (stage)
+        pollStick();
 
     // Backdrop
+    if (!stage) {
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x, y, width, height, 18);
     nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + height, nvgRGB(250, 250, 252), nvgRGB(222, 226, 234)));
     nvgFill(vg);
+    }
 
     nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
 
@@ -77,14 +98,18 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         }
         if (nvgImage >= 0) {
             // the head fills the middle ~60% of the rendered square
-            const float side = std::fmin(width * 1.15f, height - nameHeight);
-            const float ix = cx - side / 2, iy = y + (height - nameHeight - side) / 2 + 6;
+            const float side = stage ? std::fmin(width, height) * 0.95f
+                                     : std::fmin(width * 1.15f, height - nameHeight);
+            const float ix = cx - side / 2, iy = y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
             nvgBeginPath(vg);
             nvgRect(vg, ix, iy, side, side);
             nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, nvgImage, 1.0f));
             nvgFill(vg);
         }
     }
+
+    if (stage)
+        return;
 
     // Name
     char name[64];

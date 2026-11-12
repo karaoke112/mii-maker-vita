@@ -778,6 +778,13 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
     switch (part) {
     case MII3D_ICON_EYES:     compose_face(r, &ci, &t, FACE_EYES); break;
     case MII3D_ICON_EYEBROWS: compose_face(r, &ci, &t, FACE_BROWS); break;
+    case MII3D_ICON_EYE:
+    case MII3D_ICON_EYEBROW:
+        compose_face(r, &ci, &t, part == MII3D_ICON_EYE ? FACE_EYES : FACE_BROWS);
+        /* the face is centered: drop the left half, keeping one part */
+        for (int y = 0; y < RES; y++)
+            memset(tmp + 4 * (size_t)y * RES, 0, (size_t)RES / 2 * 4);
+        break;
     case MII3D_ICON_MOUTH:    compose_face(r, &ci, &t, FACE_MOUTH); break;
     case MII3D_ICON_MUSTACHE: compose_face(r, &ci, &t, FACE_MUSTACHE); break;
     case MII3D_ICON_MOLE:     compose_face(r, &ci, &t, FACE_MOLE); break;
