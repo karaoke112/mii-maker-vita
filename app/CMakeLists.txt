@@ -13,7 +13,8 @@ set(BOREALIS_LIBRARY ${BOREALIS_DIR}/library)
 
 # Small fixes to borealis, applied to the submodule's working tree (once;
 # a patch that is already in is detected by applying it in reverse).
-foreach (patch ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-psv-sticks.patch)
+foreach (patch ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-psv-sticks.patch
+               ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-crisp-text.patch)
     execute_process(COMMAND git apply --reverse --check ${patch}
         WORKING_DIRECTORY ${BOREALIS_DIR} RESULT_VARIABLE already OUTPUT_QUIET ERROR_QUIET)
     if (NOT already EQUAL 0)
