@@ -18,7 +18,8 @@ class PopupMenu : public brls::Activity
         bool keepOpen = false;
     };
 
-    PopupMenu(std::string title, std::vector<Item> items);
+    // `focus`: the row the cursor starts on.
+    PopupMenu(std::string title, std::vector<Item> items, int focus = 0);
     static Item item(const std::string& text, std::function<void()> action);
 
     brls::View* createContentView() override;
@@ -27,4 +28,5 @@ class PopupMenu : public brls::Activity
   private:
     std::string title;
     std::vector<Item> items;
+    int focus;
 };

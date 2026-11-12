@@ -54,9 +54,10 @@ class Backdrop : public brls::Box
 
 } // namespace
 
-PopupMenu::PopupMenu(std::string title, std::vector<Item> items)
+PopupMenu::PopupMenu(std::string title, std::vector<Item> items, int focus)
     : title(std::move(title))
     , items(std::move(items))
+    , focus(focus)
 {
 }
 
@@ -102,6 +103,7 @@ brls::View* PopupMenu::createContentView()
         });
         panel->addView(row);
     }
+    panel->setDefaultFocusedIndex(1 + focus); // after the heading
     root->addView(panel);
     root->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
         brls::Application::popActivity(brls::TransitionAnimation::NONE);

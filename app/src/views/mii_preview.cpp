@@ -17,7 +17,7 @@ MiiPreview::MiiPreview(const mii_charinfo_t* mii, int renderSize)
     this->addGestureRecognizer(new brls::PanGestureRecognizer(
         [this](brls::PanGestureStatus status, brls::Sound*) {
             if (stage && interactive && status.state != brls::GestureState::UNSURE)
-                yawRef() = wrapYaw(yawRef() + status.delta.x * 0.6f);
+                yawRef() = wrapYaw(yawRef() - status.delta.x * 0.6f); // the Mii follows the finger
         },
         brls::PanAxis::HORIZONTAL));
 }
