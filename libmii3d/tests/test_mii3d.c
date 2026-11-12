@@ -229,6 +229,21 @@ static void test_resource(void)
     CHECK(center[3] == 255);
     CHECK(center[0] > 150 && center[1] > 120); /* lit skin */
     CHECK(corner[3] == 0);                     /* transparent background */
+    /* part icons: eyes come out centered and non-empty, glasses type 0 empty */
+    {
+        uint8_t icon[48 * 48 * 4];
+        CHECK(mii3d_render_part_icon(r, &ci, MII3D_ICON_EYES, icon, 48) == MII3D_OK);
+        int covered = 0;
+        for (int i = 0; i < 48 * 48; i++) covered += icon[4 * i + 3] > 0;
+        CHECK(covered > 48 * 48 / 4);
+        CHECK(icon[3] == 0); /* margin stays transparent */
+        ci.glass_type = 0;
+        CHECK(mii3d_render_part_icon(r, &ci, MII3D_ICON_GLASSES, icon, 48) == MII3D_OK);
+        covered = 0;
+        for (int i = 0; i < 48 * 48; i++) covered += icon[4 * i + 3] > 0;
+        CHECK(covered == 0);
+        CHECK(mii3d_render_part_icon(r, &ci, (mii3d_icon_part_t)99, icon, 48) == MII3D_ERR_ARGUMENT);
+    }
     /* deterministic output */
     uint8_t *px2 = calloc(128 * 128, 4);
     CHECK(mii3d_render_head(r, &ci, &view, px2, 128, 128) == MII3D_OK);

@@ -30,7 +30,11 @@ void MiiPreview::request3D()
     requested = *mii;
     requestedYaw = yaw;
     hasRequested = true;
-    hr.request(this, *mii, renderSize, yaw, [this](HeadRenderer::Image img, int) {
+    HeadRenderer::Spec spec;
+    spec.mii = *mii;
+    spec.size = renderSize;
+    spec.yaw = yaw;
+    hr.request(this, spec, [this](HeadRenderer::Image img, int) {
         image = img;
         imageDirty = true;
     });

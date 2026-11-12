@@ -108,6 +108,8 @@ typedef struct mii3d_view {
     uint32_t background; /* 0xAARRGGBB; alpha 0 = transparent */
     int face_texture_size; /* 0 = default (256) */
     int supersample;       /* 1 (fast) to 3; 2 gives smooth edges at 4x the cost */
+    float zoom;            /* 1 = whole head; 0 means 1 */
+    float center_y;        /* move the framing up (+) or down, in model units */
 } mii3d_view_t;
 
 void mii3d_view_init_default(mii3d_view_t *view);
@@ -116,6 +118,19 @@ void mii3d_view_init_default(mii3d_view_t *view);
  * non-premultiplied). */
 mii3d_result_t mii3d_render_head(mii3d_renderer_t *r, const mii_charinfo_t *mii, const mii3d_view_t *view,
                                  uint8_t *rgba, int width, int height);
+
+/* Icons for the editor's part grids, in the Mii's current colors with the
+ * part at its default size and position: the part is drawn alone, cropped
+ * and centered in a size x size transparent image. Shape parts (hair, face
+ * shape, nose, beard, ...) are drawn as small heads with mii3d_render_head
+ * instead. */
+typedef enum mii3d_icon_part {
+    MII3D_ICON_EYES, MII3D_ICON_EYEBROWS, MII3D_ICON_MOUTH,
+    MII3D_ICON_MUSTACHE, MII3D_ICON_GLASSES, MII3D_ICON_MOLE
+} mii3d_icon_part_t;
+
+mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
+                                      uint8_t *rgba, int size);
 
 /* Renders only the composited face texture (eyes, brows, mouth, ...) at
  * size x size, mostly for debugging and part thumbnails. */

@@ -122,6 +122,7 @@ void mii3d_view_init_default(mii3d_view_t *view)
     view->yaw_deg = 0.0f;
     view->face_texture_size = 256;
     view->supersample = 1;
+    view->zoom = 1.0f;
 }
 
 static int ensure_image(mii3d_image_t *img, int w, int h)
@@ -215,7 +216,9 @@ static void draw_part(m3_target *t, float res, const part *p, const m3_material 
     m3_draw(t, v, idx, 6, mat);
 }
 
-static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_target *t)
+enum { FACE_EYES = 1, FACE_BROWS = 2, FACE_MOUTH = 4, FACE_MUSTACHE = 8, FACE_MOLE = 16, FACE_ALL = 31 };
+
+static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_target *t, unsigned parts)
 {
     const float res = 256.0f, unit = res / 64.0f;
     m3_clear(t, 0x00000000u);
@@ -223,7 +226,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
     part p;
 
     /* Eyes: r = outline (black), g = white, b = iris (eye color) */
-    {
+    if (parts & FACE_EYES) {
         const float scale = scale2dim(ci->eye_scale), sy = 0.12f * ci->eye_aspect + 0.64f;
         const float spacing = TEX_SCALE_X * ci->eye_x;
         const float y = 18.451525f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->eye_y;
@@ -244,7 +247,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
         }
     }
     /* Eyebrows: alpha texture in the eyebrow color */
-    {
+    if (parts & FACE_BROWS) {
         const float scale = scale2dim(ci->eyebrow_scale), sy = 0.12f * ci->eyebrow_aspect + 0.64f;
         const float spacing = TEX_SCALE_X * ci->eyebrow_x;
         const float y = 16.549807f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->eyebrow_y;
@@ -263,7 +266,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
         }
     }
     /* Mouth: r = mouth color, g = upper lip, b = teeth (white) */
-    {
+    if (parts & FACE_MOUTH) {
         const float scale = scale2dim(ci->mouth_scale), sy = 0.12f * ci->mouth_aspect + 0.64f;
         const float y = 29.25885f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->mouth_y;
         const mii3d_image_t *tex = get_tex(r, SLOT_MOUTH, ci->mouth_type);
@@ -279,7 +282,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
         }
     }
     /* Mustache (beard color), mirrored halves */
-    if (ci->mustache_type != 0) {
+    if ((parts & FACE_MUSTACHE) && ci->mustache_type != 0) {
         const float scale = scale2dim(ci->mustache_scale);
         const float y = 31.763554f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->mustache_y;
         const mii3d_image_t *tex = get_tex(r, SLOT_MUSTACHE, ci->mustache_type);
@@ -295,7 +298,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
         }
     }
     /* Mole (black) */
-    if (ci->mole_type != 0) {
+    if ((parts & FACE_MOLE) && ci->mole_type != 0) {
         const float s = scale2dim(ci->mole_scale);
         const float x = 17.766165f + 2.0f * TEX_SCALE_X * ci->mole_x;
         const float y = 17.95986f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->mole_y;
@@ -365,7 +368,7 @@ mii3d_result_t mii3d_render_face_texture(mii3d_renderer_t *r, const mii_charinfo
     if (!r || !mii || !rgba || size <= 0)
         return MII3D_ERR_ARGUMENT;
     m3_target t = { size, size, rgba, NULL };
-    compose_face(r, mii, &t);
+    compose_face(r, mii, &t, FACE_ALL);
     return MII3D_OK;
 }
 
@@ -392,9 +395,9 @@ static void setup_camera(camera *c, const mii3d_view_t *view, int w, int h)
     /* R = Rx(pitch) * Ry(yaw) */
     const float r[9] = { cy, 0, sy, sp * sy, cp, -sp * cy, -cp * sy, sp, cp * cy };
     memcpy(c->rot, r, sizeof(r));
-    c->pivot[0] = 0.0f; c->pivot[1] = 33.0f; c->pivot[2] = 0.0f;
+    c->pivot[0] = 0.0f; c->pivot[1] = 33.0f + view->center_y; c->pivot[2] = 0.0f;
     c->eye_dist = 330.0f;
-    c->f = 1.0f / tanf(8.4f * (float)M_PI / 180.0f);
+    c->f = (view->zoom > 0 ? view->zoom : 1.0f) / tanf(8.4f * (float)M_PI / 180.0f);
     c->aspect = (float)w / (float)h;
     c->znear = 100.0f;
     c->zfar = 600.0f;
@@ -557,7 +560,7 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
     if (!r->composed_valid || memcmp(&r->composed_for, ci, sizeof(*ci)) != 0 ||
         r->face_tex.width != fs) {
         m3_target face = { fs, fs, r->face_tex.pixels, NULL };
-        compose_face(r, ci, &face);
+        compose_face(r, ci, &face, FACE_ALL);
         m3_target fl = { fs / 2, fs, r->faceline_tex.pixels, NULL };
         r->composed_has_faceline = compose_faceline(r, ci, &fl);
         r->composed_for = *ci;
@@ -588,6 +591,7 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
         /* the texture carries the skin color; its alpha masks spec/SSS */
         m.mode = M3_MOD_DIRECT;
         m.tex = &r->faceline_tex;
+        m.mirror_u = 1; /* the texture is one half of the face; u runs 0..2 */
         m.faceline = 1;
         m.sss_blend = skin_mat->sss_blend;
     } else {
@@ -700,5 +704,111 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
             draw_mesh(r, &t, &cam, glass, &pl, &m, &k_mat_glass[0]);
         }
     }
+    return MII3D_OK;
+}
+
+/* ---- part icons --------------------------------------------------------- */
+
+/* Copies the opaque bounding box of `src` (res x res) into a size x size
+ * image, scaled to fit with a margin and centered. */
+static void crop_to_icon(const uint8_t *src, int res, uint8_t *dst, int size)
+{
+    int x0 = res, y0 = res, x1 = -1, y1 = -1;
+    for (int y = 0; y < res; y++)
+        for (int x = 0; x < res; x++)
+            if (src[4 * (y * res + x) + 3] > 8) {
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+    memset(dst, 0, (size_t)size * size * 4);
+    if (x1 < 0)
+        return;
+    const float bw = (float)(x1 - x0 + 1), bh = (float)(y1 - y0 + 1);
+    const float fit = size * 0.84f / (bw > bh ? bw : bh);
+    const float ox = (size - bw * fit) / 2, oy = (size - bh * fit) / 2;
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            /* box-filter the source footprint of this output pixel */
+            const float sx0 = x0 + (x - ox) / fit, sy0 = y0 + (y - oy) / fit;
+            const float step = 1.0f / fit;
+            const int n = step > 1.0f ? (int)ceilf(step) : 1;
+            float acc[3] = { 0, 0, 0 }, alpha = 0;
+            for (int j = 0; j < n; j++)
+                for (int i = 0; i < n; i++) {
+                    const int sx = (int)(sx0 + (i + 0.5f) * step / n), sy = (int)(sy0 + (j + 0.5f) * step / n);
+                    if (sx < x0 || sy < y0 || sx > x1 || sy > y1)
+                        continue;
+                    const uint8_t *p = src + 4 * (sy * res + sx);
+                    acc[0] += p[0] * p[3]; acc[1] += p[1] * p[3]; acc[2] += p[2] * p[3];
+                    alpha += p[3];
+                }
+            uint8_t *o = dst + 4 * (y * size + x);
+            if (alpha > 0) {
+                o[0] = (uint8_t)(acc[0] / alpha);
+                o[1] = (uint8_t)(acc[1] / alpha);
+                o[2] = (uint8_t)(acc[2] / alpha);
+                o[3] = (uint8_t)(alpha / (float)(n * n));
+            }
+        }
+    }
+}
+
+mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
+                                      uint8_t *rgba, int size)
+{
+    enum { RES = 512 };
+    if (!r || !mii || !rgba || size <= 0)
+        return MII3D_ERR_ARGUMENT;
+    uint8_t *tmp = (uint8_t *)malloc((size_t)RES * RES * 4);
+    if (!tmp)
+        return MII3D_ERR_MEMORY;
+    m3_target t = { RES, RES, tmp, NULL };
+
+    /* the part's own type and color, default size and placement */
+    mii_charinfo_t ci;
+    mii_charinfo_init_default(&ci, mii->gender);
+    ci.eye_type = mii->eye_type;          ci.eye_color = mii->eye_color;
+    ci.eyebrow_type = mii->eyebrow_type;  ci.eyebrow_color = mii->eyebrow_color;
+    ci.mouth_type = mii->mouth_type;      ci.mouth_color = mii->mouth_color;
+    ci.mustache_type = mii->mustache_type; ci.beard_color = mii->beard_color;
+    ci.mole_type = 1;                      ci.mole_scale = 8;
+
+    switch (part) {
+    case MII3D_ICON_EYES:     compose_face(r, &ci, &t, FACE_EYES); break;
+    case MII3D_ICON_EYEBROWS: compose_face(r, &ci, &t, FACE_BROWS); break;
+    case MII3D_ICON_MOUTH:    compose_face(r, &ci, &t, FACE_MOUTH); break;
+    case MII3D_ICON_MUSTACHE: compose_face(r, &ci, &t, FACE_MUSTACHE); break;
+    case MII3D_ICON_MOLE:     compose_face(r, &ci, &t, FACE_MOLE); break;
+    case MII3D_ICON_GLASSES: {
+        m3_clear(&t, 0x00000000u);
+        if (mii->glass_type == 0)
+            break;
+        const int index = mii3d_res_texture_count(r->res, MII3D_TEX_GLASS) >= 20
+            ? mii->glass_type : mii_glass_type_to_ver3(mii->glass_type);
+        const mii3d_image_t *tex = get_tex(r, SLOT_GLASS, index);
+        if (!tex)
+            break;
+        m3_material m;
+        memset(&m, 0, sizeof(m));
+        m.tex = tex;
+        m.mode = M3_MOD_ALPHA_LUM;
+        common(m.c[0], mii->glass_color);
+        m.mirror_u = 1;
+#define GV(X, Y, U, V) { .x = X, .y = Y, .z = 0, .w = 1, .u = U, .v = V, .hl = 1, .add = { 0, 0, 0 }, .rim = { 0, 0, 0 } }
+        /* both lenses: the texture mirrored across a 2:1 quad */
+        const m3_vertex q[4] = { GV(-0.9f, -0.45f, 0, 1), GV(0.9f, -0.45f, 2, 1), GV(0.9f, 0.45f, 2, 0), GV(-0.9f, 0.45f, 0, 0) };
+#undef GV
+        static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
+        m3_draw(&t, q, idx, 6, &m);
+        break;
+    }
+    default:
+        free(tmp);
+        return MII3D_ERR_ARGUMENT;
+    }
+    crop_to_icon(tmp, RES, rgba, size);
+    free(tmp);
     return MII3D_OK;
 }

@@ -64,8 +64,8 @@ thread, quick pass first and smooth pass after. The result is uploaded as an
 ordinary NanoVG image, so it works with any borealis backend. A GXM backend
 could be added later behind the same API if profiling on hardware calls for it.
 
-Next steps: the body from `FFLBodyRes.dat`, part thumbnails for the editor
-grids (render each part once into `ux0:data/mii/cache/`), expressions.
+Next steps: the body from `FFLBodyRes.dat`, saving rendered grid icons to
+`ux0:data/mii/cache/`, expressions.
 
 ## QR codes
 
@@ -143,7 +143,8 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | 0 | Research, libmii (Switch + Ver3 + NFDB), tests against MiiJS | done |
 | 1 | Editor app on borealis: library, all categories, save/export, Vita `.vpk` | done |
 | 2 | 3D renderer from the user's own resource (Wii U or Miitomo), Switch lighting | done (heads) |
-| 2b | Body from `FFLBodyRes.dat` (when provided), part thumbnails for the grids | next |
+| 2b | Rendered style icons in every part grid | done |
+| 2c | Body from `FFLBodyRes.dat` (when provided); cache icons on disk | next |
 | 3 | Import `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/` | planned |
 | 3b | **QR codes**: scan Mii QR codes with the Vita camera and create them (see below) | planned |
 | 4 | Ad-hoc trading (`libmii-net`, `TradeActivity`) | planned |

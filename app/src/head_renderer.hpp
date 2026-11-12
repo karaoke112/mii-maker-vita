@@ -30,6 +30,19 @@ class HeadRenderer
     using Image = std::shared_ptr<const std::vector<uint8_t>>; // size*size*4 RGBA
     using Callback = std::function<void(Image image, int size)>;
 
+    // What to draw: a head (icon < 0) framed by zoom/centerY, or a part
+    // icon (a mii3d_icon_part_t value).
+    struct Spec {
+        mii_charinfo_t mii;
+        int size = 256;
+        float yaw = 0.0f;
+        float zoom = 1.0f;
+        float centerY = 0.0f;
+        int icon = -1;
+        // icons: queued behind previews, single quick pass only
+        bool lowPriority = false;
+    };
+
     static HeadRenderer& instance();
 
     // Looks for the resource file and starts the worker. Safe to call again
@@ -38,10 +51,10 @@ class HeadRenderer
     bool available() const { return res != nullptr; }
     const std::string& status() const { return statusText; }
 
-    // Asks for a render; the callback runs later on the UI thread, first
-    // with a quick image and then again with a smoother (supersampled) one.
+    // Asks for a render; the callback runs later on the UI thread. Heads come
+    // first as a quick image and then again smoother (supersampled).
     // A newer request from the same owner replaces older queued work.
-    void request(const void* owner, const mii_charinfo_t& mii, int size, float yaw, Callback cb);
+    void request(const void* owner, const Spec& spec, Callback cb);
     // Drops queued work for `owner` and guarantees its callbacks never run.
     void forget(const void* owner);
 
@@ -52,9 +65,7 @@ class HeadRenderer
 
     struct Job {
         const void* owner;
-        mii_charinfo_t mii;
-        int size;
-        float yaw;
+        Spec spec;
         int supersample;
         Callback cb;
     };
@@ -66,13 +77,14 @@ class HeadRenderer
 
     std::mutex mutex;
     std::condition_variable wake;
-    std::deque<Job> jobs;
+    std::deque<Job> high, low; // previews, then grid icons
     std::thread thread;
     bool stopping = false;
 
-    // Finished images, most recent first (small LRU so revisiting the
-    // library does not render everything again).
+    // Finished images, most recent first (LRU, so revisiting a screen does
+    // not render everything again).
     std::list<std::pair<uint64_t, Image>> cache;
+    size_t cacheBytes = 0;
     // Owners that are alive; only touched on the UI thread.
     std::vector<const void*> live;
 };

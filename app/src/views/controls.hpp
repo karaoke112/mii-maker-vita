@@ -3,21 +3,28 @@
 #include <borealis.hpp>
 #include <mii/mii.h>
 
+#include "head_renderer.hpp"
+
 #include <functional>
 #include <string>
 #include <vector>
 
-// A grid of choices bound to one Mii field: parts (numbered tiles) or a
-// color palette (swatches). Laid out in the same order as the Switch editor
-// (see mii_editor_grid), so muscle memory carries over.
+// A grid of choices bound to one Mii field: parts or a color palette
+// (swatches). Laid out in the same order as the Switch editor (see
+// mii_editor_grid), so muscle memory carries over. Part tiles show rendered
+// icons when `iconOf` is given and a face resource is installed, numbers
+// otherwise.
 class OptionGrid : public brls::Box
 {
   public:
     using ColorOf = std::function<uint32_t(uint8_t value)>;
     using LabelOf = std::function<std::string(uint8_t value)>;
+    // Fills in what to render for `value` (given the current Mii).
+    using IconOf = std::function<void(uint8_t value, const mii_charinfo_t& current, HeadRenderer::Spec* spec)>;
 
     OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8_t> items, int columns,
-        float cellSize, ColorOf colorOf, LabelOf labelOf, std::function<void()> onChange);
+        float cellSize, ColorOf colorOf, LabelOf labelOf, std::function<void()> onChange,
+        IconOf iconOf = nullptr);
 
     // Items 0..max(field) in natural order.
     static std::vector<uint8_t> range(mii_field_t field);
