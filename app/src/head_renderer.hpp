@@ -92,6 +92,9 @@ class HeadRenderer
     // (owners shared by several views: one of them went away).
     void invalidate(const void* owner);
     void forget(const void* owner);
+    // Deletes every finished image, in memory and on the memory card.
+    // UI thread.
+    void clearCache();
 
   private:
     HeadRenderer() = default;
@@ -144,6 +147,8 @@ class HeadRenderer
     std::atomic<bool> gpuOn { false }; // read by the disk thread too
     std::vector<bool> mouthColor, hatHair;
     std::map<const void*, int> priority; // guarded by `mutex`
+    std::atomic<int64_t> lastMove { 0 }; // when the cursor last moved (us)
+    unsigned frameCount = 0;
     Job takeBest(std::deque<Job>& q); // with `mutex` held
     bool drawsOnGpu(const Spec& s) const;
     uint64_t diskKey(const Spec& s, int pass) const;

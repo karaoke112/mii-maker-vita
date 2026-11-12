@@ -205,6 +205,14 @@ typedef enum mii3d_icon_part {
 
 mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
                                       uint8_t *rgba, int size);
+/* The same in two steps, for a GPU: mii3d_part_icon_draws() hands the
+ * part's draws (2D, no depth) for a res x res transparent target, with res
+ * from mii3d_part_icon_res(size); mii3d_part_icon_finish() then crops that
+ * picture (read back, not premultiplied; it is modified) into the icon. */
+int mii3d_part_icon_res(int size);
+mii3d_result_t mii3d_part_icon_draws(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
+                                     int res, mii3d_draw_fn fn, void *user);
+mii3d_result_t mii3d_part_icon_finish(mii3d_icon_part_t part, uint8_t *composed, int res, uint8_t *rgba, int size);
 /* Whether a part type shows its color at all (some mouths are plain lines,
  * the same in every lip color), so icons can be shared. Only mouths are
  * checked; other parts answer 1. */

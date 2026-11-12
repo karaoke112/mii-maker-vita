@@ -16,6 +16,8 @@ bool GpuRenderer::init(const mii3d_res*, const mii3d_res*, const std::string&)
 }
 int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, float, bool, uint32_t) { return -1; }
 bool GpuRenderer::renderIcon(const mii_charinfo_t&, int, float, float, float, float, bool, uint8_t*) { return false; }
+bool GpuRenderer::renderPartIcon(const mii_charinfo_t&, int, int, uint8_t*) { return false; }
+bool GpuRenderer::readBack(int, const std::function<int()>&, uint8_t*) { return false; }
 void GpuRenderer::release(const void*) { }
 int GpuRenderer::imageOf(const void*) { return -1; }
 
@@ -567,6 +569,10 @@ bool GpuRenderer::Impl::scene(Target* t, SizeResources* sr, uint32_t background,
     sceGxmSetFrontDepthFunc(ctx, SCE_GXM_DEPTH_FUNC_ALWAYS);
     sceGxmSetFrontDepthWriteEnable(ctx, SCE_GXM_DEPTH_WRITE_ENABLED);
     sceGxmFinish(ctx);
+    // borealis clears each frame before it sets its color: give it back
+    // the page color, or the next frame starts black
+    const NVGcolor page = brls::Application::getTheme().getColor("brls/clear");
+    gxmClearColor(page.r, page.g, page.b, page.a);
     // The GPU is idle now, so textures of previews that went away can go
     // (a frame drawn before they went may have still been using them).
     for (Target& old : released)
@@ -1062,8 +1068,9 @@ int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, 
     return t->nvgImage;
 }
 
-bool GpuRenderer::renderIcon(const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
-    bool fullBody, uint8_t* rgba)
+// Draws `draws` into a transparent size x size surface and reads it back
+// into `rgba` (not premultiplied). Main thread, outside a frame.
+bool GpuRenderer::readBack(int size, const std::function<int()>& draws, uint8_t* rgba)
 {
     if (!ok || size <= 0)
         return false;
@@ -1093,6 +1100,43 @@ bool GpuRenderer::renderIcon(const mii_charinfo_t& mii, int size, float yaw, flo
     }
     const Readback& rb = it->second;
 
+    Target target;
+    target.size = size;
+    target.surface = rb.surface;
+    int r = MII3D_OK;
+    g.clearAlpha = 0.0f;
+    const bool drawn = g.scene(&target, sr, 0, [&] { r = draws(); });
+    if (!drawn || r != MII3D_OK) {
+        g.log("icon: %s%s", mii3d_result_string((mii3d_result_t)r), drawn ? "" : " (scene failed or vertex buffer full)");
+        return false;
+    }
+    // GPU memory is uncached: copy it out in one go, then work on the copy
+    for (int y = 0; y < size; y++)
+        std::memcpy(rgba + (size_t)y * size * 4, rb.mem + (size_t)y * rb.stridePx * 4, (size_t)size * 4);
+    // Cleared to transparent black and blended "over", the colors come out
+    // premultiplied by alpha: undo that, as the CPU renderer's are not.
+    uint8_t* p = rgba;
+    for (size_t i = 0, n = (size_t)size * size; i < n; i++, p += 4) {
+        const unsigned a = p[3];
+        if (a == 255)
+            continue;
+        if (a == 0) {
+            p[0] = p[1] = p[2] = 0;
+            continue;
+        }
+        for (int c = 0; c < 3; c++) {
+            const unsigned v = (p[c] * 255u + a / 2) / a;
+            p[c] = (uint8_t)(v > 255 ? 255 : v);
+        }
+    }
+    return true;
+}
+
+bool GpuRenderer::renderIcon(const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
+    bool fullBody, uint8_t* rgba)
+{
+    if (!ok)
+        return false;
     mii3d_view_t view;
     mii3d_view_init_default(&view);
     view.yaw_deg = yaw;
@@ -1101,39 +1145,23 @@ bool GpuRenderer::renderIcon(const mii_charinfo_t& mii, int size, float yaw, flo
     view.center_y = centerY;
     view.full_body = fullBody;
     view.face_texture_size = size <= 200 ? 128 : 256; // small icons need less detail
+    Impl* g = impl;
+    return readBack(size, [&] { return (int)mii3d_render_head_draws(g->renderer, &mii, &view, size, size, drawCallback, g); },
+        rgba);
+}
 
-    Target target;
-    target.size = size;
-    target.surface = rb.surface;
-    mii3d_result_t r = MII3D_OK;
-    g.clearAlpha = 0.0f;
-    const bool drawn = g.scene(&target, sr, 0,
-        [&] { r = mii3d_render_head_draws(g.renderer, &mii, &view, size, size, drawCallback, &g); });
-    if (!drawn || r != MII3D_OK) {
-        g.log("icon: %s%s", mii3d_result_string(r), drawn ? "" : " (scene failed or vertex buffer full)");
+bool GpuRenderer::renderPartIcon(const mii_charinfo_t& mii, int part, int size, uint8_t* rgba)
+{
+    if (!ok)
         return false;
-    }
-    // Cleared to transparent black and blended "over", the colors come out
-    // premultiplied by alpha: undo that, as the CPU renderer's are not.
-    for (int y = 0; y < size; y++) {
-        const uint8_t* in = rb.mem + (size_t)y * rb.stridePx * 4;
-        uint8_t* out = rgba + (size_t)y * size * 4;
-        for (int x = 0; x < size; x++, in += 4, out += 4) {
-            const unsigned a = in[3];
-            if (a == 0) {
-                out[0] = out[1] = out[2] = out[3] = 0;
-            } else if (a == 255) {
-                std::memcpy(out, in, 4);
-            } else {
-                for (int c = 0; c < 3; c++) {
-                    const unsigned v = (in[c] * 255u + a / 2) / a;
-                    out[c] = (uint8_t)(v > 255 ? 255 : v);
-                }
-                out[3] = (uint8_t)a;
-            }
-        }
-    }
-    return true;
+    const int res = mii3d_part_icon_res(size);
+    std::vector<uint8_t> composed((size_t)res * res * 4);
+    Impl* g = impl;
+    if (!readBack(res,
+            [&] { return (int)mii3d_part_icon_draws(g->renderer, &mii, (mii3d_icon_part_t)part, res, drawCallback, g); },
+            composed.data()))
+        return false;
+    return mii3d_part_icon_finish((mii3d_icon_part_t)part, composed.data(), res, rgba, size) == MII3D_OK;
 }
 
 void GpuRenderer::release(const void* owner)

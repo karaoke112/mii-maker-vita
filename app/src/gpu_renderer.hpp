@@ -2,6 +2,7 @@
 
 #include <mii/mii.h>
 
+#include <functional>
 #include <string>
 
 struct mii3d_res;
@@ -38,6 +39,9 @@ class GpuRenderer
     // smooth edges. Main thread, outside a frame.
     bool renderIcon(const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY, bool fullBody,
         uint8_t* rgba);
+    // A flat part icon (a mii3d_icon_part_t), as mii3d_render_part_icon
+    // draws it. Main thread, outside a frame.
+    bool renderPartIcon(const mii_charinfo_t& mii, int part, int size, uint8_t* rgba);
     // The owner is gone: its texture is freed after the next render.
     void release(const void* owner);
     // The NanoVG image of the owner's latest render, or -1.
@@ -47,6 +51,7 @@ class GpuRenderer
 
   private:
     GpuRenderer() = default;
+    bool readBack(int size, const std::function<int()>& draws, uint8_t* rgba);
     bool ok = false;
     std::string why = "GPU renderer not started";
     Impl* impl = nullptr;

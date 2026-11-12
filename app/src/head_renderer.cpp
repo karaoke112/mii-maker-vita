@@ -214,6 +214,7 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
 
 void HeadRenderer::setPriority(const void* owner, int p)
 {
+    lastMove = brls::getCPUTimeUsec(); // the cursor moved (see pumpGpuIcons)
     std::lock_guard<std::mutex> lock(mutex);
     priority[owner] = p;
 }
@@ -260,11 +261,35 @@ void HeadRenderer::forget(const void* owner)
     priority.erase(owner);
 }
 
-// Heads drawn as icons (hair, face shapes, thumbnails) go to the GPU when
-// it is on; flat part icons (eyes, mouths, ...) are quick on the CPU.
+void HeadRenderer::clearCache()
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        cache.clear();
+        cacheBytes = 0;
+        saves.clear();
+    }
+    if (cacheDir.empty())
+        return;
+    DIR* d = opendir(cacheDir.c_str());
+    if (!d)
+        return;
+    std::vector<std::string> names;
+    while (struct dirent* e = readdir(d)) {
+        const std::string name = e->d_name;
+        if (name != "." && name != "..")
+            names.push_back(name);
+    }
+    closedir(d);
+    for (const std::string& name : names)
+        std::remove((cacheDir + "/" + name).c_str());
+    brls::Logger::info("icon cache: cleared {} files", names.size());
+}
+
+// Icons (heads, flat parts, thumbnails) go to the GPU when it is on.
 bool HeadRenderer::drawsOnGpu(const Spec& s) const
 {
-    return gpuOn && s.icon < 0 && isIcon(s) && (s.background >> 24) == 0;
+    return gpuOn && isIcon(s) && (s.background >> 24) == 0;
 }
 
 // The name of an icon's file on the memory card: GPU and CPU drawings
@@ -324,10 +349,14 @@ void HeadRenderer::pumpGpuPreviews()
 }
 
 // Icons for the GPU: as many as fit in a few milliseconds per frame (at
-// least one), nearest the cursor first, so the UI keeps moving.
+// least one), nearest the cursor first. While the cursor moves, only every
+// third frame draws one, leaving the frames time to scroll smoothly.
 void HeadRenderer::pumpGpuIcons()
 {
     const brls::Time start = brls::getCPUTimeUsec();
+    if (start - lastMove < 200000 && (++frameCount % 3) != 0)
+        return;
+    const brls::Time budget = start - lastMove < 200000 ? 0 : 4000;
     GpuRenderer& gpu = GpuRenderer::instance();
     for (;;) {
         Job job;
@@ -352,7 +381,10 @@ void HeadRenderer::pumpGpuIcons()
         const int size = passSize(sp, job.pass);
         auto pixels = std::make_shared<std::vector<uint8_t>>((size_t)size * size * 4);
         const brls::Time began = brls::getCPUTimeUsec();
-        if (!gpu.renderIcon(sp.mii, size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes, pixels->data())) {
+        const bool drawn = sp.icon >= 0
+            ? gpu.renderPartIcon(sp.mii, sp.icon, size, pixels->data())
+            : gpu.renderIcon(sp.mii, size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes, pixels->data());
+        if (!drawn) {
             if (!gpu.ready()) {
                 gpuOn = false;
                 statusText += " (GPU stopped: " + gpu.reason() + ")";
@@ -379,7 +411,7 @@ void HeadRenderer::pumpGpuIcons()
             }
         }
         job.cb(image, size, -1);
-        if (brls::getCPUTimeUsec() - start > 6000)
+        if (brls::getCPUTimeUsec() - start >= budget)
             return;
     }
 }

@@ -31,6 +31,7 @@ void MiiPreview::setShareKey(const void* key)
     HeadRenderer::instance().forget(this);
     shareKey = key;
     shareCount[key]++;
+    shareFrames[key].leader = this;
 }
 
 MiiPreview::~MiiPreview()
@@ -43,6 +44,10 @@ MiiPreview::~MiiPreview()
             shareFrames.erase(shareKey);
             HeadRenderer::instance().forget(shareKey);
         } else {
+            // the screen below takes the framing back
+            auto f = shareFrames.find(shareKey);
+            if (f != shareFrames.end() && f->second.leader == this)
+                f->second.leader = nullptr;
             // the others keep the picture; they ask again when shown
             HeadRenderer::instance().invalidate(shareKey);
             shareEpochs[shareKey]++;
@@ -82,7 +87,9 @@ void MiiPreview::request3D()
     hasRequested = true;
     HeadRenderer::Spec spec;
     spec.mii = *mii;
-    spec.size = renderSize;
+    // the GPU draws stages at about the size they are shown (sharp, and
+    // its multisampling smooths the edges); the CPU keeps to renderSize
+    spec.size = stage && hr.gpuActive() ? (compact ? 256 : 512) : renderSize;
     spec.yaw = yaw;
     spec.pitch = pitch;
     // thumbnails (not stages) are drawn once and kept on the memory card,
@@ -108,8 +115,9 @@ void MiiPreview::request3D()
         spec.background = 0xFF000000u | ((uint32_t)(bg.r * 255.0f + 0.5f) << 16) |
             ((uint32_t)(bg.g * 255.0f + 0.5f) << 8) | (uint32_t)(bg.b * 255.0f + 0.5f);
     }
-    hr.request(owner(), spec, [this](HeadRenderer::Image img, int size, int gpu) {
+    hr.request(owner(), spec, [this, zoom](HeadRenderer::Image img, int size, int gpu) {
         imageSize = size;
+        imageZoom = zoom;
         if (gpu > 0) {
             gpuImage = gpu;
             image.reset();
@@ -130,7 +138,7 @@ void MiiPreview::stageTarget(float* pivot, float* zoom) const
 {
     if (compact) {
         *pivot = framing == Framing::BUST ? 104.0f : 90.0f;
-        *zoom = framing == Framing::BUST ? 1.6f : 1.1f;
+        *zoom = framing == Framing::BUST ? 1.8f : 1.25f;
     } else if (framing == Framing::BUST) {
         const float heightScale = mii->height * 0.006015625f + 0.5f;
         *pivot = 10.7766f * 8.715f * heightScale + 26.0f;
@@ -146,6 +154,13 @@ void MiiPreview::easeFrame(float dt)
     float pivot, zoom;
     stageTarget(&pivot, &zoom);
     Frame& f = frameRef();
+    // with several screens of one Mii drawn (a transition), only the
+    // newest moves the shared framing
+    if (shareKey) {
+        if (f.leader && f.leader != this)
+            return;
+        f.leader = this;
+    }
     if (!f.set) {
         f.pivot = pivot;
         f.zoom = zoom;
@@ -242,7 +257,8 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     } else {
         if (stage && HeadRenderer::instance().hasBody()) {
             const brls::Time now = brls::getCPUTimeUsec();
-            easeFrame(lastEase ? std::fmin(0.1f, (float)(now - lastEase) / 1e6f) : 1.0f);
+            // a new screen's first frame: one frame's step, not a jump
+            easeFrame(lastEase ? std::fmin(0.1f, (float)(now - lastEase) / 1e6f) : 1.0f / 60.0f);
             lastEase = now;
         }
         request3D();
@@ -275,6 +291,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         const int shown = gpuImage > 0 ? gpuImage : nvgImage;
         if (shown >= 0) {
             float side, iy;
+            bool clipped = false;
             const float ix0 = cx;
             if (stage && compact) {
                 const bool bust = framing == Framing::BUST;
@@ -286,17 +303,24 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
                 // between the whole body (t = 0) and the bust (t = 1), as the
                 // framing eases: the bust is close up with the head in the
                 // middle of the stage, like the Switch 2
+                // placed by the zoom the picture was drawn with, which can be
+                // a frame behind the eased framing
                 const Frame& f = frameRef();
-                const float t = std::fmax(0.0f, std::fmin(1.0f, (f.zoom - 1.1f) / (1.5f - 1.1f)));
+                const float shownZoom = imageZoom > 0.0f ? imageZoom : f.zoom;
+                const float t = std::fmax(0.0f, std::fmin(1.0f, (shownZoom - 1.1f) / (1.5f - 1.1f)));
                 const float fullSide = std::fmin(width, height) * 0.95f, bustSide = height * 1.05f;
                 side = fullSide + (bustSide - fullSide) * t;
                 iy = y + (height - side) / 2 - 12.0f * (1.0f - t);
                 // a soft light behind the head (a shadow on the light theme)
                 const bool dark = ui::theme() != ui::Theme::LIGHT;
-                const float gx = cx, gy = iy + side * (0.5f - 0.18f * (1.0f - t)), gr = side * (0.30f + 0.08f * t);
+                const float gx = cx, gy = iy + side * (0.5f - 0.18f * (1.0f - t)), gr = side * (0.22f + 0.06f * t);
+                // the stage and its shadow stay above the button bar
+                nvgSave(vg);
+                nvgIntersectScissor(vg, x - width, y - height, width * 3, height * 2);
+                clipped = true;
                 nvgBeginPath(vg);
                 nvgRect(vg, x - width, y - height, width * 3, height * 3);
-                nvgFillPaint(vg, nvgRadialGradient(vg, gx, gy, gr * 0.35f, gr * 1.6f,
+                nvgFillPaint(vg, nvgRadialGradient(vg, gx, gy, gr * 0.3f, gr * 1.15f,
                                      dark ? nvgRGBA(255, 255, 255, 70) : nvgRGBA(0, 0, 0, 34),
                                      dark ? nvgRGBA(255, 255, 255, 0) : nvgRGBA(0, 0, 0, 0)));
                 nvgFill(vg);
@@ -310,7 +334,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
             nvgRect(vg, ix, iy, side, side);
             nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, shown, 1.0f));
             nvgFill(vg);
-            if (stage && compact)
+            if ((stage && compact) || clipped)
                 nvgRestore(vg);
         }
     }

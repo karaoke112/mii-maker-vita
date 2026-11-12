@@ -249,7 +249,10 @@ static float rot2deg(int r) { return (360.0f / 32.0f) * (float)(r % 32); }
 
 /* Draws one textured quad into a 2D target. Coordinates are in a res x res
  * space with y up, as RFL/FFL lay out the face. */
-static void draw_part(m3_target *t, float res, const part *p, const m3_material *mat)
+static void submit(mii3d_renderer_t *r, m3_target *t, const m3_vertex *v, int vertex_count, const uint16_t *idx,
+                   int index_count, const m3_material *m);
+
+static void draw_part(mii3d_renderer_t *r, m3_target *t, float res, const part *p, const m3_material *mat)
 {
     float bx, s0, s1;
     switch (p->org) {
@@ -281,7 +284,7 @@ static void draw_part(m3_target *t, float res, const part *p, const m3_material 
             v[i].add[c] = v[i].rim[c] = 0.0f;
     }
     static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
-    m3_draw(t, v, idx, 6, mat);
+    submit(r, t, v, 4, idx, 6, mat);
 }
 
 enum { FACE_EYES = 1, FACE_BROWS = 2, FACE_MOUTH = 4, FACE_MUSTACHE = 8, FACE_MOLE = 16, FACE_ALL = 31 };
@@ -289,7 +292,8 @@ enum { FACE_EYES = 1, FACE_BROWS = 2, FACE_MOUTH = 4, FACE_MUSTACHE = 8, FACE_MO
 static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_target *t, unsigned parts)
 {
     const float res = 256.0f, unit = res / 64.0f;
-    m3_clear(t, 0x00000000u);
+    if (t->rgba)
+        m3_clear(t, 0x00000000u);
     m3_material m;
     part p;
 
@@ -311,9 +315,9 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
             white(m.c[1]);
             common(m.c[2], ci->eye_color);
             p = (part){ unit * (32.0f + spacing), y * unit, w * unit, h * unit, 360.0f - ang, ORIGIN_LEFT };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
             p = (part){ unit * (32.0f - spacing), y * unit, w * unit, h * unit, ang, ORIGIN_RIGHT };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
         }
     }
     /* Eyebrows: alpha texture in the eyebrow color */
@@ -330,9 +334,9 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
             m.mode = M3_MOD_ALPHA;
             common(m.c[0], ci->eyebrow_color);
             p = (part){ unit * (32.0f + spacing), y * unit, w * unit, h * unit, 360.0f - ang, ORIGIN_LEFT };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
             p = (part){ unit * (32.0f - spacing), y * unit, w * unit, h * unit, ang, ORIGIN_RIGHT };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
         }
     }
     /* Mouth: r = mouth color, g = upper lip, b = teeth (white) */
@@ -348,7 +352,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
             m3_rgb(m.c[1], mii_upper_lip_color_rgb(ci->mouth_color), 1.0f);
             white(m.c[2]);
             p = (part){ unit * 32.0f, y * unit, 396.0f / 64.0f * scale * unit, 288.0f / 64.0f * scale * sy * unit, 0, ORIGIN_CENTER };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
         }
     }
     /* Mustache (beard color), mirrored halves */
@@ -362,9 +366,9 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
             m.mode = M3_MOD_ALPHA;
             common(m.c[0], ci->beard_color);
             p = (part){ unit * 32.0f, y * unit, 288.0f / 64.0f * scale * unit, 576.0f / 64.0f * scale * unit, 0, ORIGIN_LEFT };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
             p.org = ORIGIN_RIGHT;
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
         }
     }
     /* Mole (black) */
@@ -379,7 +383,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
             m.mode = M3_MOD_ALPHA;
             black(m.c[0]);
             p = (part){ x * unit, y * unit, s * unit, s * unit, 0, ORIGIN_CENTER };
-            draw_part(t, res, &p, &m);
+            draw_part(r, t, res, &p, &m);
         }
     }
 }
@@ -1034,18 +1038,17 @@ int mii3d_part_shows_color(mii3d_renderer_t *r, mii3d_icon_part_t part, int type
     return count > 8;
 }
 
-mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
-                                      uint8_t *rgba, int size)
+int mii3d_part_icon_res(int size)
 {
     /* compose at 384 for icons up to ~170 px (about half the pixels of 512) */
-    const int RES = size <= 170 ? 384 : 512;
-    if (!r || !mii || !rgba || size <= 0)
-        return MII3D_ERR_ARGUMENT;
-    uint8_t *tmp = (uint8_t *)malloc((size_t)RES * RES * 4);
-    if (!tmp)
-        return MII3D_ERR_MEMORY;
-    m3_target t = { RES, RES, tmp, NULL };
+    return size <= 170 ? 384 : 512;
+}
 
+/* Draws the part alone into `t` (res x res, cleared to transparent), or
+ * hands its draws to the renderer's callback when t->rgba is NULL. */
+static mii3d_result_t part_icon_compose(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
+                                        m3_target *t)
+{
     /* the part's own type and color, default size and placement */
     mii_charinfo_t ci;
     mii_charinfo_init_default(&ci, mii->gender);
@@ -1056,21 +1059,17 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
     ci.mole_type = 1;                      ci.mole_scale = 8;
 
     switch (part) {
-    case MII3D_ICON_EYES:     compose_face(r, &ci, &t, FACE_EYES); break;
-    case MII3D_ICON_EYEBROWS: compose_face(r, &ci, &t, FACE_BROWS); break;
-    case MII3D_ICON_EYE:
-    case MII3D_ICON_EYEBROW:
-        compose_face(r, &ci, &t, part == MII3D_ICON_EYE ? FACE_EYES : FACE_BROWS);
-        /* the face is centered: drop the left half, keeping one part */
-        for (int y = 0; y < RES; y++)
-            memset(tmp + 4 * (size_t)y * RES, 0, (size_t)RES / 2 * 4);
-        break;
-    case MII3D_ICON_MOUTH:    compose_face(r, &ci, &t, FACE_MOUTH); break;
-    case MII3D_ICON_MUSTACHE: compose_face(r, &ci, &t, FACE_MUSTACHE); break;
-    case MII3D_ICON_MOLE:     compose_face(r, &ci, &t, FACE_MOLE); break;
+    case MII3D_ICON_EYES:     compose_face(r, &ci, t, FACE_EYES); break;
+    case MII3D_ICON_EYEBROWS: compose_face(r, &ci, t, FACE_BROWS); break;
+    case MII3D_ICON_EYE:      compose_face(r, &ci, t, FACE_EYES); break;
+    case MII3D_ICON_EYEBROW:  compose_face(r, &ci, t, FACE_BROWS); break;
+    case MII3D_ICON_MOUTH:    compose_face(r, &ci, t, FACE_MOUTH); break;
+    case MII3D_ICON_MUSTACHE: compose_face(r, &ci, t, FACE_MUSTACHE); break;
+    case MII3D_ICON_MOLE:     compose_face(r, &ci, t, FACE_MOLE); break;
     case MII3D_ICON_NOSE: {
         /* the nose's line drawing (the Switch shows these), in black */
-        m3_clear(&t, 0x00000000u);
+        if (t->rgba)
+            m3_clear(t, 0x00000000u);
         const mii3d_image_t *tex = get_tex(r, SLOT_NOSELINE, mii->nose_type);
         if (!tex)
             break;
@@ -1090,17 +1089,18 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
             const m3_vertex top[4] = { NV(-1, ycut, 0, cut), NV(1, ycut, 1, cut), NV(1, 1, 1, 0), NV(-1, 1, 0, 0) };
             const m3_vertex low[4] = { NV(-1, -1 + up, 0, 1), NV(1, -1 + up, 1, 1), NV(1, ycut + up, 1, cut),
                                        NV(-1, ycut + up, 0, cut) };
-            m3_draw(&t, top, idx, 6, &m);
-            m3_draw(&t, low, idx, 6, &m);
+            submit(r, t, top, 4, idx, 6, &m);
+            submit(r, t, low, 4, idx, 6, &m);
         } else {
             const m3_vertex q[4] = { NV(-1, -1, 0, 1), NV(1, -1, 1, 1), NV(1, 1, 1, 0), NV(-1, 1, 0, 0) };
-            m3_draw(&t, q, idx, 6, &m);
+            submit(r, t, q, 4, idx, 6, &m);
         }
 #undef NV
         break;
     }
     case MII3D_ICON_GLASSES: {
-        m3_clear(&t, 0x00000000u);
+        if (t->rgba)
+            m3_clear(t, 0x00000000u);
         if (mii->glass_type == 0)
             break;
         const int index = mii3d_res_texture_count(r->res, MII3D_TEX_GLASS) >= 20
@@ -1119,19 +1119,60 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
         const m3_vertex q[4] = { GV(-0.9f, -0.45f, 0, 1), GV(0.9f, -0.45f, 2, 1), GV(0.9f, 0.45f, 2, 0), GV(-0.9f, 0.45f, 0, 0) };
 #undef GV
         static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
-        m3_draw(&t, q, idx, 6, &m);
+        submit(r, t, q, 4, idx, 6, &m);
         break;
     }
     default:
-        free(tmp);
         return MII3D_ERR_ARGUMENT;
+    }
+    return MII3D_OK;
+}
+
+mii3d_result_t mii3d_part_icon_finish(mii3d_icon_part_t part, uint8_t *composed, int res, uint8_t *rgba, int size)
+{
+    if (!composed || !rgba || res <= 0 || size <= 0)
+        return MII3D_ERR_ARGUMENT;
+    if (part == MII3D_ICON_EYE || part == MII3D_ICON_EYEBROW) {
+        /* the face is centered: drop the left half, keeping one part */
+        for (int y = 0; y < res; y++)
+            memset(composed + 4 * (size_t)y * res, 0, (size_t)res / 2 * 4);
     }
     /* frames measured over all types (see crop_to_icon) */
     static const float extent[] = {
         [MII3D_ICON_EYE] = 70, [MII3D_ICON_EYEBROW] = 68, [MII3D_ICON_MOUTH] = 84,
         [MII3D_ICON_MUSTACHE] = 76, [MII3D_ICON_GLASSES] = 0, [MII3D_ICON_NOSE] = 300,
     };
-    crop_to_icon(tmp, RES, rgba, size, (size_t)part < sizeof(extent) / sizeof(extent[0]) ? extent[part] : 0.0f);
-    free(tmp);
+    crop_to_icon(composed, res, rgba, size, (size_t)part < sizeof(extent) / sizeof(extent[0]) ? extent[part] : 0.0f);
     return MII3D_OK;
+}
+
+mii3d_result_t mii3d_part_icon_draws(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
+                                     int res, mii3d_draw_fn fn, void *user)
+{
+    if (!r || !mii || !fn || res <= 0)
+        return MII3D_ERR_ARGUMENT;
+    m3_target t = { res, res, NULL, NULL };
+    r->draw_fn = fn;
+    r->draw_user = user;
+    mii3d_result_t result = part_icon_compose(r, mii, part, &t);
+    r->draw_fn = NULL;
+    r->draw_user = NULL;
+    return result;
+}
+
+mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t *mii, mii3d_icon_part_t part,
+                                      uint8_t *rgba, int size)
+{
+    if (!r || !mii || !rgba || size <= 0)
+        return MII3D_ERR_ARGUMENT;
+    const int RES = mii3d_part_icon_res(size);
+    uint8_t *tmp = (uint8_t *)malloc((size_t)RES * RES * 4);
+    if (!tmp)
+        return MII3D_ERR_MEMORY;
+    m3_target t = { RES, RES, tmp, NULL };
+    mii3d_result_t result = part_icon_compose(r, mii, part, &t);
+    if (result == MII3D_OK)
+        result = mii3d_part_icon_finish(part, tmp, RES, rgba, size);
+    free(tmp);
+    return result;
 }
