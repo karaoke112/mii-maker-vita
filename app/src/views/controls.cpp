@@ -1,5 +1,7 @@
 #include "views/controls.hpp"
 
+#include <cstdio>
+
 #include "ui_theme.hpp"
 #include "views/icon.hpp"
 
@@ -61,7 +63,7 @@ class GridCell : public brls::Box
             opt.paint(vg, value, sx, sy, side);
 
         bool drewIcon = false;
-        if (opt.noneIcon && value == 0) {
+        if (opt.noneValue >= 0 && value == opt.noneValue) {
             const float s = side * 0.42f;
             ::drawIcon(vg, "none", sx + (side - s) / 2, sy + (side - s) / 2, s, ui::ring());
             drewIcon = true;
@@ -365,6 +367,17 @@ class UnitSlider : public brls::Box
     float carry = 0.0f;
 };
 
+void FieldValue::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style, brls::FrameContext*)
+{
+    char text[8];
+    std::snprintf(text, sizeof(text), "%d", mii_field_get(mii, field));
+    nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
+    nvgFontSize(vg, 20);
+    nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgFillColor(vg, ui::textDim());
+    nvgText(vg, x + width, y + height / 2, text, nullptr);
+}
+
 brls::View* FieldSlider::makeSlider(mii_charinfo_t* mii, mii_field_t field, std::function<void()> onChange)
 {
     auto* slider = new UnitSlider(mii, field, std::move(onChange));
@@ -386,6 +399,9 @@ FieldSlider::FieldSlider(mii_charinfo_t* mii, mii_field_t field, const std::stri
     label->setWidth(170);
     this->addView(label);
     this->addView(makeSlider(mii, field, std::move(onChange)));
+    auto* value = new FieldValue(mii, field);
+    value->setMarginLeft(14);
+    this->addView(value);
 }
 
 FieldSlider::FieldSlider(mii_charinfo_t* mii, mii_field_t field, brls::View* lowEnd, brls::View* highEnd,

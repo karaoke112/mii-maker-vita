@@ -32,7 +32,7 @@ class LibraryActivity : public brls::Activity
     void addScanned(const mii_charinfo_t& mii);
     void showAddMenu();
     void showSendMenu();
-    void showSettings();
+    void showSettings(int focus = 0);
     void rebuildForTheme();
     enum class Pick { NONE, EXPORT, QR, SEND };
     void setPick(Pick mode);

@@ -17,7 +17,7 @@
 static constexpr size_t kCacheBytes = 40u << 20; // icons of a few tabs + thumbnails
 static constexpr int kWorkers = 2;
 // bump when icon rendering changes, so old files on the card are not reused
-static constexpr uint64_t kIconCacheVersion = 5;
+static constexpr uint64_t kIconCacheVersion = 6;
 
 // Render passes. A preview is drawn quickly first, then sharper. The Vita
 // gets a half-size first pass and a plain full-size one; PCs can afford a
@@ -139,6 +139,8 @@ void HeadRenderer::init(const std::string& dataDir, const std::string& iconCache
         // before the workers start: they own the renderers afterwards
         for (int type = 0; type <= mii_field_max(MII_FIELD_MOUTH_TYPE); type++)
             mouthColor.push_back(mii3d_part_shows_color(renderers[0], MII3D_ICON_MOUTH, type) != 0);
+        for (int type = 0; type <= mii_field_max(MII_FIELD_HAIR_TYPE); type++)
+            hatHair.push_back(mii3d_hair_has_hat(renderers[0], type) != 0);
         for (mii3d_renderer* r : renderers)
             threads.emplace_back(&HeadRenderer::worker, this, r);
         // icons already on the memory card come from their own thread, so

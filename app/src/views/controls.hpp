@@ -33,7 +33,7 @@ class OptionGrid : public brls::Box
         PaintOf paint;    // vector art
         float iconScale = 1.0f; // icon size relative to the tile
         float iconDy = 0.0f;    // icon offset, relative to the tile
-        bool noneIcon = false;  // value 0 means "none": show the "none" icon
+        int noneValue = -1;     // the value meaning "none" (shows the "none" icon), or -1
     };
 
     OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8_t> items, Options options,
@@ -71,6 +71,25 @@ class OptionGrid : public brls::Box
 
 // A slider over a numeric field's full range, with a title or a pictogram
 // at each end.
+// A field's current value as a number, dimmed (beside sliders).
+class FieldValue : public brls::View
+{
+  public:
+    FieldValue(const mii_charinfo_t* mii, mii_field_t field, float width = 56.0f)
+        : mii(mii)
+        , field(field)
+    {
+        this->setDimensions(width, 32);
+        this->setFocusable(false);
+    }
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override;
+
+  private:
+    const mii_charinfo_t* mii;
+    mii_field_t field;
+};
+
 class FieldSlider : public brls::Box
 {
   public:

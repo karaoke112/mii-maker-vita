@@ -40,6 +40,7 @@ MiiPreview::~MiiPreview()
             shareCount.erase(shareKey);
             shareEpochs.erase(shareKey);
             shareImages.erase(shareKey);
+            shareFrames.erase(shareKey);
             HeadRenderer::instance().forget(shareKey);
         } else {
             // the others keep the picture; they ask again when shown
@@ -58,13 +59,21 @@ void MiiPreview::request3D()
     HeadRenderer& hr = HeadRenderer::instance();
     if (!hr.available())
         return;
-    // whole steps, so turning reuses cached renders
-    const float yaw = std::round(yawRef() / 5.0f) * 5.0f;
-    const float pitch = std::round(pitchRef() / 2.5f) * 2.5f;
+    // whole steps, so turning reuses cached renders; the GPU draws fast
+    // enough for fine steps (smooth turning and tilting)
+    const bool fine = hr.gpuActive() && stage;
+    const float yawStep = fine ? 1.0f : 5.0f, pitchStep = fine ? 0.5f : 2.5f;
+    const float yaw = std::round(yawRef() / yawStep) * yawStep;
+    const float pitch = std::round(pitchRef() / pitchStep) * pitchStep;
+    const Frame& fr = frameRef();
+    const float pivot = std::round(fr.pivot * 4.0f) / 4.0f, zoom = std::round(fr.zoom * 400.0f) / 400.0f;
     const bool sharedChanged = shareKey && shareEpochs[shareKey] != shareEpoch;
     if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch &&
+        (!stage || !hr.hasBody() || (requestedPivot == pivot && requestedZoom == zoom)) &&
         std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
+    requestedPivot = pivot;
+    requestedZoom = zoom;
     if (shareKey)
         shareEpoch = ++shareEpochs[shareKey];
     requested = *mii;
@@ -82,15 +91,12 @@ void MiiPreview::request3D()
     spec.smooth = !stage;
     requestedBust = false;
     if (stage && hr.hasBody()) {
+        // the eased framing (see stageTarget); centerY is relative to the
+        // full-body camera height of 92
         spec.fullBody = true;
-        if (framing == Framing::BUST) { // head and chest, like the Switch editor
-            spec.zoom = 1.6f;
-            spec.centerY = 12.0f;
-            requestedBust = true;
-        } else {
-            spec.zoom = 1.1f;
-            spec.centerY = -2.0f;
-        }
+        spec.zoom = zoom;
+        spec.centerY = pivot - 92.0f;
+        requestedBust = framing == Framing::BUST;
     } else if (stage) {
         spec.zoom = 0.8f; // room for long hair
         spec.centerY = -4.0f;
@@ -115,6 +121,45 @@ void MiiPreview::request3D()
                 shareImages[shareKey] = { img, size };
         }
     });
+}
+
+// Where the stage camera looks and how close: the bust centers on the head
+// (which sits higher on a taller Mii: the neck is at 93.9 x the height
+// scale, as in libmii3d); the whole body keeps one framing, so height shows.
+void MiiPreview::stageTarget(float* pivot, float* zoom) const
+{
+    if (compact) {
+        *pivot = framing == Framing::BUST ? 104.0f : 90.0f;
+        *zoom = framing == Framing::BUST ? 1.6f : 1.1f;
+    } else if (framing == Framing::BUST) {
+        const float heightScale = mii->height * 0.006015625f + 0.5f;
+        *pivot = 10.7766f * 8.715f * heightScale + 26.0f;
+        *zoom = 1.5f;
+    } else {
+        *pivot = 90.0f;
+        *zoom = 1.1f;
+    }
+}
+
+void MiiPreview::easeFrame(float dt)
+{
+    float pivot, zoom;
+    stageTarget(&pivot, &zoom);
+    Frame& f = frameRef();
+    if (!f.set) {
+        f.pivot = pivot;
+        f.zoom = zoom;
+        f.set = true;
+        return;
+    }
+    // about a fifth of a second to settle, every frame drawn on the way
+    const float k = std::fmin(1.0f, dt * 12.0f);
+    f.pivot += (pivot - f.pivot) * k;
+    f.zoom += (zoom - f.zoom) * k;
+    if (std::fabs(pivot - f.pivot) < 0.05f && std::fabs(zoom - f.zoom) < 0.002f) {
+        f.pivot = pivot;
+        f.zoom = zoom;
+    }
 }
 
 float wrapYaw(float degrees)
@@ -178,7 +223,7 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
     if (!stage) {
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x, y, width, height, 18);
-    const bool dark = ui::theme() == ui::Theme::DARK;
+    const bool dark = ui::isDark(ui::theme());
     nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + height, dark ? nvgRGB(78, 78, 82) : nvgRGB(250, 250, 252),
                          dark ? nvgRGB(58, 58, 62) : nvgRGB(222, 226, 234)));
     nvgFill(vg);
@@ -195,6 +240,11 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         nvgTextBox(vg, x + 12, y + (height - nameHeight) * (large ? 0.35f : 0.42f), width - 24,
             (large ? "preview/no_resource"_i18n : "preview/no_preview"_i18n).c_str(), nullptr);
     } else {
+        if (stage && HeadRenderer::instance().hasBody()) {
+            const brls::Time now = brls::getCPUTimeUsec();
+            easeFrame(lastEase ? std::fmin(0.1f, (float)(now - lastEase) / 1e6f) : 1.0f);
+            lastEase = now;
+        }
         request3D();
         // a shared render may have been redrawn (or remade) by another screen
         if (shareKey && gpuImage > 0) {
@@ -224,19 +274,44 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         }
         const int shown = gpuImage > 0 ? gpuImage : nvgImage;
         if (shown >= 0) {
-            // the head fills the middle ~60% of the rendered square
-            const bool bust = stage && requestedBust;
-            const float side = bust ? std::fmin(width * 1.12f, height)
-                : stage           ? std::fmin(width, height) * 0.95f
-                                  : std::fmin(width * 1.15f, height - nameHeight);
-            const float ix = cx - side / 2;
-            // a bust is cut off at the bottom, so it stands on the panel's edge
-            const float iy = bust ? y + height - side
-                                  : y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
+            float side, iy;
+            const float ix0 = cx;
+            if (stage && compact) {
+                const bool bust = framing == Framing::BUST;
+                side = bust ? std::fmin(width * 1.12f, height) : std::fmin(width, height) * 0.95f;
+                iy = bust ? y + height - side : y + (height - side) / 2 - 12;
+                nvgSave(vg);
+                nvgIntersectScissor(vg, x, y, width, height);
+            } else if (stage && HeadRenderer::instance().hasBody()) {
+                // between the whole body (t = 0) and the bust (t = 1), as the
+                // framing eases: the bust is close up with the head in the
+                // middle of the stage, like the Switch 2
+                const Frame& f = frameRef();
+                const float t = std::fmax(0.0f, std::fmin(1.0f, (f.zoom - 1.1f) / (1.5f - 1.1f)));
+                const float fullSide = std::fmin(width, height) * 0.95f, bustSide = height * 1.05f;
+                side = fullSide + (bustSide - fullSide) * t;
+                iy = y + (height - side) / 2 - 12.0f * (1.0f - t);
+                // a soft light behind the head (a shadow on the light theme)
+                const bool dark = ui::theme() != ui::Theme::LIGHT;
+                const float gx = cx, gy = iy + side * (0.5f - 0.18f * (1.0f - t)), gr = side * (0.30f + 0.08f * t);
+                nvgBeginPath(vg);
+                nvgRect(vg, x - width, y - height, width * 3, height * 3);
+                nvgFillPaint(vg, nvgRadialGradient(vg, gx, gy, gr * 0.35f, gr * 1.6f,
+                                     dark ? nvgRGBA(255, 255, 255, 70) : nvgRGBA(0, 0, 0, 34),
+                                     dark ? nvgRGBA(255, 255, 255, 0) : nvgRGBA(0, 0, 0, 0)));
+                nvgFill(vg);
+            } else {
+                // the head fills the middle ~60% of the rendered square
+                side = stage ? std::fmin(width, height) * 0.95f : std::fmin(width * 1.15f, height - nameHeight);
+                iy = y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
+            }
+            const float ix = ix0 - side / 2;
             nvgBeginPath(vg);
             nvgRect(vg, ix, iy, side, side);
             nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, shown, 1.0f));
             nvgFill(vg);
+            if (stage && compact)
+                nvgRestore(vg);
         }
     }
 

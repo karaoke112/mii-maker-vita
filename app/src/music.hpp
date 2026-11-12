@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 struct stb_vorbis;
 
@@ -41,6 +42,7 @@ class LoopingStream
     uint64_t loopEnd() const { return end; }
 
   private:
+    std::vector<unsigned char> data; // the whole file, decoded from memory
     ::stb_vorbis* v = nullptr;
     int rate = 0;
     uint64_t start = 0, end = 0, pos = 0;
@@ -59,9 +61,9 @@ class Player
 
   private:
     void run(std::string file);
-    static void* entry(void* self);
+    static int entry(unsigned int size, void* arg); // SceKernelThreadEntry
     std::string playing;
-    unsigned long worker = 0; // pthread_t
+    unsigned long worker = 0; // SceUID (Vita) or pthread_t
     bool started = false;
     std::atomic<bool> running { false };
     Track track = Track::NONE;

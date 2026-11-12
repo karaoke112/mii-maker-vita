@@ -17,8 +17,12 @@ const Palette kDark = {
     nvgRGB(85, 85, 85), nvgRGB(110, 110, 110), nvgRGB(30, 215, 140), nvgRGB(90, 90, 90),
 };
 
+const Palette kDarkBlue = {
+    kDark.background, kDark.tile, kDark.text, kDark.textDim, kDark.rule, kDark.ring, kLight.accent, kDark.sliderEmpty,
+};
+
 Theme current = Theme::LIGHT;
-const Palette& pal() { return current == Theme::DARK ? kDark : kLight; }
+const Palette& pal() { return current == Theme::DARK ? kDark : current == Theme::DARK_BLUE ? kDarkBlue : kLight; }
 
 void fill(brls::Theme& t, const Palette& p, bool dark)
 {
@@ -35,7 +39,8 @@ void fill(brls::Theme& t, const Palette& p, bool dark)
     t.addColor("brls/sidebar/separator", p.rule);
     t.addColor("brls/header/border", p.rule);
     t.addColor("brls/button/primary_enabled_background", p.accent);
-    t.addColor("brls/button/primary_enabled_text", dark ? nvgRGB(20, 20, 20) : nvgRGB(255, 255, 255));
+    // dark text on the bright green, white on blue
+    t.addColor("brls/button/primary_enabled_text", dark && p.accent.g > 0.6f ? nvgRGB(20, 20, 20) : nvgRGB(255, 255, 255));
     t.addColor("brls/button/default_enabled_background", p.tile);
     t.addColor("brls/button/default_enabled_text", p.text);
     t.addColor("brls/button/highlight_enabled_text", p.accent);
@@ -51,7 +56,7 @@ void applyTheme(Theme theme)
 {
     current = theme;
     fill(brls::Theme::getLightTheme(), kLight, false);
-    fill(brls::Theme::getDarkTheme(), kDark, true);
+    fill(brls::Theme::getDarkTheme(), theme == Theme::DARK_BLUE ? kDarkBlue : kDark, true);
 
     brls::Style s = brls::getStyle();
     s.addMetric("brls/highlight/stroke_width", 4.0f);
@@ -62,7 +67,7 @@ void applyTheme(Theme theme)
 void applyVariant()
 {
     brls::Application::getPlatform()->setThemeVariant(
-        current == Theme::DARK ? brls::ThemeVariant::DARK : brls::ThemeVariant::LIGHT);
+        isDark(current) ? brls::ThemeVariant::DARK : brls::ThemeVariant::LIGHT);
 }
 
 Theme theme() { return current; }

@@ -33,7 +33,9 @@ void Settings::load()
         char* value = eq + 1;
         value[std::strcspn(value, "\r\n")] = 0;
         if (!std::strcmp(key, "theme"))
-            theme = !std::strcmp(value, "dark") ? ui::Theme::DARK : ui::Theme::LIGHT;
+            theme = !std::strcmp(value, "dark") ? ui::Theme::DARK
+                : !std::strcmp(value, "dark2")  ? ui::Theme::DARK_BLUE
+                                                : ui::Theme::LIGHT;
         else if (!std::strcmp(key, "renderer"))
             gpu = std::strcmp(value, "software") != 0;
         else if (!std::strcmp(key, "skin"))
@@ -51,7 +53,7 @@ void Settings::save() const
     FILE* f = std::fopen(settingsPath().c_str(), "w");
     if (!f)
         return;
-    std::fprintf(f, "theme=%s\n", theme == ui::Theme::DARK ? "dark" : "light");
+    std::fprintf(f, "theme=%s\n", theme == ui::Theme::DARK ? "dark" : theme == ui::Theme::DARK_BLUE ? "dark2" : "light");
     std::fprintf(f, "renderer=%s\n", gpu ? "gpu" : "software");
     std::fprintf(f, "qr=%s\n", qrSwitch2 ? "switch2" : "3ds");
     std::fprintf(f, "skin=%d\n", skinTone);
