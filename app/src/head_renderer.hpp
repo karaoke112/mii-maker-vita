@@ -19,6 +19,7 @@ struct mii3d_renderer;
 // Renders Mii heads in 3D on a worker thread, using a face resource the
 // user provides (see docs/3D_RENDERING.md), first found of:
 //
+// (in ux0:data/mii-maker-vita/dat/)
 //   <data dir>/AFLResHigh_2_3.dat   Miitomo: all 20 Switch glasses styles
 //   <data dir>/FFLResHigh.dat       Wii U
 //   <data dir>/FFLResMiddle.dat     Wii U, lower resolution

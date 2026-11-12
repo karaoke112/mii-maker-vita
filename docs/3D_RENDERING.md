@@ -8,8 +8,9 @@ where to put the file.
 
 ## Installing a resource
 
-Copy one of these to **`ux0:data/mii/`** on the Vita (on the desktop build:
-`./mii-data/`). The first one found is used:
+Copy one of these to **`ux0:data/mii-maker-vita/dat/`** on the Vita (on the
+desktop build: `./data/mii-maker-vita/dat/`). The first one found is used.
+Files left in `ux0:data/mii/` by an earlier version are moved there on start.
 
 | File | From | Notes |
 | --- | --- | --- |

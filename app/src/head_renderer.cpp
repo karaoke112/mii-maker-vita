@@ -72,7 +72,8 @@ void HeadRenderer::init(const std::string& dataDir)
 {
     if (res)
         return;
-    statusText = "To see your Miis, copy FFLResHigh.dat (Wii U) or AFLResHigh_2_3.dat (Miitomo) to " + dataDir + "/";
+    statusText = "To see your Miis, copy AFLResHigh_2_3.dat (Miitomo) or FFLResHigh.dat (Wii U), and FFLBodyRes.dat, to " +
+        dataDir + "/";
     for (const char* name : { "AFLResHigh_2_3.dat", "FFLResHigh.dat", "FFLResMiddle.dat" }) {
         const std::string path = dataDir + "/" + name;
         if (!readFile(path, &file))

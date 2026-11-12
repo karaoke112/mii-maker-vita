@@ -9,9 +9,12 @@ This page is the contract.
 ux0:data/mii/
 ├── database.nfdb       the Miis (Switch NFDB format, 6808 bytes)
 ├── database.nfdb.bak   previous version, written before each save
-├── author_id.bin       16 random bytes identifying this Vita
 └── export/             files written by "Export" (.charinfo/.nfsd/.ffsd)
 ```
+
+Mii Maker Vita's own files are kept apart, in `ux0:data/mii-maker-vita/`
+(`author_id.bin`, and the user's resource files in `dat/`). Other apps
+should not need anything from there.
 
 ## Format
 
@@ -27,7 +30,7 @@ ux0:data/mii/
 
 Each StoreData is a CoreData (0x30) + create ID (0x10) + data CRC + device CRC
 (details in `libmii/include/mii/mii.h`). The device CRC is computed with
-`author_id.bin`; readers should only check the data CRC.
+Mii Maker Vita's `author_id.bin`; readers should only check the data CRC.
 
 ## Reading it (C)
 

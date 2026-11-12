@@ -9,11 +9,10 @@
 #include <sys/stat.h>
 #include <vector>
 
+#include "paths.hpp"
+
 #ifdef __PSV__
 #include <psp2/kernel/rng.h>
-static const char* kDataDir = "ux0:data/mii";
-#else
-static const char* kDataDir = "mii-data";
 #endif
 
 void platformRandomBytes(uint8_t* out, size_t size)
@@ -25,12 +24,6 @@ void platformRandomBytes(uint8_t* out, size_t size)
     for (size_t i = 0; i < size; i++)
         out[i] = (uint8_t)rd();
 #endif
-}
-
-static void makeDir(const std::string& path)
-{
-    if (mkdir(path.c_str(), 0777) != 0 && errno != EEXIST)
-        brls::Logger::warning("mkdir {} failed: {}", path, strerror(errno));
 }
 
 static bool readFile(const std::string& path, std::vector<uint8_t>* out)
@@ -64,7 +57,7 @@ MiiLibrary& MiiLibrary::instance()
 }
 
 MiiLibrary::MiiLibrary()
-    : dir(kDataDir)
+    : dir(paths::miiDir())
 {
     mii_nfdb_init(&db);
     std::memset(authorId, 0, sizeof(authorId));
@@ -72,16 +65,14 @@ MiiLibrary::MiiLibrary()
 
 bool MiiLibrary::load()
 {
-    makeDir(dir);
-    makeDir(dir + "/export");
-
     // A random per-console author id, used for the StoreData device CRC.
+    const std::string authorPath = paths::appDir() + "/author_id.bin";
     std::vector<uint8_t> data;
-    if (readFile(dir + "/author_id.bin", &data) && data.size() == sizeof(authorId)) {
+    if (readFile(authorPath, &data) && data.size() == sizeof(authorId)) {
         std::memcpy(authorId, data.data(), sizeof(authorId));
     } else {
         platformRandomBytes(authorId, sizeof(authorId));
-        writeFile(dir + "/author_id.bin", authorId, sizeof(authorId));
+        writeFile(authorPath, authorId, sizeof(authorId));
     }
 
     for (const std::string& path : { dbPath(), dbPath() + ".bak" }) {

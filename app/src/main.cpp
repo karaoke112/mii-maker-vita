@@ -6,6 +6,7 @@
 #include "activities/library_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
+#include "paths.hpp"
 #include "ui_theme.hpp"
 
 using namespace brls::literals;
@@ -29,10 +30,11 @@ int main(int argc, char* argv[])
     // (global quit would override the editor's binding).
     brls::Application::setGlobalQuit(false);
 
+    paths::prepare();
     MiiLibrary::instance().load();
     // 3D heads need a face resource the user provides; without it the
     // previews say where to put it.
-    HeadRenderer::instance().init(MiiLibrary::instance().dataDir());
+    HeadRenderer::instance().init(paths::datDir());
 
     brls::Application::pushActivity(new LibraryActivity());
     while (brls::Application::mainLoop())
