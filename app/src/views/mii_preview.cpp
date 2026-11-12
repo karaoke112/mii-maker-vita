@@ -36,7 +36,18 @@ void MiiPreview::request3D()
     spec.mii = *mii;
     spec.size = renderSize;
     spec.yaw = yaw;
-    if (stage) {
+    requestedBust = false;
+    if (stage && hr.hasBody()) {
+        spec.fullBody = true;
+        if (framing == Framing::BUST) { // head and chest, like the Switch editor
+            spec.zoom = 1.6f;
+            spec.centerY = 12.0f;
+            requestedBust = true;
+        } else {
+            spec.zoom = 1.1f;
+            spec.centerY = -2.0f;
+        }
+    } else if (stage) {
         spec.zoom = 0.8f; // room for long hair
         spec.centerY = -4.0f;
     }
@@ -98,9 +109,14 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
         }
         if (nvgImage >= 0) {
             // the head fills the middle ~60% of the rendered square
-            const float side = stage ? std::fmin(width, height) * 0.95f
-                                     : std::fmin(width * 1.15f, height - nameHeight);
-            const float ix = cx - side / 2, iy = y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
+            const bool bust = stage && requestedBust;
+            const float side = bust ? std::fmin(width * 1.12f, height)
+                : stage           ? std::fmin(width, height) * 0.95f
+                                  : std::fmin(width * 1.15f, height - nameHeight);
+            const float ix = cx - side / 2;
+            // a bust is cut off at the bottom, so it stands on the panel's edge
+            const float iy = bust ? y + height - side
+                                  : y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
             nvgBeginPath(vg);
             nvgRect(vg, ix, iy, side, side);
             nvgFillPaint(vg, nvgImagePattern(vg, ix, iy, side, side, 0.0f, nvgImage, 1.0f));

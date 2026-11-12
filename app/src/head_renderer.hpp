@@ -23,6 +23,8 @@ struct mii3d_renderer;
 //   <data dir>/FFLResHigh.dat       Wii U
 //   <data dir>/FFLResMiddle.dat     Wii U, lower resolution
 //
+// plus, optionally, <data dir>/FFLBodyRes.dat for whole-Mii views.
+//
 // Without one, available() is false and previews show where to put it.
 class HeadRenderer
 {
@@ -39,6 +41,8 @@ class HeadRenderer
         float zoom = 1.0f;
         float centerY = 0.0f;
         int icon = -1;
+        // the whole Mii (when FFLBodyRes.dat is installed; the head otherwise)
+        bool fullBody = false;
         // icons: queued behind previews, single quick pass only
         bool lowPriority = false;
     };
@@ -49,6 +53,7 @@ class HeadRenderer
     // (e.g. after the user copies the file).
     void init(const std::string& dataDir);
     bool available() const { return res != nullptr; }
+    bool hasBody() const { return bodyRes != nullptr; }
     const std::string& status() const { return statusText; }
 
     // Asks for a render; the callback runs later on the UI thread. Heads come
@@ -62,6 +67,7 @@ class HeadRenderer
     HeadRenderer() = default;
     ~HeadRenderer();
     void worker();
+    void loadBody(const std::string& dataDir);
 
     struct Job {
         const void* owner;
@@ -72,6 +78,8 @@ class HeadRenderer
 
     std::vector<uint8_t> file;
     mii3d_res* res = nullptr;
+    std::vector<uint8_t> bodyFile;
+    mii3d_res* bodyRes = nullptr;
     mii3d_renderer* renderer = nullptr;
     std::string statusText;
 

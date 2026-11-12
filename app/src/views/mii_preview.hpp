@@ -24,6 +24,10 @@ class MiiPreview : public brls::View
     // Stage mode: no card backdrop or name, the head drawn large, and the
     // right stick turns it.
     void setStage(bool on) { stage = on; }
+    // How much of the Mii a stage shows once FFLBodyRes.dat is installed
+    // (until then, the head).
+    enum class Framing { BUST, FULL_BODY };
+    void setFraming(Framing f) { framing = f; }
 
   private:
     void request3D();
@@ -35,6 +39,8 @@ class MiiPreview : public brls::View
     float yaw = 0.0f;
     float* yawSource = nullptr;
     bool stage = false;
+    Framing framing = Framing::BUST;
+    bool requestedBust = false;
     brls::Time lastPoll = 0;
 
     // what we last asked HeadRenderer for

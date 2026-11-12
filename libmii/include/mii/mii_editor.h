@@ -19,6 +19,7 @@ extern "C" {
 /* sRGB colors as 0xRRGGBB. */
 uint32_t mii_common_color_rgb(uint8_t common_color);   /* 0-99: hair, eyes, brows, mouth, beard, glasses */
 uint32_t mii_faceline_color_rgb(uint8_t faceline_color); /* 0-9: skin */
+uint32_t mii_favorite_color_rgb(uint8_t favorite_color); /* 0-11: shirt / favorite */
 uint32_t mii_upper_lip_color_rgb(uint8_t mouth_color);  /* 0-99: darker lip shade for a mouth color */
 
 typedef enum mii_grid_kind {

@@ -41,6 +41,12 @@ typedef struct mii3d_res mii3d_res_t;
 mii3d_result_t mii3d_res_open(mii3d_res_t **out, const uint8_t *file, size_t size);
 void mii3d_res_close(mii3d_res_t *res);
 
+/* The body resource, FFLBodyRes.dat (found in Wii U titles built on the
+ * Nintendo Web Framework): the face-resource container with the two static
+ * body meshes (gender 0 = male, 1 = female) and no textures. Close it with
+ * mii3d_res_close(). */
+mii3d_result_t mii3d_res_open_body(mii3d_res_t **out, const uint8_t *file, size_t size);
+
 typedef enum mii3d_variant {
     MII3D_VARIANT_WIIU,         /* FFLRes*.dat: GX2-tiled textures, 9 glasses */
     MII3D_VARIANT_MIITOMO_2_3,  /* AFLResHigh_2_3.dat: linear, 20 glasses (all Switch styles) */
@@ -93,6 +99,8 @@ typedef struct mii3d_mesh {
 } mii3d_mesh_t;
 
 mii3d_result_t mii3d_res_shape(const mii3d_res_t *res, mii3d_shape_kind_t kind, int index, mii3d_mesh_t *out);
+/* One of the two body meshes of a body resource. */
+mii3d_result_t mii3d_res_body(const mii3d_res_t *res, int gender, mii3d_mesh_t *out);
 void mii3d_mesh_free(mii3d_mesh_t *mesh);
 
 /* ---- rendering ---------------------------------------------------------- */
@@ -100,6 +108,10 @@ void mii3d_mesh_free(mii3d_mesh_t *mesh);
 typedef struct mii3d_renderer mii3d_renderer_t;
 
 mii3d_result_t mii3d_renderer_create(mii3d_renderer_t **out, const mii3d_res_t *res);
+/* Attaches a body resource (from mii3d_res_open_body; NULL detaches it),
+ * used by views with full_body set. It must outlive the renderer or be
+ * detached first. */
+void mii3d_renderer_set_body(mii3d_renderer_t *r, const mii3d_res_t *body);
 void mii3d_renderer_destroy(mii3d_renderer_t *r);
 
 typedef struct mii3d_view {
@@ -110,6 +122,7 @@ typedef struct mii3d_view {
     int supersample;       /* 1 (fast) to 3; 2 gives smooth edges at 4x the cost */
     float zoom;            /* 1 = whole head; 0 means 1 */
     float center_y;        /* move the framing up (+) or down, in model units */
+    int full_body;         /* draw the whole Mii (needs mii3d_renderer_set_body) */
 } mii3d_view_t;
 
 void mii3d_view_init_default(mii3d_view_t *view);
