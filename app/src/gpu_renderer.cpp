@@ -14,7 +14,7 @@ bool GpuRenderer::init(const mii3d_res*, const mii3d_res*, const std::string&)
     why = "GPU rendering is only available on the Vita";
     return false;
 }
-int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, bool, uint32_t) { return -1; }
+int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, float, bool, uint32_t) { return -1; }
 void GpuRenderer::release(const void*) { }
 
 #else
@@ -53,12 +53,12 @@ void main(
     out float4 oPos : POSITION,
     out float2 oUv : TEXCOORD0,
     out float4 oLight : TEXCOORD1,
-    out float3 oRim : TEXCOORD2)
+    out float4 oRim : TEXCOORD2)
 {
     oPos = float4(aPos.x, aPos.y, aPos.z - depthBias * aPos.w, aPos.w);
     oUv = aUv;
     oLight = aLight;
-    oRim = aRim;
+    oRim = float4(aRim, 0.0);
 }
 )";
 
@@ -68,7 +68,7 @@ static const char kFragmentShader[] = R"(
 float4 main(
     float2 vUv : TEXCOORD0,
     float4 vLight : TEXCOORD1,
-    float3 vRim : TEXCOORD2,
+    float4 vRim : TEXCOORD2,
     uniform sampler2D tex : TEXUNIT0,
     uniform float4 base,
     uniform float4 c0,
@@ -105,12 +105,12 @@ float4 main(
     }
     if (shading.y > 0.5) {
         float k = 1.0 - c.a * shading.z;
-        c.rgb = pow(saturate(c.rgb), 2.2) * vLight.x + vLight.yzw * k + vRim;
+        c.rgb = pow(saturate(c.rgb), 2.2) * vLight.x + vLight.yzw * k + vRim.rgb;
         c.a = 1.0;
     } else if (shading.x > 0.5) {
         if (c.a <= 0.004)
             discard;
-        c.rgb = pow(saturate(c.rgb), 2.2) * vLight.x + vLight.yzw + vRim;
+        c.rgb = pow(saturate(c.rgb), 2.2) * vLight.x + vLight.yzw + vRim.rgb;
     } else if (c.a <= 0.004) {
         discard;
     }
@@ -707,6 +707,85 @@ bool GpuRenderer::Impl::selfTest()
         log("test 2d (lighting terms):");
         check("top-left", 4, 4, srgb(lin + 0.1f), srgb(lin + 0.1f), srgb(lin));
     }
+    {
+        // A rectangle in clip space as an n x n grid of vertices (many
+        // vertices and triangles in one draw, like the Mii's meshes).
+        struct Mesh {
+            std::vector<float> v;
+            std::vector<uint16_t> i;
+        };
+        auto grid = [](float x0, float y0, float x1, float y1, int n, float w) {
+            Mesh m;
+            for (int r = 0; r < n; r++)
+                for (int c = 0; c < n; c++) {
+                    float v[kFloats] = {};
+                    v[0] = (x0 + (x1 - x0) * c / (n - 1)) * w;
+                    v[1] = (y0 + (y1 - y0) * r / (n - 1)) * w;
+                    v[2] = 0.5f * w;
+                    v[3] = w;
+                    v[6] = 1.0f;
+                    m.v.insert(m.v.end(), v, v + kFloats);
+                }
+            for (int r = 0; r + 1 < n; r++)
+                for (int c = 0; c + 1 < n; c++) {
+                    const uint16_t a = (uint16_t)(r * n + c), b = (uint16_t)(a + 1), d = (uint16_t)(a + n),
+                                   e = (uint16_t)(a + n + 1);
+                    m.i.insert(m.i.end(), { a, b, d, d, b, e });
+                }
+            return m;
+        };
+        auto drawOf = [&](const Mesh& m, float r, float g, float b) {
+            mii3d_draw_t d = flat(r, g, b, 0);
+            d.vertices = m.v.data();
+            d.vertex_count = (int)(m.v.size() / kFloats);
+            d.indices = m.i.data();
+            d.index_count = (int)m.i.size();
+            return d;
+        };
+        auto spots = [&](const char* name, int size, int r, int g, int b, bool leftOnly) {
+            log("%s:", name);
+            const int at[3] = { 4, size / 2, size - 5 };
+            for (int yi = 0; yi < 3; yi++)
+                for (int xi = 0; xi < 3; xi++) {
+                    char what[32];
+                    std::snprintf(what, sizeof(what), "spot %d,%d", xi, yi);
+                    const bool right = at[xi] >= size / 2;
+                    if (leftOnly && right)
+                        check(what, at[xi], at[yi], 0, 255, 0);
+                    else
+                        check(what, at[xi], at[yi], r, g, b);
+                }
+        };
+        // 2e: one draw, 33 x 33 vertices (1089), 2048 triangles, full target
+        Mesh big = grid(-1, 1, 1, -1, 33, 330.0f);
+        mii3d_draw_t e = drawOf(big, 1, 0, 0);
+        scene(t, sr, 0x0000FF, [&] { draw(&e); });
+        spots("test 2e (one draw, 1089 vertices, 64 px)", N, 255, 0, 0, false);
+        // 2f: two draws in one scene: red left half, green right half
+        Mesh left = grid(-1, 1, 0, -1, 9, 330.0f), right = grid(0, 1, 1, -1, 9, 330.0f);
+        mii3d_draw_t l = drawOf(left, 1, 0, 0), rr = drawOf(right, 0, 1, 0);
+        scene(t, sr, 0x0000FF, [&] {
+            draw(&l);
+            draw(&rr);
+        });
+        spots("test 2f (two draws, 64 px)", N, 255, 0, 0, true);
+        // 2g / 2h: the same at 128 px, the size of test 3
+        SizeResources* srb = resourcesFor(128);
+        Target* tb = srb ? targetFor((const void*)&dynamic, 128) : nullptr;
+        if (tb) {
+            Target* keep = t;
+            t = tb;
+            scene(tb, srb, 0x0000FF, [&] { draw(&e); });
+            spots("test 2g (one draw, 1089 vertices, 128 px)", 128, 255, 0, 0, false);
+            scene(tb, srb, 0x0000FF, [&] {
+                draw(&l);
+                draw(&rr);
+            });
+            spots("test 2h (two draws, 128 px)", 128, 255, 0, 0, true);
+            t = keep;
+            release((const void*)&dynamic);
+        }
+    }
 
     // 3: a whole Mii against the CPU renderer
     const int M = 128;
@@ -748,6 +827,30 @@ bool GpuRenderer::Impl::selfTest()
             bad += d > 48;
         }
     const float mean = (float)total / (M * M);
+    // Did the vertex and index data in GPU memory stay what was written?
+    // (Replays the same draws and compares them with the ring.)
+    {
+        struct Check {
+            Impl* g;
+            size_t at = 0;
+            long badBytes = 0;
+        } chk { this };
+        mii3d_render_head_draws(renderer, &ci, &view, M, M, [](void* u, const mii3d_draw_t* d) {
+            Check* c = static_cast<Check*>(u);
+            Impl* g = c->g;
+            const size_t vb = ((size_t)d->vertex_count * g->stride + 15) & ~(size_t)15;
+            const size_t ib = ((size_t)d->index_count * 2 + 15) & ~(size_t)15;
+            const uint8_t* ring = g->ring + c->at;
+            for (int v = 0; v < d->vertex_count; v++)
+                if (std::memcmp(ring + (size_t)v * g->stride, d->vertices + (size_t)v * kFloats, kFloats * 4) != 0)
+                    c->badBytes += kFloats * 4;
+            if (std::memcmp(ring + vb, d->indices, (size_t)d->index_count * 2) != 0)
+                c->badBytes += d->index_count * 2;
+            c->at += vb + ib;
+        }, &chk);
+        log("test 3 data check: %ld bytes in GPU memory differ from what was drawn (%u bytes used)", chk.badBytes,
+            (unsigned)chk.at);
+    }
     const uint8_t* gc = pixel(t2, M / 2, M / 2);
     const uint8_t* cc = &cpu[((size_t)(M / 2) * M + M / 2) * 4];
     log("test 3 (Mii vs CPU): mean difference %.1f, %d of %d pixels far off; center GPU (%d,%d,%d) CPU (%d,%d,%d)",
@@ -762,6 +865,38 @@ bool GpuRenderer::Impl::selfTest()
             for (int x = 0; x < M; x++)
                 std::fwrite(which ? &cpu[((size_t)y * M + x) * 4] : pixel(t2, x, y), 1, 3, f);
         std::fclose(f);
+    }
+    auto savePpm = [&](const Target* tt, const char* path) {
+        FILE* f = std::fopen(path, "wb");
+        if (!f)
+            return;
+        std::fprintf(f, "P6\n%d %d\n255\n", tt->size, tt->size);
+        for (int y = 0; y < tt->size; y++)
+            for (int x = 0; x < tt->size; x++)
+                std::fwrite(pixel(tt, x, y), 1, 3, f);
+        std::fclose(f);
+    };
+    // the Mii's first draw alone (the face shape), and the whole Mii at 64 px
+    {
+        int n = 0;
+        struct One {
+            Impl* g;
+            int* n;
+        } one { this, &n };
+        scene(t2, sr2, 0xEBEBEB, [&] {
+            mii3d_render_head_draws(renderer, &ci, &view, M, M, [](void* u, const mii3d_draw_t* d) {
+                One* o = static_cast<One*>(u);
+                if ((*o->n)++ == 0)
+                    o->g->draw(d);
+            }, &one);
+        });
+        savePpm(t2, "ux0:data/mii-maker-vita/gpu_test_first_draw.ppm");
+        scene(t, sr, 0xEBEBEB, [&] {
+            mii3d_render_head_draws(renderer, &ci, &view, N, N, [](void* u, const mii3d_draw_t* d) {
+                static_cast<Impl*>(u)->draw(d);
+            }, this);
+        });
+        savePpm(t, "ux0:data/mii-maker-vita/gpu_test_64.ppm");
     }
     release((const void*)this);
     release((const void*)&textures);
@@ -873,7 +1008,7 @@ bool GpuRenderer::init(const mii3d_res* face, const mii3d_res* body, const std::
     return false;
 }
 
-int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float zoom, float centerY,
+int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
     bool fullBody, uint32_t background)
 {
     if (!ok)
@@ -892,6 +1027,7 @@ int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, 
     mii3d_view_t view;
     mii3d_view_init_default(&view);
     view.yaw_deg = yaw;
+    view.pitch_deg = pitch;
     view.zoom = zoom;
     view.center_y = centerY;
     view.full_body = fullBody;

@@ -31,7 +31,7 @@ class GpuRenderer
     // Draws `mii` into `owner`'s texture (square, `size` px) on an opaque
     // `background` (0xRRGGBB). Returns a NanoVG image id (owned here), or -1
     // on failure. Main thread, outside a frame.
-    int render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float zoom, float centerY,
+    int render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
         bool fullBody, uint32_t background);
     // The owner is gone: its texture is freed after the next render.
     void release(const void* owner);

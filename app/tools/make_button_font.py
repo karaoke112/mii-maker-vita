@@ -43,11 +43,12 @@ REMAP = {
     0xE0EE: 0x21A0,  # d-pad right
     0xE0EF: 0x21F8,  # START
     0xE0F0: 0x21F7,  # SELECT
+    0xE105: 0x21CC,  # right stick (RSB; the editor's "Rotate" hint)
 }
 
 # PromptFont's shoulder buttons are drawn small; at hint size they need to
 # be larger to read. Glyphs are scaled about their middle (y = 290).
-SCALE = {0xE0E0: 1.12, 0xE0E1: 1.12, 0xE0E2: 1.12, 0xE0E3: 1.12, 0xE0E4: 1.6, 0xE0E5: 1.6}
+SCALE = {0xE105: 1.5, 0xE0E0: 1.12, 0xE0E1: 1.12, 0xE0E2: 1.12, 0xE0E3: 1.12, 0xE0E4: 1.6, 0xE0E5: 1.6}
 MID_Y = 290
 
 

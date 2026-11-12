@@ -303,7 +303,9 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
             memset(&m, 0, sizeof(m));
             m.tex = tex;
             m.mode = M3_MOD_LAYERED_RGB;
-            black(m.c[0]);
+            /* r: the eyeshadow band (only eye type 20 has one), which the
+             * Switch 2 draws light blue; the lines and pupil are r = g = b = 0 */
+            m3_rgb(m.c[0], 0x00FFFFu, 1.0f);
             white(m.c[1]);
             common(m.c[2], ci->eye_color);
             p = (part){ unit * (32.0f + spacing), y * unit, w * unit, h * unit, 360.0f - ang, ORIGIN_LEFT };
@@ -933,7 +935,9 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
 
 /* Copies the opaque bounding box of `src` (res x res) into a size x size
  * image, scaled to fit with a margin and centered. */
-static void crop_to_icon(const uint8_t *src, int res, uint8_t *dst, int size)
+/* Cuts the drawn part out of `src` (res x res) into a size x size icon,
+ * centered. extent: the frame's side in pixels at res 384 (0: fit the part). */
+static void crop_to_icon(const uint8_t *src, int res, uint8_t *dst, int size, float extent)
 {
     int x0 = res, y0 = res, x1 = -1, y1 = -1;
     for (int y = 0; y < res; y++)
@@ -948,7 +952,15 @@ static void crop_to_icon(const uint8_t *src, int res, uint8_t *dst, int size)
     if (x1 < 0)
         return;
     const float bw = (float)(x1 - x0 + 1), bh = (float)(y1 - y0 + 1);
-    const float fit = size * 0.84f / (bw > bh ? bw : bh);
+#ifdef MII3D_ICON_DEBUG
+    fprintf(stderr, "icon bbox %.0f x %.0f of %d\n", bw, bh, res);
+#endif
+    /* A fixed frame (the part's largest type) keeps every type of a part at
+     * the same scale, as on the Switch: small eyes look small. */
+    float span = bw > bh ? bw : bh;
+    if (extent > 0.0f && extent * res / 384.0f > span)
+        span = extent * res / 384.0f;
+    const float fit = size * 0.84f / span;
     const float ox = (size - bw * fit) / 2, oy = (size - bh * fit) / 2;
     for (int y = 0; y < size; y++) {
         for (int x = 0; x < size; x++) {
@@ -1011,6 +1023,24 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
     case MII3D_ICON_MOUTH:    compose_face(r, &ci, &t, FACE_MOUTH); break;
     case MII3D_ICON_MUSTACHE: compose_face(r, &ci, &t, FACE_MUSTACHE); break;
     case MII3D_ICON_MOLE:     compose_face(r, &ci, &t, FACE_MOLE); break;
+    case MII3D_ICON_NOSE: {
+        /* the nose's line drawing (the Switch shows these), in black */
+        m3_clear(&t, 0x00000000u);
+        const mii3d_image_t *tex = get_tex(r, SLOT_NOSELINE, mii->nose_type);
+        if (!tex)
+            break;
+        m3_material m;
+        memset(&m, 0, sizeof(m));
+        m.tex = tex;
+        m.mode = M3_MOD_ALPHA;
+        m.c[0][3] = 1.0f;
+#define NV(X, Y, U, V) { .x = X, .y = Y, .z = 0, .w = 1, .u = U, .v = V, .hl = 1, .add = { 0, 0, 0 }, .rim = { 0, 0, 0 } }
+        const m3_vertex q[4] = { NV(-1, -1, 0, 1), NV(1, -1, 1, 1), NV(1, 1, 1, 0), NV(-1, 1, 0, 0) };
+#undef NV
+        static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
+        m3_draw(&t, q, idx, 6, &m);
+        break;
+    }
     case MII3D_ICON_GLASSES: {
         m3_clear(&t, 0x00000000u);
         if (mii->glass_type == 0)
@@ -1038,7 +1068,12 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
         free(tmp);
         return MII3D_ERR_ARGUMENT;
     }
-    crop_to_icon(tmp, RES, rgba, size);
+    /* frames measured over all types (see crop_to_icon) */
+    static const float extent[] = {
+        [MII3D_ICON_EYE] = 70, [MII3D_ICON_EYEBROW] = 68, [MII3D_ICON_MOUTH] = 84,
+        [MII3D_ICON_MUSTACHE] = 76, [MII3D_ICON_GLASSES] = 306, [MII3D_ICON_NOSE] = 300,
+    };
+    crop_to_icon(tmp, RES, rgba, size, (size_t)part < sizeof(extent) / sizeof(extent[0]) ? extent[part] : 0.0f);
     free(tmp);
     return MII3D_OK;
 }

@@ -38,12 +38,15 @@ static uint64_t hashKey(const HeadRenderer::Spec& spec, int pass)
             h *= 1099511628211ull;
         }
     };
+    // bump when renders change, so icons cached on the memory card are redone
+    const int version = 2;
+    mix(&version, sizeof(version));
     uint8_t bytes[MII_CHARINFO_SIZE];
     if (mii_charinfo_encode(&spec.mii, bytes) == MII_OK)
         mix(bytes, sizeof(bytes));
     else
         mix(&spec.mii, sizeof(spec.mii));
-    const int v[7] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
+    const int v[8] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
                        spec.icon, pass, spec.fullBody ? 1 : 0 };
     mix(v, sizeof(v));
     return h;
@@ -231,7 +234,7 @@ void HeadRenderer::pumpGpu()
             continue;
         const Spec& sp = job.spec;
         const brls::Time started = brls::getCPUTimeUsec();
-        const int image = gpu.render(job.owner, sp.mii, sp.size, sp.yaw, sp.zoom, sp.centerY, sp.fullBody && bodyRes,
+        const int image = gpu.render(job.owner, sp.mii, sp.size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes,
             sp.background & 0xFFFFFFu);
         lastUs[1] = (int)(brls::getCPUTimeUsec() - started);
         if (image > 0) {
@@ -316,6 +319,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 mii3d_view_t view;
                 mii3d_view_init_default(&view);
                 view.yaw_deg = sp.yaw;
+                view.pitch_deg = sp.pitch;
                 view.zoom = sp.zoom;
                 view.center_y = sp.centerY;
                 view.full_body = sp.fullBody && bodyRes;

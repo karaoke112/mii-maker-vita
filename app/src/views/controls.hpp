@@ -43,9 +43,19 @@ class OptionGrid : public brls::Box
     static std::vector<uint8_t> range(mii_field_t field);
 
     brls::View* getDefaultFocus() override;
+    // keeps the selection right when the value changes elsewhere (the
+    // whole-palette page, undo)
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+        brls::FrameContext* ctx) override
+    {
+        if (mii_field_get(mii, field) != shown)
+            refresh();
+        brls::Box::draw(vg, x, y, width, height, style, ctx);
+    }
 
   private:
     void refresh();
+    uint8_t shown = 0;
 
     mii_charinfo_t* mii;
     mii_field_t field;
