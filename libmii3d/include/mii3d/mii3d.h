@@ -142,7 +142,7 @@ mii3d_result_t mii3d_render_head(mii3d_renderer_t *r, const mii_charinfo_t *mii,
  * material, in drawing order, for a GPU (or any rasterizer) to draw. The
  * caller clears the target (and depth) first. Reproducing the image:
  *
- *  - vertices: 15 floats each: clip-space x y z w (y up; z/w is 0 at the
+ *  - vertices: 13 floats each (sizeof = 52 bytes): clip-space x y z w (y up; z/w is 0 at the
  *    near plane and 1 at the far one), texture u v (v = 0 at the top row),
  *    hl (diffuse factor), add r g b (specular + subsurface, linear), rim
  *    r g b (linear). The lighting terms interpolate linearly.
@@ -161,7 +161,7 @@ typedef enum mii3d_modulate {
 } mii3d_modulate_t;
 
 typedef struct mii3d_draw {
-    const float *vertices; /* 15 floats per vertex, see above */
+    const float *vertices; /* 13 floats per vertex, see above */
     int vertex_count;
     const uint16_t *indices; /* triangle list */
     int index_count;

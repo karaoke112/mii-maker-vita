@@ -1034,11 +1034,53 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
         m.tex = tex;
         m.mode = M3_MOD_ALPHA;
         m.c[0][3] = 1.0f;
-#define NV(X, Y, U, V) { .x = X, .y = Y, .z = 0, .w = 1, .u = U, .v = V, .hl = 1, .add = { 0, 0, 0 }, .rim = { 0, 0, 0 } }
-        const m3_vertex q[4] = { NV(-1, -1, 0, 1), NV(1, -1, 1, 1), NV(1, 1, 1, 0), NV(-1, 1, 0, 0) };
-#undef NV
-        static const uint16_t idx[6] = { 0, 1, 2, 0, 2, 3 };
-        m3_draw(&t, q, idx, 6, &m);
+        /* The texture is laid on the nose-line mesh, which bends it (the
+         * nostrils of some noses sit higher than in the flat texture): draw
+         * the mesh flat, front on, centered, at one scale for all noses
+         * (the largest fills the icon). */
+        const mii3d_mesh_t *mesh = get_mesh(r, MS_NOSELINE, mii->nose_type);
+        if (!mesh || !mesh->uvs || mesh->vertex_count <= 0)
+            break;
+        float span = 0.0f;
+        for (int type = 0; type < 18; type++) {
+            const mii3d_mesh_t *other = get_mesh(r, MS_NOSELINE, type);
+            if (!other)
+                continue;
+            float lo[2] = { 1e9f, 1e9f }, hi[2] = { -1e9f, -1e9f };
+            for (int i = 0; i < other->vertex_count; i++)
+                for (int k = 0; k < 2; k++) {
+                    const float v = other->positions[3 * i + k];
+                    if (v < lo[k]) lo[k] = v;
+                    if (v > hi[k]) hi[k] = v;
+                }
+            for (int k = 0; k < 2; k++)
+                if (hi[k] - lo[k] > span)
+                    span = hi[k] - lo[k];
+        }
+        float lo[2] = { 1e9f, 1e9f }, hi[2] = { -1e9f, -1e9f };
+        for (int i = 0; i < mesh->vertex_count; i++)
+            for (int k = 0; k < 2; k++) {
+                const float v = mesh->positions[3 * i + k];
+                if (v < lo[k]) lo[k] = v;
+                if (v > hi[k]) hi[k] = v;
+            }
+        if (span <= 0.0f)
+            break;
+        const float scale = 1.9f / span, cx = (lo[0] + hi[0]) / 2, cy = (lo[1] + hi[1]) / 2;
+        m3_vertex *v = ensure_verts(r, mesh->vertex_count);
+        if (!v)
+            break;
+        for (int i = 0; i < mesh->vertex_count; i++) {
+            memset(&v[i], 0, sizeof(v[i]));
+            v[i].x = (mesh->positions[3 * i] - cx) * scale;
+            v[i].y = (mesh->positions[3 * i + 1] - cy) * scale;
+            v[i].z = 0.5f;
+            v[i].w = 1.0f;
+            v[i].u = mesh->uvs[2 * i];
+            v[i].v = mesh->uvs[2 * i + 1];
+            v[i].hl = 1.0f;
+        }
+        m3_draw(&t, v, mesh->indices, mesh->index_count, &m);
         break;
     }
     case MII3D_ICON_GLASSES: {
@@ -1071,7 +1113,7 @@ mii3d_result_t mii3d_render_part_icon(mii3d_renderer_t *r, const mii_charinfo_t 
     /* frames measured over all types (see crop_to_icon) */
     static const float extent[] = {
         [MII3D_ICON_EYE] = 70, [MII3D_ICON_EYEBROW] = 68, [MII3D_ICON_MOUTH] = 84,
-        [MII3D_ICON_MUSTACHE] = 76, [MII3D_ICON_GLASSES] = 306, [MII3D_ICON_NOSE] = 300,
+        [MII3D_ICON_MUSTACHE] = 76, [MII3D_ICON_GLASSES] = 0, [MII3D_ICON_NOSE] = 365,
     };
     crop_to_icon(tmp, RES, rgba, size, (size_t)part < sizeof(extent) / sizeof(extent[0]) ? extent[part] : 0.0f);
     free(tmp);

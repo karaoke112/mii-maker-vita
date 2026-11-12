@@ -84,6 +84,9 @@ class HeadRenderer
     HeadRenderer() = default;
     ~HeadRenderer();
     void worker(mii3d_renderer* renderer);
+    void diskWorker();
+    void pruneDiskCache();
+    std::string iconPath(uint64_t key) const;
     void loadBody(const std::string& datDir);
     bool loadIcon(uint64_t key, int size, std::vector<uint8_t>* out);
     void saveIcon(uint64_t key, const std::vector<uint8_t>& pixels);
@@ -108,6 +111,7 @@ class HeadRenderer
     std::mutex mutex;
     std::condition_variable wake;
     std::deque<Job> high, low; // previews, then grid icons
+    std::deque<Job> disk;      // icons to look for on the memory card first
     std::vector<std::thread> threads;
     bool stopping = false;
 

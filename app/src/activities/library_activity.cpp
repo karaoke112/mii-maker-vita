@@ -85,6 +85,18 @@ brls::View* LibraryActivity::createContentView()
         showSettings();
         return true;
     });
+    // desktop builds: T works as Triangle (pick up / swap)
+    frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_T), [this](brls::View*) {
+        brls::View* focus = brls::Application::getCurrentFocus();
+        for (size_t i = 0; i < cards.size(); i++)
+            if (cards[i] == focus) {
+                if (held >= 0)
+                    swapHeld((int)i);
+                else if (pick == Pick::NONE)
+                    startHold((int)i);
+            }
+        return true;
+    });
     frame->registerAction("", brls::BUTTON_B, [this](brls::View*) {
         if (pick != Pick::NONE)
             setPick(Pick::NONE);
@@ -134,6 +146,8 @@ void LibraryActivity::rebuild()
     empty->setVisibility(miis.empty() ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
 
     brls::Box* row = nullptr;
+    held = heldAt = -1;
+    cardActionIds.assign(miis.size(), {});
     for (size_t i = 0; i < miis.size(); i++) {
         if (i % kColumns == 0) {
             row = new brls::Box(brls::Axis::ROW);
@@ -153,7 +167,9 @@ void LibraryActivity::rebuild()
 
         const int index = (int)i;
         card->registerClickAction([this, index](brls::View*) {
-            if (pick == Pick::EXPORT) {
+            if (held >= 0) {
+                endHold(true);
+            } else if (pick == Pick::EXPORT) {
                 exportMii(index);
                 setPick(Pick::NONE);
             } else if (pick == Pick::SEND) {
@@ -169,12 +185,41 @@ void LibraryActivity::rebuild()
             }
             return true;
         });
+        card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
+        card->getFocusEvent()->subscribe([this, index](brls::View*) {
+            if (held >= 0)
+                showHeldAt(index);
+        });
+        row->addView(card);
+    }
+    for (size_t i = 0; i < cards.size(); i++)
+        cardActions((int)i);
+}
+
+// The card's buttons for the current state (hints change with them).
+void LibraryActivity::cardActions(int index)
+{
+    brls::View* card = cards[index];
+    for (brls::ActionIdentifier id : cardActionIds[index])
+        card->unregisterAction(id);
+    cardActionIds[index].clear();
+    auto& ids = cardActionIds[index];
+    if (held >= 0) {
+        card->updateActionHint(brls::BUTTON_A, "library/place"_i18n);
+        ids.push_back(card->registerAction("library/swap"_i18n, brls::BUTTON_Y, [this, index](brls::View*) {
+            swapHeld(index);
+            return true;
+        }));
+        ids.push_back(card->registerAction("hints/cancel"_i18n, brls::BUTTON_B, [this](brls::View*) {
+            endHold(false);
+            return true;
+        }));
+    } else {
         card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
                 : pick == Pick::QR                                      ? "library/qr"_i18n
                 : pick == Pick::SEND                                    ? "library/send_this"_i18n
                                                                         : "library/edit"_i18n);
-        card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
-        card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
+        ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
             auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
             dialog->addButton("hints/cancel"_i18n, [] {});
             dialog->addButton("library/delete"_i18n, [this, index] {
@@ -185,9 +230,76 @@ void LibraryActivity::rebuild()
             });
             dialog->open();
             return true;
-        });
-        row->addView(card);
+        }));
+        if (pick == Pick::NONE)
+            ids.push_back(card->registerAction("library/pick_up"_i18n, brls::BUTTON_Y, [this, index](brls::View*) {
+                startHold(index);
+                return true;
+            }));
     }
+    brls::Application::getGlobalHintsUpdateEvent()->fire();
+}
+
+void LibraryActivity::startHold(int index)
+{
+    held = index;
+    base = miis;
+    showHeldAt(index);
+    for (size_t i = 0; i < cards.size(); i++)
+        cardActions((int)i);
+}
+
+// The held Mii shown where the cursor is, the others closing up around it.
+// (The cards' previews point into `miis`, so they follow.)
+void LibraryActivity::showHeldAt(int index)
+{
+    heldAt = index;
+    std::vector<mii_charinfo_t> order = base;
+    const mii_charinfo_t m = order[held];
+    order.erase(order.begin() + held);
+    order.insert(order.begin() + index, m);
+    for (size_t i = 0; i < miis.size(); i++)
+        miis[i] = order[i];
+    for (size_t i = 0; i < cards.size(); i++) {
+        cards[i]->setBorderColor(ui::accent());
+        cards[i]->setBorderThickness((int)i == index ? 5.0f : 0.0f);
+    }
+}
+
+void LibraryActivity::endHold(bool place)
+{
+    const int from = held, to = heldAt;
+    held = heldAt = -1;
+    for (brls::View* c : cards)
+        c->setBorderThickness(0.0f);
+    if (place && from != to) {
+        if (!MiiLibrary::instance().move(from, to))
+            brls::Application::notify("library/move_failed"_i18n);
+        rebuild();
+        if (to >= 0 && to < (int)cards.size())
+            brls::Application::giveFocus(cards[to]);
+        return;
+    }
+    for (size_t i = 0; i < miis.size(); i++)
+        miis[i] = base[i];
+    for (size_t i = 0; i < cards.size(); i++)
+        cardActions((int)i);
+}
+
+// Puts the held Mii where the hovered one is and picks that one up.
+void LibraryActivity::swapHeld(int index)
+{
+    if (index == held) // the held Mii's own place: nothing to swap with
+        return;
+    if (!MiiLibrary::instance().swap(held, index)) {
+        brls::Application::notify("library/move_failed"_i18n);
+        return;
+    }
+    // the hovered Mii now sits where the held one was, and is the one held
+    MiiLibrary& lib = MiiLibrary::instance();
+    for (size_t i = 0; i < base.size(); i++)
+        lib.get((int)i, &base[i]);
+    showHeldAt(index);
 }
 
 void LibraryActivity::importMiis()
@@ -340,5 +452,16 @@ void LibraryActivity::showSettings()
         brls::Application::notify("settings/restart"_i18n);
     };
     renderer.keepOpen = true;
-    brls::Application::pushActivity(new PopupMenu("settings/title"_i18n, { theme, renderer }), brls::TransitionAnimation::NONE);
+    PopupMenu::Item qrFormat;
+    qrFormat.text = [] {
+        return "settings/qr"_i18n + ": " + (Settings::get().qrSwitch2 ? "settings/qr_switch2"_i18n : "settings/qr_3ds"_i18n);
+    };
+    qrFormat.action = [] {
+        Settings& s = Settings::get();
+        s.qrSwitch2 = !s.qrSwitch2;
+        s.save();
+    };
+    qrFormat.keepOpen = true;
+    brls::Application::pushActivity(new PopupMenu("settings/title"_i18n, { theme, renderer, qrFormat }),
+        brls::TransitionAnimation::NONE);
 }

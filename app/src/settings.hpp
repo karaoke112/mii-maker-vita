@@ -7,6 +7,9 @@
 struct Settings {
     ui::Theme theme = ui::Theme::LIGHT;
     bool gpu = true; // draw Miis on the GPU when libshacccg.suprx is installed
+    // QR codes in the Switch 2 format (keeps Switch colors) or the plain
+    // 3DS / Wii U one
+    bool qrSwitch2 = true;
 
     static Settings& get();
     void load();

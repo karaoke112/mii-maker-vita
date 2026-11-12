@@ -1,5 +1,7 @@
 #include "head_renderer.hpp"
 
+#include <dirent.h>
+
 #include <borealis.hpp>
 #include <mii3d/mii3d.h>
 #include "gpu_renderer.hpp"
@@ -12,7 +14,7 @@
 static constexpr size_t kCacheBytes = 40u << 20; // icons of a few tabs + thumbnails
 static constexpr int kWorkers = 2;
 // bump when icon rendering changes, so old files on the card are not reused
-static constexpr uint64_t kIconCacheVersion = 3;
+static constexpr uint64_t kIconCacheVersion = 4;
 
 // Render passes. A preview is drawn quickly first, then sharper. The Vita
 // gets a half-size first pass and a plain full-size one; PCs can afford a
@@ -133,6 +135,9 @@ void HeadRenderer::init(const std::string& dataDir, const std::string& iconCache
         }
         for (mii3d_renderer* r : renderers)
             threads.emplace_back(&HeadRenderer::worker, this, r);
+        // icons already on the memory card come from their own thread, so
+        // they never wait behind renders
+        threads.emplace_back(&HeadRenderer::diskWorker, this);
         return;
     }
 }
@@ -189,7 +194,8 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
         auto mine = [owner](const Job& j) { return j.owner == owner; };
         high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
         low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
-        std::deque<Job>& q = icon ? low : high;
+        disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
+        std::deque<Job>& q = icon ? (cacheDir.empty() ? low : disk) : high;
         if (!cached)
             q.push_back(Job { owner, generation, spec, first, cb });
         else if (cachedPass < last)
@@ -198,7 +204,7 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
     if (cached)
         cb(cached, passSize(spec, cachedPass), -1);
     if (!cached || cachedPass < last)
-        wake.notify_one();
+        wake.notify_all();
 }
 
 void HeadRenderer::forget(const void* owner)
@@ -210,6 +216,7 @@ void HeadRenderer::forget(const void* owner)
     auto mine = [owner](const Job& j) { return j.owner == owner; };
     high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
     low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
+    disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
 }
 
 std::string HeadRenderer::timings() const
@@ -251,19 +258,92 @@ void HeadRenderer::pumpGpu()
             std::lock_guard<std::mutex> lock(mutex);
             high.push_back(Job { job.owner, job.generation, sp, kFirstPreviewPass, job.cb });
         }
-        wake.notify_one();
+        wake.notify_all();
     }
 }
 
-// Icons on the memory card: zlib-compressed RGBA, named by their key.
+// Icons on the memory card: zlib-compressed RGBA, named
+// <cache version>-<key>.z; the version covers the renderer and the
+// resource files, so files from other versions are outdated.
+std::string HeadRenderer::iconPath(uint64_t key) const
+{
+    char name[48];
+    std::snprintf(name, sizeof(name), "/%08x-%016llx.z", (unsigned)(resourceSalt & 0xFFFFFFFFu), (unsigned long long)key);
+    return cacheDir + name;
+}
+
+void HeadRenderer::pruneDiskCache()
+{
+    char prefix[16];
+    std::snprintf(prefix, sizeof(prefix), "%08x-", (unsigned)(resourceSalt & 0xFFFFFFFFu));
+    DIR* d = opendir(cacheDir.c_str());
+    if (!d)
+        return;
+    std::vector<std::string> old;
+    while (struct dirent* e = readdir(d)) {
+        const std::string name = e->d_name;
+        if (name == "." || name == "..")
+            continue;
+        if (name.compare(0, 9, prefix) != 0 || name.size() < 2 || name.compare(name.size() - 2, 2, ".z") != 0)
+            old.push_back(name);
+    }
+    closedir(d);
+    for (const std::string& name : old)
+        std::remove((cacheDir + "/" + name).c_str());
+    if (!old.empty())
+        brls::Logger::info("icon cache: removed {} outdated files", old.size());
+}
+
+void HeadRenderer::diskWorker()
+{
+    pruneDiskCache();
+    for (;;) {
+        Job job;
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            wake.wait(lock, [this] { return stopping || !disk.empty(); });
+            if (stopping)
+                return;
+            job = std::move(disk.front());
+            disk.pop_front();
+        }
+        const int size = passSize(job.spec, job.pass);
+        auto pixels = std::make_shared<std::vector<uint8_t>>();
+        const uint64_t key = hashKey(job.spec, job.pass);
+        if (!loadIcon(key ^ (resourceSalt * 0x9E3779B97F4A7C15ull), size, pixels.get())) {
+            // not drawn yet: render it
+            std::lock_guard<std::mutex> lock(mutex);
+            low.push_back(std::move(job));
+            wake.notify_all();
+            continue;
+        }
+        Image image = pixels;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            cache.emplace_front(key, image);
+            cacheBytes += image->size();
+            while (cacheBytes > kCacheBytes && cache.size() > 1) {
+                cacheBytes -= cache.back().second->size();
+                cache.pop_back();
+            }
+        }
+        const void* owner = job.owner;
+        const uint64_t generation = job.generation;
+        Callback cb = std::move(job.cb);
+        brls::sync([this, owner, generation, cb, image, size] {
+            auto it = live.find(owner);
+            if (it != live.end() && it->second == generation)
+                cb(image, size, -1);
+        });
+    }
+}
+
 bool HeadRenderer::loadIcon(uint64_t key, int size, std::vector<uint8_t>* out)
 {
     if (cacheDir.empty())
         return false;
-    char name[32];
-    std::snprintf(name, sizeof(name), "/%016llx.z", (unsigned long long)key);
     std::vector<uint8_t> packed;
-    if (!readFile(cacheDir + name, &packed))
+    if (!readFile(iconPath(key), &packed))
         return false;
     out->resize((size_t)size * size * 4);
     uLongf n = (uLongf)out->size();
@@ -278,9 +358,7 @@ void HeadRenderer::saveIcon(uint64_t key, const std::vector<uint8_t>& pixels)
     uLongf n = (uLongf)packed.size();
     if (compress2(packed.data(), &n, pixels.data(), (uLong)pixels.size(), 1) != Z_OK)
         return;
-    char name[32];
-    std::snprintf(name, sizeof(name), "/%016llx.z", (unsigned long long)key);
-    const std::string path = cacheDir + name, tmp = path + ".tmp";
+    const std::string path = iconPath(key), tmp = path + ".tmp";
     FILE* f = std::fopen(tmp.c_str(), "wb");
     if (!f)
         return;
@@ -309,7 +387,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
         const int size = passSize(sp, job.pass);
         auto pixels = std::make_shared<std::vector<uint8_t>>((size_t)size * size * 4);
         const uint64_t diskKey = hashKey(sp, job.pass) ^ (resourceSalt * 0x9E3779B97F4A7C15ull);
-        bool ok = icon && loadIcon(diskKey, size, pixels.get());
+        bool ok = false; // icons on the memory card were looked for already
         const brls::Time started = brls::getCPUTimeUsec();
         if (!ok) {
             mii3d_result_t r;
@@ -351,7 +429,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 const bool replaced = std::any_of(high.begin(), high.end(), [o](const Job& j) { return j.owner == o; });
                 if (!replaced) {
                     high.push_back(Job { job.owner, job.generation, sp, job.pass + 1, job.cb });
-                    wake.notify_one();
+                    wake.notify_all();
                 }
             }
         }

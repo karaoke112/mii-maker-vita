@@ -35,6 +35,19 @@ class LibraryActivity : public brls::Activity
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
 
+    // Moving Miis: Triangle picks the Mii up; it travels with the cursor;
+    // Cross puts it down there, Circle puts it back, Triangle swaps it with
+    // the Mii under the cursor and carries that one instead.
+    void cardActions(int index);
+    void startHold(int index);
+    void showHeldAt(int index);
+    void endHold(bool place);
+    void swapHeld(int index);
+    int held = -1;   // where the held Mii is in the library, or -1
+    int heldAt = -1; // where it would go (the card under the cursor)
+    std::vector<mii_charinfo_t> base; // the order without the held Mii moved
+    std::vector<std::vector<brls::ActionIdentifier>> cardActionIds;
+
     brls::Box* grid = nullptr;
     brls::View* createButton = nullptr;
     brls::Label* empty = nullptr;

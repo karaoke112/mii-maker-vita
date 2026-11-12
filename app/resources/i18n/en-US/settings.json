@@ -6,5 +6,8 @@
   "renderer": "Mii Renderer",
   "gpu": "GPU",
   "software": "Software",
+  "qr": "QR Codes",
+  "qr_switch2": "Switch 2 (all colors)",
+  "qr_3ds": "3DS / Wii U",
   "restart": "Restart the app to switch renderers. The GPU renderer needs libshacccg.suprx."
 }

@@ -172,8 +172,9 @@ struct SizeResources {
     SceGxmDepthStencilSurface depth;
 };
 
-// Vertex layout from mii3d_draw_t: x y z w, u v, hl, add rgb, rim rgb.
-constexpr int kFloats = 15;
+// Vertex layout from mii3d_draw_t: x y z w, u v, hl, add rgb, rim rgb
+// (13 floats, 52 bytes; the stride the GPU must use).
+constexpr int kFloats = 13;
 constexpr size_t kRingBytes = 6u << 20;
 constexpr size_t kMaxCachedTextures = 96;
 
@@ -198,7 +199,7 @@ struct GpuRenderer::Impl {
     std::map<int, SizeResources> sizes;
     bool drawFailed = false;
 
-    int stride = kFloats * 4; // bytes per vertex in GPU memory (60, or 64 padded)
+    int stride = kFloats * 4; // bytes per vertex in GPU memory (52, or 64 padded)
     bool useFx = true;
 
     bool compile(const char* src, SceShaccCgTargetProfile profile, std::vector<uint8_t>* out);
@@ -697,7 +698,7 @@ bool GpuRenderer::Impl::selfTest()
         for (int i = 0; i < 3; i++) {
             lit[i * kFloats + 6] = 0.5f;
             lit[i * kFloats + 7] = 0.1f;  // add r
-            lit[i * kFloats + 13] = 0.1f; // rim g
+            lit[i * kFloats + 11] = 0.1f; // rim g
         }
         mii3d_draw_t l = flat(0.5f, 0.5f, 0.5f, 1);
         l.vertices = lit;
@@ -977,7 +978,7 @@ bool GpuRenderer::init(const mii3d_res* face, const mii3d_res* body, const std::
     const struct {
         int stride;
         bool fx;
-    } setups[] = { { kFloats * 4, true }, { 64, true }, { kFloats * 4, false }, { 64, false } };
+    } setups[] = { { kFloats * 4, true }, { kFloats * 4, false } };
     for (const auto& setup : setups) {
         impl->stride = setup.stride;
         impl->useFx = setup.fx;

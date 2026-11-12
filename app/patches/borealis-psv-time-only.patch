@@ -1,0 +1,22 @@
+diff --git a/library/lib/platforms/psv/psv_platform.cpp b/library/lib/platforms/psv/psv_platform.cpp
+index 288d5393..0ada5bbf 100644
+--- a/library/lib/platforms/psv/psv_platform.cpp
++++ b/library/lib/platforms/psv/psv_platform.cpp
+@@ -175,7 +175,7 @@ void PsvPlatform::disableScreenDimming(bool disable, const std::string& reason,
+ 
+ bool PsvPlatform::canShowBatteryLevel()
+ {
+-    return true;
++    return false; // mii-maker-vita: the bottom bar shows only the time
+ }
+ 
+ int PsvPlatform::getBatteryLevel()
+@@ -190,7 +190,7 @@ bool PsvPlatform::isBatteryCharging()
+ 
+ bool PsvPlatform::canShowWirelessLevel()
+ {
+-    return true;
++    return false; // mii-maker-vita: the bottom bar shows only the time
+ }
+ 
+ bool PsvPlatform::hasWirelessConnection()

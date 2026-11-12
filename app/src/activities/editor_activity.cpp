@@ -39,6 +39,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     preview->setFraming(framing);
     preview->setYawSource(&s.yaw);
     preview->setPitchSource(&s.pitch);
+    preview->setFrontSource(&s.facingFront);
     preview->setWidth(520);
     preview->setGrow(0);
     root->addView(preview);
@@ -53,8 +54,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     frame->registerAction("editor/rotate"_i18n, brls::BUTTON_RSB, [](brls::View*) { return true; });
     EditorSession* sp = &s;
     frame->registerAction("editor/reset_position"_i18n, brls::BUTTON_Y, [sp](brls::View*) {
-        sp->yaw = 0.0f;
-        sp->pitch = 0.0f;
+        sp->facingFront = true; // the preview turns it round
         return true;
     });
     if (previewOut)
@@ -404,7 +404,7 @@ static OptionGrid* partsGrid(EditorSession* s, mii_field_t field, mii_grid_kind_
         o.iconScale = 0.86f;
     if (field == MII_FIELD_GLASS_TYPE) {
         o.noneIcon = true;
-        o.iconScale = 0.8f;
+        o.iconScale = 1.0f;
     }
     return new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
 }
@@ -437,8 +437,7 @@ static std::vector<uint8_t> defaultColors(mii_field_t field, int* columns)
     }
 }
 
-// The whole palette (10 x 10), on a page of its own; picking a color goes
-// back to the short list.
+// The whole palette (10 x 10), on a page of its own.
 class PaletteActivity : public brls::Activity
 {
   public:
@@ -458,10 +457,8 @@ class PaletteActivity : public brls::Activity
         o.cell = 50;
         o.gap = 10;
         o.colorOf = [](uint8_t v) { return mii_common_color_rgb(v); };
-        auto* grid = new OptionGrid(&s->mii, field, items, o, [s] {
-            s->dirty = true;
-            brls::sync([] { brls::Application::popActivity(brls::TransitionAnimation::NONE); });
-        });
+        // picking a color stays here (Circle goes back)
+        auto* grid = new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; });
         auto* box = new brls::Box(brls::Axis::COLUMN);
         box->setAlignItems(brls::AlignItems::CENTER);
         box->setJustifyContent(brls::JustifyContent::CENTER);

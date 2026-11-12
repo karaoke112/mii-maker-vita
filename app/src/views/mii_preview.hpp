@@ -32,6 +32,9 @@ class MiiPreview : public brls::View
     // pages).
     void setYawSource(float* source) { yawSource = source; }
     void setPitchSource(float* source) { pitchSource = source; }
+    // While *source is true the Mii turns smoothly back to face the front
+    // (then it is set to false).
+    void setFrontSource(bool* source) { frontSource = source; }
     // How far the right stick tilts the Mii up or down.
     static constexpr float kMaxPitch = 15.0f;
     // Stage mode: no card backdrop or name, the head drawn large, and the
@@ -68,6 +71,7 @@ class MiiPreview : public brls::View
     float* yawSource = nullptr;
     float pitch = 0.0f;
     float* pitchSource = nullptr;
+    bool* frontSource = nullptr;
     bool stage = false;
     bool interactive = true;
     float extraZoom = 1.0f;

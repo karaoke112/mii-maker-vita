@@ -1,6 +1,7 @@
 #include "mii_library.hpp"
 
 #include "mii_qr.hpp"
+#include "trade.hpp"
 
 #include <borealis/core/logger.hpp>
 
@@ -145,6 +146,42 @@ bool MiiLibrary::remove(int index)
     return mii_nfdb_remove(&db, index) == MII_OK && save();
 }
 
+bool MiiLibrary::move(int from, int to)
+{
+    return mii_nfdb_move(&db, from, to) == MII_OK && save();
+}
+
+bool MiiLibrary::swap(int a, int b)
+{
+    if (a == b)
+        return true;
+    if (a > b)
+        std::swap(a, b);
+    // a goes to b's place (b slides to b - 1), then that one goes to a
+    return mii_nfdb_move(&db, a, b) == MII_OK && mii_nfdb_move(&db, b - 1, a) == MII_OK && save();
+}
+
+void MiiLibrary::ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const
+{
+    mii_ver3_info_init_default(out);
+    out->copyable = 1;
+    out->birth_platform = 3;
+    // creation time (2 s units since 2010), derived from the create id so
+    // the same Mii keeps the same id: somewhere in 2020-2024
+    uint32_t h = 2166136261u;
+    for (uint8_t b : mii.create_id.bytes)
+        h = (h ^ b) * 16777619u;
+    out->mii_id = 0x80000000u /* normal */ | 0x10000000u /* valid */ | (0x09600000u + h % 0x04B00000u);
+    std::memcpy(out->author_id, authorId, 8);
+    std::memcpy(out->creator_mac, authorId + 8, 6);
+    out->creator_mac[0] &= 0xFE; // an ordinary (unicast) address
+    // the creator, as a 3DS shows it: this console's user name
+    mii_charinfo_t tmp;
+    mii_charinfo_init_default(&tmp, 0);
+    mii_name_set_utf8(&tmp, trade::userName().c_str());
+    std::memcpy(out->creator_name, tmp.name, sizeof(out->creator_name));
+}
+
 std::string MiiLibrary::fileName(const mii_charinfo_t& ci)
 {
     char id[9];
@@ -175,7 +212,9 @@ bool MiiLibrary::exportMii(int index, std::string* outPath)
     bool ok = true;
     ok &= mii_charinfo_encode(&ci, buf) == MII_OK && writeFile(base + ".charinfo", buf, MII_CHARINFO_SIZE);
     ok &= mii_storedata_encode(&ci, authorId, buf) == MII_OK && writeFile(base + ".nfsd", buf, MII_STOREDATA_SIZE);
-    ok &= mii_ver3_encode(&ci, nullptr, buf) == MII_OK && writeFile(base + ".ffsd", buf, MII_VER3_STOREDATA_SIZE);
+    mii_ver3_info_t info;
+    ver3Info(ci, &info);
+    ok &= mii_ver3_encode(&ci, &info, buf) == MII_OK && writeFile(base + ".ffsd", buf, MII_VER3_STOREDATA_SIZE);
     if (outPath)
         *outPath = base;
     return ok;

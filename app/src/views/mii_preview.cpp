@@ -16,8 +16,11 @@ MiiPreview::MiiPreview(const mii_charinfo_t* mii, int renderSize)
     // stages turn by dragging across the Mii
     this->addGestureRecognizer(new brls::PanGestureRecognizer(
         [this](brls::PanGestureStatus status, brls::Sound*) {
-            if (stage && interactive && status.state != brls::GestureState::UNSURE)
+            if (stage && interactive && status.state != brls::GestureState::UNSURE) {
+                if (frontSource)
+                    *frontSource = false;
                 yawRef() = wrapYaw(yawRef() - status.delta.x * 0.6f); // the Mii follows the finger
+            }
         },
         brls::PanAxis::HORIZONTAL));
 }
@@ -104,6 +107,22 @@ void MiiPreview::pollStick()
     // a dead zone for resting sticks, then up to half a turn per second;
     // no limit: the Mii turns all the way round
     const float dead = 0.25f;
+    if (frontSource && *frontSource) {
+        if (std::fabs(ax) > dead || std::fabs(ay) > dead) {
+            *frontSource = false; // the stick takes over
+        } else {
+            // ease back: fast when far, slowing near the front
+            auto approach = [dt](float v) {
+                const float step = std::fmax(40.0f, std::fabs(v) * 6.0f) * dt;
+                return std::fabs(v) <= step ? 0.0f : v - (v > 0 ? step : -step);
+            };
+            yawRef() = approach(wrapYaw(yawRef()));
+            pitchRef() = approach(pitchRef());
+            if (yawRef() == 0.0f && pitchRef() == 0.0f)
+                *frontSource = false;
+            return;
+        }
+    }
     if (std::fabs(ax) > dead) {
         const float amount = (std::fabs(ax) - dead) / (1.0f - dead);
         yawRef() = wrapYaw(yawRef() + (ax > 0 ? 1.0f : -1.0f) * amount * 180.0f * dt);
