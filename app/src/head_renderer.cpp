@@ -17,7 +17,7 @@
 static constexpr size_t kCacheBytes = 40u << 20; // icons of a few tabs + thumbnails
 static constexpr int kWorkers = 2;
 // bump when icon rendering changes, so old files on the card are not reused
-static constexpr uint64_t kIconCacheVersion = 6;
+static constexpr uint64_t kIconCacheVersion = 7;
 
 // Render passes. A preview is drawn quickly first, then sharper. The Vita
 // gets a half-size first pass and a plain full-size one; PCs can afford a
@@ -199,11 +199,8 @@ void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
             }
         }
         // replace this owner's queued work, if any
-        auto mine = [owner](const Job& j) { return j.owner == owner; };
-        high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
-        low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
-        disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
-        std::deque<Job>& q = icon ? (cacheDir.empty() ? low : disk) : high;
+        dropOwner(owner);
+        std::deque<Job>& q = icon ? (!cacheDir.empty() ? disk : drawsOnGpu(spec) ? gpuIcons : low) : high;
         if (!cached)
             q.push_back(Job { owner, generation, spec, first, cb });
         else if (cachedPass < last)
@@ -238,15 +235,19 @@ HeadRenderer::Job HeadRenderer::takeBest(std::deque<Job>& q)
     return job;
 }
 
+void HeadRenderer::dropOwner(const void* owner)
+{
+    auto mine = [owner](const Job& j) { return j.owner == owner; };
+    for (std::deque<Job>* q : { &high, &low, &disk, &gpuIcons })
+        q->erase(std::remove_if(q->begin(), q->end(), mine), q->end());
+}
+
 void HeadRenderer::invalidate(const void* owner)
 {
     live[owner] = nextGeneration++;
     gpuPending.erase(owner);
     std::lock_guard<std::mutex> lock(mutex);
-    auto mine = [owner](const Job& j) { return j.owner == owner; };
-    high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
-    low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
-    disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
+    dropOwner(owner);
 }
 
 void HeadRenderer::forget(const void* owner)
@@ -255,11 +256,22 @@ void HeadRenderer::forget(const void* owner)
     gpuPending.erase(owner);
     GpuRenderer::instance().release(owner);
     std::lock_guard<std::mutex> lock(mutex);
-    auto mine = [owner](const Job& j) { return j.owner == owner; };
-    high.erase(std::remove_if(high.begin(), high.end(), mine), high.end());
-    low.erase(std::remove_if(low.begin(), low.end(), mine), low.end());
-    disk.erase(std::remove_if(disk.begin(), disk.end(), mine), disk.end());
+    dropOwner(owner);
     priority.erase(owner);
+}
+
+// Heads drawn as icons (hair, face shapes, thumbnails) go to the GPU when
+// it is on; flat part icons (eyes, mouths, ...) are quick on the CPU.
+bool HeadRenderer::drawsOnGpu(const Spec& s) const
+{
+    return gpuOn && s.icon < 0 && isIcon(s) && (s.background >> 24) == 0;
+}
+
+// The name of an icon's file on the memory card: GPU and CPU drawings
+// differ slightly, so they are kept apart.
+uint64_t HeadRenderer::diskKey(const Spec& s, int pass) const
+{
+    return hashKey(s, pass) ^ (resourceSalt * 0x9E3779B97F4A7C15ull) ^ (drawsOnGpu(s) ? 0x6A09E667F3BCC909ull : 0);
 }
 
 std::string HeadRenderer::timings() const
@@ -272,8 +284,14 @@ std::string HeadRenderer::timings() const
 
 void HeadRenderer::pumpGpu()
 {
-    if (gpuPending.empty())
-        return;
+    // previews first: they are what the user is looking at
+    if (!gpuPending.empty())
+        pumpGpuPreviews();
+    pumpGpuIcons();
+}
+
+void HeadRenderer::pumpGpuPreviews()
+{
     std::map<const void*, Job> work;
     work.swap(gpuPending);
     GpuRenderer& gpu = GpuRenderer::instance();
@@ -302,6 +320,67 @@ void HeadRenderer::pumpGpu()
             high.push_back(Job { job.owner, job.generation, sp, kFirstPreviewPass, job.cb });
         }
         wake.notify_all();
+    }
+}
+
+// Icons for the GPU: as many as fit in a few milliseconds per frame (at
+// least one), nearest the cursor first, so the UI keeps moving.
+void HeadRenderer::pumpGpuIcons()
+{
+    const brls::Time start = brls::getCPUTimeUsec();
+    GpuRenderer& gpu = GpuRenderer::instance();
+    for (;;) {
+        Job job;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (gpuIcons.empty())
+                return;
+            if (!gpuOn) {
+                // the GPU gave up: the CPU workers take the rest
+                for (Job& j : gpuIcons)
+                    low.push_back(std::move(j));
+                gpuIcons.clear();
+                wake.notify_all();
+                return;
+            }
+            job = takeBest(gpuIcons);
+        }
+        auto it = live.find(job.owner);
+        if (it == live.end() || it->second != job.generation)
+            continue;
+        const Spec& sp = job.spec;
+        const int size = passSize(sp, job.pass);
+        auto pixels = std::make_shared<std::vector<uint8_t>>((size_t)size * size * 4);
+        const brls::Time began = brls::getCPUTimeUsec();
+        if (!gpu.renderIcon(sp.mii, size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes, pixels->data())) {
+            if (!gpu.ready()) {
+                gpuOn = false;
+                statusText += " (GPU stopped: " + gpu.reason() + ")";
+            }
+            // this one on the CPU
+            std::lock_guard<std::mutex> lock(mutex);
+            low.push_back(std::move(job));
+            wake.notify_all();
+            continue;
+        }
+        lastUs[2] = (int)(brls::getCPUTimeUsec() - began);
+        Image image = pixels;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            cache.emplace_front(hashKey(sp, job.pass), image);
+            cacheBytes += image->size();
+            while (cacheBytes > kCacheBytes && cache.size() > 1) {
+                cacheBytes -= cache.back().second->size();
+                cache.pop_back();
+            }
+            if (!cacheDir.empty()) {
+                saves.emplace_back(diskKey(sp, job.pass), image);
+                wake.notify_all();
+            }
+        }
+        job.cb(image, size, -1);
+        if (brls::getCPUTimeUsec() - start > 6000)
+            return;
     }
 }
 
@@ -355,20 +434,31 @@ void HeadRenderer::diskWorker()
     pruneDiskCache();
     for (;;) {
         Job job;
+        std::pair<uint64_t, Image> save;
         {
             std::unique_lock<std::mutex> lock(mutex);
-            wake.wait(lock, [this] { return stopping || !disk.empty(); });
+            wake.wait(lock, [this] { return stopping || !disk.empty() || !saves.empty(); });
             if (stopping)
                 return;
-            job = takeBest(disk);
+            // loading what is on screen comes before saving
+            if (disk.empty()) {
+                save = std::move(saves.front());
+                saves.pop_front();
+            } else {
+                job = takeBest(disk);
+            }
+        }
+        if (save.second) {
+            saveIcon(save.first, *save.second);
+            continue;
         }
         const int size = passSize(job.spec, job.pass);
         auto pixels = std::make_shared<std::vector<uint8_t>>();
         const uint64_t key = hashKey(job.spec, job.pass);
-        if (!loadIcon(key ^ (resourceSalt * 0x9E3779B97F4A7C15ull), size, pixels.get())) {
+        if (!loadIcon(diskKey(job.spec, job.pass), size, pixels.get())) {
             // not drawn yet: render it
             std::lock_guard<std::mutex> lock(mutex);
-            low.push_back(std::move(job));
+            (drawsOnGpu(job.spec) ? gpuIcons : low).push_back(std::move(job));
             wake.notify_all();
             continue;
         }
@@ -445,7 +535,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
         const bool icon = isIcon(sp);
         const int size = passSize(sp, job.pass);
         auto pixels = std::make_shared<std::vector<uint8_t>>((size_t)size * size * 4);
-        const uint64_t diskKey = hashKey(sp, job.pass) ^ (resourceSalt * 0x9E3779B97F4A7C15ull);
+        const uint64_t fileKey = diskKey(sp, job.pass);
         bool ok = false; // icons on the memory card were looked for already
         const brls::Time started = brls::getCPUTimeUsec();
         if (!ok) {
@@ -469,7 +559,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
             ok = r == MII3D_OK;
             lastUs[icon ? 2 : (job.pass == PASS_HALF ? 0 : 1)] = (int)(brls::getCPUTimeUsec() - started);
             if (ok && icon)
-                saveIcon(diskKey, *pixels);
+                saveIcon(fileKey, *pixels);
         }
         if (!ok)
             continue;

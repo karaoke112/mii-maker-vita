@@ -125,6 +125,9 @@ class HeadRenderer
     std::condition_variable wake;
     std::deque<Job> high, low; // previews, then grid icons
     std::deque<Job> disk;      // icons to look for on the memory card first
+    std::deque<Job> gpuIcons;  // icons the GPU draws, between frames
+    // drawn icons to write to the memory card (on the disk thread)
+    std::deque<std::pair<uint64_t, Image>> saves;
     std::vector<std::thread> threads;
     bool stopping = false;
 
@@ -138,8 +141,13 @@ class HeadRenderer
     uint64_t nextGeneration = 1;
     std::atomic<int> lastUs[3] = { { 0 }, { 0 }, { 0 } };
     std::map<const void*, Job> gpuPending; // UI thread only
-    bool gpuOn = false;
+    std::atomic<bool> gpuOn { false }; // read by the disk thread too
     std::vector<bool> mouthColor, hatHair;
     std::map<const void*, int> priority; // guarded by `mutex`
     Job takeBest(std::deque<Job>& q); // with `mutex` held
+    bool drawsOnGpu(const Spec& s) const;
+    uint64_t diskKey(const Spec& s, int pass) const;
+    void dropOwner(const void* owner); // with `mutex` held
+    void pumpGpuIcons();
+    void pumpGpuPreviews();
 };

@@ -15,6 +15,7 @@ bool GpuRenderer::init(const mii3d_res*, const mii3d_res*, const std::string&)
     return false;
 }
 int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, float, bool, uint32_t) { return -1; }
+bool GpuRenderer::renderIcon(const mii_charinfo_t&, int, float, float, float, float, bool, uint8_t*) { return false; }
 void GpuRenderer::release(const void*) { }
 int GpuRenderer::imageOf(const void*) { return -1; }
 
@@ -166,6 +167,14 @@ struct Target {
     int nvgImage = -1;
 };
 
+// A color surface the CPU reads icons back from (one per icon size).
+struct Readback {
+    SceUID uid = 0;
+    uint8_t* mem = nullptr;
+    int stridePx = 0;
+    SceGxmColorSurface surface;
+};
+
 struct SizeResources {
     SceGxmRenderTarget* rt = nullptr;
     SceUID depthUid = 0;
@@ -198,6 +207,7 @@ struct GpuRenderer::Impl {
     std::map<const void*, Target> targets;
     std::vector<Target> released;
     std::map<int, SizeResources> sizes;
+    std::map<int, Readback> readbacks;
     bool drawFailed = false;
 
     int stride = kFloats * 4; // bytes per vertex in GPU memory (52, or 64 padded)
@@ -1050,6 +1060,80 @@ int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, 
         return -1;
     }
     return t->nvgImage;
+}
+
+bool GpuRenderer::renderIcon(const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
+    bool fullBody, uint8_t* rgba)
+{
+    if (!ok || size <= 0)
+        return false;
+    Impl& g = *impl;
+    SizeResources* sr = g.resourcesFor(size);
+    if (!sr)
+        return false;
+    auto it = g.readbacks.find(size);
+    if (it == g.readbacks.end()) {
+        Readback rb;
+        rb.stridePx = (size + 7) & ~7;
+        rb.mem = (uint8_t*)gpu_alloc_map(SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, SCE_GXM_MEMORY_ATTRIB_RW,
+            (size_t)rb.stridePx * size * 4, &rb.uid);
+        if (!rb.mem) {
+            g.log("icon surface %d: out of memory", size);
+            return false;
+        }
+        const int err = sceGxmColorSurfaceInit(&rb.surface, SCE_GXM_COLOR_FORMAT_U8U8U8U8_ABGR,
+            SCE_GXM_COLOR_SURFACE_LINEAR, SCE_GXM_COLOR_SURFACE_SCALE_MSAA_DOWNSCALE, SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+            size, size, rb.stridePx, rb.mem);
+        if (err < 0) {
+            g.log("icon surface %d: 0x%08X", size, err);
+            gpu_unmap_free(rb.uid);
+            return false;
+        }
+        it = g.readbacks.emplace(size, rb).first;
+    }
+    const Readback& rb = it->second;
+
+    mii3d_view_t view;
+    mii3d_view_init_default(&view);
+    view.yaw_deg = yaw;
+    view.pitch_deg = pitch;
+    view.zoom = zoom;
+    view.center_y = centerY;
+    view.full_body = fullBody;
+    view.face_texture_size = size <= 200 ? 128 : 256; // small icons need less detail
+
+    Target target;
+    target.size = size;
+    target.surface = rb.surface;
+    mii3d_result_t r = MII3D_OK;
+    g.clearAlpha = 0.0f;
+    const bool drawn = g.scene(&target, sr, 0,
+        [&] { r = mii3d_render_head_draws(g.renderer, &mii, &view, size, size, drawCallback, &g); });
+    if (!drawn || r != MII3D_OK) {
+        g.log("icon: %s%s", mii3d_result_string(r), drawn ? "" : " (scene failed or vertex buffer full)");
+        return false;
+    }
+    // Cleared to transparent black and blended "over", the colors come out
+    // premultiplied by alpha: undo that, as the CPU renderer's are not.
+    for (int y = 0; y < size; y++) {
+        const uint8_t* in = rb.mem + (size_t)y * rb.stridePx * 4;
+        uint8_t* out = rgba + (size_t)y * size * 4;
+        for (int x = 0; x < size; x++, in += 4, out += 4) {
+            const unsigned a = in[3];
+            if (a == 0) {
+                out[0] = out[1] = out[2] = out[3] = 0;
+            } else if (a == 255) {
+                std::memcpy(out, in, 4);
+            } else {
+                for (int c = 0; c < 3; c++) {
+                    const unsigned v = (in[c] * 255u + a / 2) / a;
+                    out[c] = (uint8_t)(v > 255 ? 255 : v);
+                }
+                out[3] = (uint8_t)a;
+            }
+        }
+    }
+    return true;
 }
 
 void GpuRenderer::release(const void* owner)
