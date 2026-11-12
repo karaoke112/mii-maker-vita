@@ -39,7 +39,9 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   format, which keeps Switch-only colors; 3DS and Wii U read it too), shown
   on screen and saved to `ux0:data/mii/qr/`. QR codes need your own copy of
   the Mii QR key (not included) in `ux0:data/mii-maker-vita/dat/qrkey.txt`:
-  32 hex digits, optionally followed by the Switch 2 key on the next line. Miis are saved to
+  32 hex digits, optionally followed by the Switch 2 key on the next line.
+  **Send to / Receive from Another Vita** trades Miis over ad-hoc wireless
+  (the receiver is asked before each Mii is saved). Miis are saved to
   `ux0:data/mii/database.nfdb` (shared with other apps; the app's own files
   go in `ux0:data/mii-maker-vita/`). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,

@@ -64,6 +64,9 @@ if (PLATFORM_PSV)
     target_link_libraries(${PROJECT_NAME} PRIVATE SceShaccCg_stub_weak)
     # QR code scanning with the back camera
     target_link_libraries(${PROJECT_NAME} PRIVATE SceCamera_stub)
+    # sending Miis to another Vita (ad-hoc wireless)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ScePspnetAdhoc_stub SceNet_stub SceSysmodule_stub SceAppUtil_stub
+        SceCommonDialog_stub)
     set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d ATTRIBUTE2=12")
     vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
     vita_create_vpk(${PROJECT_NAME}.vpk ${PSN_TITLE_ID} ${PROJECT_NAME}.self
