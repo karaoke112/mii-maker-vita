@@ -7,8 +7,9 @@ This page is the contract.
 
 ```
 ux0:data/mii/
-├── database.nfdb       the Miis (Switch NFDB format, 6808 bytes)
+├── database.nfdb       the first 100 Miis (Switch NFDB format, 6808 bytes)
 ├── database.nfdb.bak   previous version, written before each save
+├── database2.nfdb      Miis 101-200, in the same format (only while there are more than 100; + .bak)
 ├── wii/
 │   ├── RFL_DB.dat      the same Miis as the Wii's Mii database, for ports of Wii games
 │   └── RFL_Res.dat     the Wii's Mii face resource, if the player provides it (not made here)
@@ -22,7 +23,9 @@ should not need anything from there.
 
 ## Format
 
-`database.nfdb` is byte-for-byte the Switch's own Mii database format:
+`database.nfdb` is byte-for-byte the Switch's own Mii database format
+(`database2.nfdb` too; the list goes on from it, in order, so an app that
+reads only `database.nfdb` sees the first 100):
 
 | Offset | Size | Content |
 | --- | --- | --- |

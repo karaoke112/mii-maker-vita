@@ -2,12 +2,15 @@
 
 #include <mii/mii.h>
 
+#include <array>
 #include <string>
+#include <vector>
 
-// The user's Miis, persisted as an official Switch Mii database (NFDB) in a
-// location shared with other homebrew:
+// The user's Miis (up to 200), persisted as official Switch Mii databases
+// (NFDB, 100 each) in a location shared with other homebrew: the first 100
+// in database.nfdb (what other apps read), the rest in database2.nfdb.
 //
-//   Vita:    ux0:data/mii/database.nfdb   (+ .bak, export/)
+//   Vita:    ux0:data/mii/database.nfdb, database2.nfdb   (+ .bak, export/)
 //   Desktop: ./data/mii/database.nfdb
 // (the author id lives in the app's own folder; see paths.hpp)
 //
@@ -16,12 +19,13 @@
 class MiiLibrary
 {
   public:
+    static constexpr int kMax = 200;
     static MiiLibrary& instance();
 
     bool load();
     bool save();
 
-    int count() const { return db.count; }
+    int count() const { return (int)entries.size(); }
     bool get(int index, mii_charinfo_t* out) const;
     // Writes the Miis as the Wii's Mii database for Wii game ports (done
     // by save(), and at start-up when there is none).
@@ -41,7 +45,7 @@ class MiiLibrary
     struct ImportResult {
         int imported = 0; // added or updated
         int failed = 0;   // unreadable or invalid files
-        bool full = false; // stopped: the database holds 100 Miis
+        bool full = false; // stopped: the library holds kMax Miis
     };
     // <nickname>_<first 4 bytes of the create id in hex>, safe as a file name
     static std::string fileName(const mii_charinfo_t& ci);
@@ -64,10 +68,15 @@ class MiiLibrary
 
   private:
     MiiLibrary();
-    std::string dbPath() const { return dir + "/database.nfdb"; }
+    std::string dbPath(int part) const { return dir + (part ? "/database2.nfdb" : "/database.nfdb"); }
+    bool loadPart(int part, std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>>* out);
+    bool savePart(int part);
+    int find(const mii_create_id_t& id) const;
+    // Adds, or replaces the Mii with the same create id; the index or -1
+    int putEntry(const mii_charinfo_t& ci);
 
     std::string dir;
-    mii_nfdb_t db;
+    std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>> entries; // StoreData, in order
     uint8_t authorId[16];
 };
 

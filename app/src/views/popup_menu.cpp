@@ -6,8 +6,8 @@ using namespace brls::literals;
 
 namespace {
 
-// One row: its name, what is set (on the right), a rule underneath (not
-// under the last), the focus frame around it.
+// One row: its name, what is set (on the right), rules above and below
+// (as the Switch draws them), the focus frame around it.
 class PopupRow : public brls::Box
 {
   public:
@@ -43,7 +43,7 @@ class PopupRow : public brls::Box
     brls::Label* label = nullptr;
     brls::Label* value = nullptr;
     brls::Rectangle* swatch = nullptr;
-    bool last = false;
+    bool first = false;
 
     void refresh()
     {
@@ -62,12 +62,12 @@ class PopupRow : public brls::Box
         brls::FrameContext* ctx) override
     {
         refresh(); // what is set may have changed (a selector, a toggle)
-        if (!last) {
-            nvgBeginPath(vg);
-            nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
-            nvgFillColor(vg, ui::rule());
-            nvgFill(vg);
-        }
+        nvgBeginPath(vg);
+        nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
+        if (first)
+            nvgRect(vg, x, y, width, 1.5f);
+        nvgFillColor(vg, ui::rule());
+        nvgFill(vg);
         brls::Box::draw(vg, x, y, width, height, style, ctx);
     }
 
@@ -108,6 +108,19 @@ PopupMenu::Item PopupMenu::item(const std::string& text, std::function<void()> a
     return Item { [text] { return text; }, std::move(action), false };
 }
 
+brls::Box* PopupMenu::row(const Item& item, bool first)
+{
+    auto* r = new PopupRow(item);
+    r->first = first;
+    const Item it = item;
+    r->registerClickAction([it](brls::View*) {
+        if (it.action)
+            it.action();
+        return true;
+    });
+    return r;
+}
+
 brls::View* PopupMenu::createContentView()
 {
     auto* root = new Backdrop();
@@ -128,7 +141,7 @@ brls::View* PopupMenu::createContentView()
 
     for (size_t i = 0; i < items.size(); i++) {
         auto* row = new PopupRow(items[i]);
-        row->last = i + 1 == items.size();
+        row->first = i == 0;
         const Item it = items[i];
         row->registerClickAction([it](brls::View*) {
             if (it.keepOpen) {
@@ -146,6 +159,11 @@ brls::View* PopupMenu::createContentView()
     }
     panel->setDefaultFocusedIndex(1 + focus); // after the heading
     root->addView(panel);
+    // a tap beside the panel closes the menu
+    root->addGestureRecognizer(new brls::TapGestureRecognizer([panel](brls::TapGestureStatus status, brls::Sound*) {
+        if (status.state == brls::GestureState::END && !panel->getFrame().pointInside(status.position))
+            brls::Application::popActivity(brls::TransitionAnimation::NONE);
+    }));
     root->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
         brls::Application::popActivity(brls::TransitionAnimation::NONE);
         return true;

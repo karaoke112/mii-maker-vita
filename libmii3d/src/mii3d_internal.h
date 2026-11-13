@@ -27,4 +27,12 @@ static inline float m3_bef(const uint8_t *p)
     return f;
 }
 
+/* pose.c: the body of `gender` posed at a frame of animation `index` (-1:
+ * the bind pose), scaled so its neck is at height `scale`: positions and
+ * normals into `mesh` (reallocated as needed; its uvs and indices point
+ * into the poses, shirt triangles first), and the head bone's matrix (3x4,
+ * row-major, translation in the same units). */
+int mii3d_poses_build(const mii3d_poses_t *ps, int gender, int index, float frame, float scale,
+                      mii3d_mesh_t *mesh, float head[12], int *shirt_count);
+
 #endif

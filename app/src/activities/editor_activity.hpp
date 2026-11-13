@@ -18,8 +18,17 @@ struct EditorSession {
     float pitch = 0.0f; // a small tilt, right stick up / down
     bool facingFront = false; // Triangle: turning back to the front
     int expression = 0;       // L: the expression the preview shows (not saved)
+    int pose = 0;             // R: the pose (not saved)
     bool dirty = false;
 };
+
+// L: the expressions, as a list with the one shown ticked; picking one
+// sets *expression (the previews showing it notice). It must outlive the list.
+void showExpressionMenu(int* expression);
+// R: the poses (from MiiBodyMiddle.bfres), the same way; 0 is standing.
+void showPoseMenu(int* pose);
+// A pose's name for the list ("Handwaving00_o" -> "Handwaving 1 B")
+std::string poseDisplayName(int pose);
 
 // The editor's categories, in the order of the menu (two columns, read
 // left to right).

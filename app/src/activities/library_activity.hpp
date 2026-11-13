@@ -38,6 +38,9 @@ class LibraryActivity : public brls::Activity
     enum class Pick { NONE, EXPORT, QR, SEND, KID, PARENT1, PARENT2 };
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
+    void openView(int index);
+    void upRoutes();
+    bool busy() const { return pick != Pick::NONE || held >= 0; }
 
     // Moving Miis: Triangle picks the Mii up; it travels with the cursor;
     // Cross puts it down there, Circle puts it back, Triangle swaps it with

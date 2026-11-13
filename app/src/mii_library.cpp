@@ -68,7 +68,6 @@ MiiLibrary& MiiLibrary::instance()
 MiiLibrary::MiiLibrary()
     : dir(paths::miiDir())
 {
-    mii_nfdb_init(&db);
     std::memset(authorId, 0, sizeof(authorId));
 }
 
@@ -84,33 +83,74 @@ bool MiiLibrary::load()
         writeFile(authorPath, authorId, sizeof(authorId));
     }
 
-    for (const std::string& path : { dbPath(), dbPath() + ".bak" }) {
+    entries.clear();
+    std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>> second;
+    const bool ok = loadPart(0, &entries);
+    if (ok && loadPart(1, &second)) {
+        for (auto& e : second) // the second hundred (a Mii in both: the first)
+            if (find(*reinterpret_cast<const mii_create_id_t*>(e.data() + 0x30)) < 0 && count() < kMax)
+                entries.push_back(e);
+    }
+    if (ok) {
+        // the Wii copy, for game ports, if an older version made none
+        struct stat st;
+        if (stat((paths::wiiDir() + "/RFL_DB.dat").c_str(), &st) != 0)
+            exportWii();
+    }
+    return ok;
+}
+
+bool MiiLibrary::loadPart(int part, std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>>* out)
+{
+    static mii_nfdb_t db;
+    std::vector<uint8_t> data;
+    for (const std::string& path : { dbPath(part), dbPath(part) + ".bak" }) {
         if (!readFile(path, &data))
             continue;
         mii_result_t r = mii_nfdb_decode(&db, data.data(), data.size());
         if (r == MII_OK) {
             brls::Logger::info("Loaded {} Miis from {}", db.count, path);
-            // the Wii copy, for game ports, if an older version made none
-            struct stat st;
-            if (stat((paths::wiiDir() + "/RFL_DB.dat").c_str(), &st) != 0)
-                exportWii();
+            for (int i = 0; i < db.count; i++) {
+                std::array<uint8_t, MII_STOREDATA_SIZE> e;
+                std::memcpy(e.data(), db.entries[i], MII_STOREDATA_SIZE);
+                out->push_back(e);
+            }
             return true;
         }
         brls::Logger::error("{}: {}", path, mii_result_string(r));
     }
-    mii_nfdb_init(&db);
     return false;
 }
 
 bool MiiLibrary::save()
 {
+    // the first hundred where other apps read them; the second hundred
+    // beside it (removed when there are none)
+    bool ok = savePart(0);
+    if (count() > MII_NFDB_MAX_MIIS) {
+        ok = savePart(1) && ok;
+    } else {
+        std::remove(dbPath(1).c_str());
+        std::remove((dbPath(1) + ".bak").c_str());
+    }
+    exportWii();
+    return ok;
+}
+
+bool MiiLibrary::savePart(int part)
+{
+    static mii_nfdb_t db;
     static uint8_t buf[MII_NFDB_SIZE];
+    mii_nfdb_init(&db);
+    const int from = part * MII_NFDB_MAX_MIIS, to = std::min(count(), from + MII_NFDB_MAX_MIIS);
+    for (int i = from; i < to; i++)
+        std::memcpy(db.entries[db.count++], entries[i].data(), MII_STOREDATA_SIZE);
     if (mii_nfdb_encode(&db, buf) != MII_OK)
         return false;
 
     // Write a new file, keep the previous one as .bak, then swap in.
     // (sceIoRename does not replace an existing file.)
-    const std::string path = dbPath(), tmp = path + ".tmp", bak = path + ".bak";
+    const std::string path = dbPath(part), tmp = path + ".tmp", bak = path + ".bak";
     if (!writeFile(tmp, buf, sizeof(buf))) {
         brls::Logger::error("Could not write {}", tmp);
         return false;
@@ -121,8 +161,32 @@ bool MiiLibrary::save()
         brls::Logger::error("Could not replace {}", path);
         return false;
     }
-    exportWii();
     return true;
+}
+
+int MiiLibrary::find(const mii_create_id_t& id) const
+{
+    for (int i = 0; i < count(); i++)
+        if (std::memcmp(entries[i].data() + 0x30, id.bytes, 16) == 0)
+            return i;
+    return -1;
+}
+
+int MiiLibrary::putEntry(const mii_charinfo_t& ci)
+{
+    std::array<uint8_t, MII_STOREDATA_SIZE> sd;
+    if (!mii_create_id_is_valid(&ci.create_id) || mii_storedata_encode(&ci, authorId, sd.data()) != MII_OK)
+        return -1;
+    int index = find(ci.create_id);
+    if (index < 0) {
+        if (count() >= kMax)
+            return -1;
+        index = count();
+        entries.push_back(sd);
+    } else {
+        entries[index] = sd;
+    }
+    return index;
 }
 
 // The first 100 Miis as a Wii Mii database, where Wii game ports can read
@@ -162,7 +226,11 @@ bool MiiLibrary::exportWii() const
 
 bool MiiLibrary::get(int index, mii_charinfo_t* out) const
 {
-    return mii_nfdb_get(&db, index, out) == MII_OK;
+    if (index < 0 || index >= count())
+        return false;
+    // the device CRC is not checked: a database copied from another
+    // console has a different author id
+    return mii_storedata_decode(out, entries[index].data(), MII_STOREDATA_SIZE, nullptr) == MII_OK;
 }
 
 void MiiLibrary::newCreateId(mii_create_id_t* id) const
@@ -176,9 +244,9 @@ int MiiLibrary::put(mii_charinfo_t* ci)
 {
     if (!mii_create_id_is_valid(&ci->create_id))
         newCreateId(&ci->create_id);
-    int index = mii_nfdb_put(&db, ci, authorId);
+    int index = putEntry(*ci);
     if (index < 0) {
-        brls::Logger::error("Could not store Mii: {}", mii_result_string((mii_result_t)index));
+        brls::Logger::error("Could not store Mii (invalid, or the library is full)");
         return -1;
     }
     return save() ? index : -1;
@@ -186,12 +254,20 @@ int MiiLibrary::put(mii_charinfo_t* ci)
 
 bool MiiLibrary::remove(int index)
 {
-    return mii_nfdb_remove(&db, index) == MII_OK && save();
+    if (index < 0 || index >= count())
+        return false;
+    entries.erase(entries.begin() + index);
+    return save();
 }
 
 bool MiiLibrary::move(int from, int to)
 {
-    return mii_nfdb_move(&db, from, to) == MII_OK && save();
+    if (from < 0 || from >= count() || to < 0 || to >= count())
+        return false;
+    auto e = entries[from];
+    entries.erase(entries.begin() + from);
+    entries.insert(entries.begin() + to, e);
+    return save();
 }
 
 bool MiiLibrary::swap(int a, int b)
@@ -200,8 +276,10 @@ bool MiiLibrary::swap(int a, int b)
         return true;
     if (a > b)
         std::swap(a, b);
-    // a goes to b's place (b slides to b - 1), then that one goes to a
-    return mii_nfdb_move(&db, a, b) == MII_OK && mii_nfdb_move(&db, b - 1, a) == MII_OK && save();
+    if (a < 0 || b >= count())
+        return false;
+    std::swap(entries[a], entries[b]);
+    return save();
 }
 
 void MiiLibrary::ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const
@@ -313,7 +391,7 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
         }
         if (!mii_create_id_is_valid(&ci.create_id))
             newCreateId(&ci.create_id); // Ver3 files carry no create id
-        if (mii_nfdb_put(&db, &ci, authorId) < 0) {
+        if (putEntry(ci) < 0) {
             result.full = true;
             break;
         }

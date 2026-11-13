@@ -57,6 +57,9 @@ struct mii3d_renderer {
     uint16_t *body_idx[2];
     int body_shirt_count[2], body_pants_count[2];
     int body_loaded[2];
+    /* poses: the file, and the body posed (positions and normals owned) */
+    const mii3d_poses_t *poses;
+    mii3d_mesh_t posed;
     /* mii3d_render_head_draws: 3D draws go here instead of the rasterizer */
     mii3d_draw_fn draw_fn;
     void *draw_user;
@@ -167,11 +170,19 @@ static const mii3d_mesh_t *get_body(mii3d_renderer_t *r, int gender)
     return &r->body[gender];
 }
 
+void mii3d_renderer_set_poses(mii3d_renderer_t *r, const mii3d_poses_t *poses)
+{
+    if (r)
+        r->poses = poses;
+}
+
 void mii3d_renderer_destroy(mii3d_renderer_t *r)
 {
     if (!r)
         return;
     body_free(r);
+    free(r->posed.positions);
+    free(r->posed.normals);
     for (int i = 0; i < SLOT_TEX_COUNT; i++)
         mii3d_image_free(&r->tex[i].img);
     for (int i = 0; i < MS_COUNT; i++)
@@ -191,6 +202,7 @@ void mii3d_view_init_default(mii3d_view_t *view)
     view->face_texture_size = 256;
     view->supersample = 1;
     view->zoom = 1.0f;
+    view->pose_frame = -1.0f;
 }
 
 static int ensure_image(mii3d_image_t *img, int w, int h)
@@ -648,6 +660,9 @@ typedef struct camera {
     /* where the current model sits: the head on the body's neck, or the
      * body scaled for height and build */
     float mscale[3], moffset[3];
+    /* a pose: the head turned with its bone (applied before mscale/moffset) */
+    int has_mrot;
+    float mrot[9];
     int front; /* within 60 degrees of facing the camera */
     float eye_dist;
     float f, aspect, znear, zfar;
@@ -671,6 +686,7 @@ static void setup_camera(camera *c, const mii3d_view_t *view, int w, int h)
         c->mscale[k] = 1.0f;
         c->moffset[k] = 0.0f;
     }
+    c->has_mrot = 0;
     c->front = cosf(yaw) * cosf(pitch) >= 0.5f;
     c->pivot[0] = 0.0f; c->pivot[1] = 33.0f + view->center_y; c->pivot[2] = 0.0f;
     c->eye_dist = 330.0f;
@@ -699,10 +715,23 @@ static void transform_mesh(const camera *c, const mii3d_mesh_t *mesh, const plac
 {
     for (int i = 0; i < mesh->vertex_count; i++) {
         float p[3], n[3], q[3], m[3];
-        for (int k = 0; k < 3; k++) {
-            p[k] = (mesh->positions[3 * i + k] * pl->scale[k] + pl->translate[k]) * c->mscale[k] + c->moffset[k] -
-                   c->pivot[k];
-            n[k] = mesh->normals[3 * i + k] * (pl->scale[k] < 0 ? -1.0f : 1.0f) / c->mscale[k];
+        if (c->has_mrot) {
+            float a[3], b[3];
+            for (int k = 0; k < 3; k++) {
+                a[k] = mesh->positions[3 * i + k] * pl->scale[k] + pl->translate[k];
+                b[k] = mesh->normals[3 * i + k] * (pl->scale[k] < 0 ? -1.0f : 1.0f);
+            }
+            for (int k = 0; k < 3; k++) {
+                p[k] = (c->mrot[3 * k] * a[0] + c->mrot[3 * k + 1] * a[1] + c->mrot[3 * k + 2] * a[2]) * c->mscale[k] +
+                       c->moffset[k] - c->pivot[k];
+                n[k] = (c->mrot[3 * k] * b[0] + c->mrot[3 * k + 1] * b[1] + c->mrot[3 * k + 2] * b[2]) / c->mscale[k];
+            }
+        } else {
+            for (int k = 0; k < 3; k++) {
+                p[k] = (mesh->positions[3 * i + k] * pl->scale[k] + pl->translate[k]) * c->mscale[k] + c->moffset[k] -
+                       c->pivot[k];
+                n[k] = mesh->normals[3 * i + k] * (pl->scale[k] < 0 ? -1.0f : 1.0f) / c->mscale[k];
+            }
         }
         for (int k = 0; k < 3; k++) {
             q[k] = c->rot[3 * k] * p[0] + c->rot[3 * k + 1] * p[1] + c->rot[3 * k + 2] * p[2];
@@ -830,11 +859,50 @@ static void body_scale(const mii_charinfo_t *ci, float out[3])
 /* nn::mii's normal ("own Mii") pants color */
 #define PANTS_RGB 0x40464Eu
 
+/* A pose's body (MiiBodyMiddle's, posed), and the head on its head bone. */
+static int draw_posed_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_charinfo_t *ci,
+                           const mii3d_view_t *view, const float scale[3])
+{
+    float head[12];
+    int shirt = 0;
+    if (!mii3d_poses_build(r->poses, ci->gender, view->pose - 1, view->pose_frame, BODY_HEAD_Y, &r->posed, head, &shirt))
+        return 0;
+    const mii3d_mesh_t *body = &r->posed;
+    memcpy(c->mscale, scale, sizeof(float) * 3);
+    placement pl;
+    placement_identity(&pl);
+    m3_vertex *v = ensure_verts(r, body->vertex_count);
+    if (v) {
+        m3_material m;
+        memset(&m, 0, sizeof(m));
+        m3_rgb(m.base, mii_favorite_color_rgb(ci->favorite_color), 1.0f);
+        m.lit = 1;
+        m.depth_test = m.depth_write = 1;
+        transform_mesh(c, body, &pl, &k_mat_body[ci->favorite_color % 12], v);
+        submit(r, t, v, body->vertex_count, body->indices, shirt, &m);
+        m3_rgb(m.base, PANTS_RGB, 1.0f);
+        transform_mesh(c, body, &pl, &k_mat_pants[0], v);
+        submit(r, t, v, body->vertex_count, body->indices + shirt, body->index_count - shirt, &m);
+    }
+    /* the head: turned with the head bone, on its (scaled) place */
+    for (int k = 0; k < 3; k++) {
+        c->mscale[k] = 1.0f;
+        c->moffset[k] = head[4 * k + 3] * scale[k];
+        for (int j = 0; j < 3; j++)
+            c->mrot[3 * k + j] = head[4 * k + j];
+    }
+    c->has_mrot = 1;
+    return 1;
+}
+
 /* Draws the body and leaves the camera set to put the head on its neck. */
-static void draw_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_charinfo_t *ci)
+static void draw_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_charinfo_t *ci, const mii3d_view_t *view)
 {
     float scale[3];
     body_scale(ci, scale);
+    if (view->pose > 0 && r->poses && view->pose <= mii3d_poses_count(r->poses) &&
+        draw_posed_body(r, t, c, ci, view, scale))
+        return;
     const mii3d_mesh_t *body = get_body(r, ci->gender);
     if (body) {
         const int g = ci->gender ? 1 : 0;
@@ -989,7 +1057,7 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
     m3_material m;
 
     if (view->full_body)
-        draw_body(r, &t, &cam, ci);
+        draw_body(r, &t, &cam, ci, view);
 
     /* faceline */
     placement_identity(&pl);

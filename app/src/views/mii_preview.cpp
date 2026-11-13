@@ -76,9 +76,11 @@ void MiiPreview::request3D()
     const int size = stage && hr.gpuActive() ? gpuSize() : renderSize;
     if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch && requestedSize == size &&
         (!stage || !hr.hasBody() || (requestedPivot == pivot && requestedZoom == zoom)) &&
-        requestedExpression == expression() && std::memcmp(&requested, mii, sizeof(requested)) == 0)
+        requestedExpression == expression() && requestedPose == pose() &&
+        std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
     requestedExpression = expression();
+    requestedPose = pose();
     requestedPivot = pivot;
     requestedZoom = zoom;
     requestedSize = size;
@@ -91,6 +93,7 @@ void MiiPreview::request3D()
     HeadRenderer::Spec spec;
     spec.mii = *mii;
     spec.expression = requestedExpression;
+    spec.pose = requestedPose;
     // the GPU draws stages at about the size they are shown (sharp, and
     // its multisampling smooths the edges); the CPU keeps to renderSize
     spec.size = stage && hr.gpuActive() ? gpuSize() : renderSize;
@@ -159,8 +162,10 @@ void MiiPreview::stageTarget(float* pivot, float* zoom) const
         *pivot = framing == Framing::BUST ? 104.0f + 10.7766f * 8.715f * (heightScale - (64 * 0.006015625f + 0.5f)) : 90.0f;
         *zoom = framing == Framing::BUST ? 1.8f : 1.0f; // (whole Miis: head to shoes in the tile)
     } else if (framing == Framing::BUST) {
+        // (in a pose, the head where the pose has it)
         const float heightScale = mii->height * 0.006015625f + 0.5f;
-        *pivot = 10.7766f * 8.715f * heightScale + 26.0f;
+        const float neck = HeadRenderer::instance().poseNeck(mii->gender, pose());
+        *pivot = 10.7766f * 8.715f * heightScale * neck + 26.0f;
         *zoom = 1.5f;
     } else {
         *pivot = 90.0f;

@@ -28,6 +28,9 @@ class PopupMenu : public brls::Activity
     // `focus`: the row the cursor starts on.
     PopupMenu(std::string title, std::vector<Item> items, int focus = 0);
     static Item item(const std::string& text, std::function<void()> action);
+    // A row as the menu draws it (rules above the first and below each),
+    // for lists on a screen of their own; pressing it runs the action.
+    static brls::Box* row(const Item& item, bool first);
 
     brls::View* createContentView() override;
     bool isTranslucent() override { return true; }

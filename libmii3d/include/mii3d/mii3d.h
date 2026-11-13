@@ -117,6 +117,25 @@ mii3d_result_t mii3d_renderer_create(mii3d_renderer_t **out, const mii3d_res_t *
 void mii3d_renderer_set_body(mii3d_renderer_t *r, const mii3d_res_t *body);
 void mii3d_renderer_destroy(mii3d_renderer_t *r);
 
+/* ---- poses (a Wii U game's MiiBodyMiddle.bfres) -------------------------
+ *
+ * Mario Kart 8's Mii bodies come rigged, with 171 animations (waving,
+ * bowing, dancing, sitting...). With the file attached, a full-body view
+ * with view.pose > 0 draws that body posed as a frame of an animation,
+ * the head following its head bone. `file` must outlive the poses. */
+typedef struct mii3d_poses mii3d_poses_t;
+mii3d_result_t mii3d_poses_open(mii3d_poses_t **out, const uint8_t *file, size_t size);
+void mii3d_poses_close(mii3d_poses_t *poses);
+int mii3d_poses_count(const mii3d_poses_t *poses);
+const char *mii3d_poses_name(const mii3d_poses_t *poses, int index); /* e.g. "Handwaving00_o" */
+int mii3d_poses_frames(const mii3d_poses_t *poses, int index);
+/* Where the neck is in a pose (`frame` < 0: the middle), as a fraction of
+ * its standing height: 1 standing, less sitting or lying down. */
+float mii3d_poses_neck(const mii3d_poses_t *poses, int gender, int index, float frame);
+/* Attaches poses (NULL detaches); they must outlive the renderer or be
+ * detached first. */
+void mii3d_renderer_set_poses(mii3d_renderer_t *r, const mii3d_poses_t *poses);
+
 typedef struct mii3d_view {
     float yaw_deg;     /* turn the head; 0 faces the camera */
     float pitch_deg;
@@ -127,6 +146,10 @@ typedef struct mii3d_view {
     float center_y;        /* move the framing up (+) or down, in model units */
     int full_body;         /* draw the whole Mii (needs mii3d_renderer_set_body) */
     int expression;        /* FFL's expressions: 0 = normal, below mii3d_expression_count() */
+    /* full_body only: 0 = standing (FFLBodyRes's body); n = the pose of
+     * animation n - 1 of the file given to mii3d_renderer_set_poses */
+    int pose;
+    float pose_frame;      /* the frame of that animation; < 0: its middle */
 } mii3d_view_t;
 
 void mii3d_view_init_default(mii3d_view_t *view);
