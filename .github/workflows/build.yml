@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  libmii:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (ASan + UBSan)
+        run: cmake -S libmii -B build/libmii -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+      - name: Build
+        run: cmake --build build/libmii
+      - name: Test
+        run: ctest --test-dir build/libmii --output-on-failure
+      - name: libmii3d (ASan + UBSan)
+        run: |
+          cmake -S libmii3d -B build/mii3d -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build build/mii3d
+          ctest --test-dir build/mii3d --output-on-failure
+
+  vita:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true  # borealis only; its own submodules are not needed for GXM
+      - name: Build VPK (GXM)
+        # Same image and approach as borealis' own CI for its GXM build.
+        run: |
+          docker run --rm -v "$PWD":/src -w /src vitasdk/vitasdk:latest sh -c \
+            "(test -f \$VITASDK/arm-vita-eabi/lib/libz.a || vdpm zlib) && cmake -S app -B build/vita -DPLATFORM_PSV=ON -DUSE_GXM=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build/vita -- -j$(nproc)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mii-maker-vita-vpk
+          path: build/vita/*.vpk

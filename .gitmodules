@@ -1,0 +1,5 @@
+[submodule "third_party/borealis"]
+	path = third_party/borealis
+	url = https://github.com/xfangfang/borealis.git
+	shallow = true
+	ignore = dirty

@@ -1,0 +1,15 @@
+{
+  "title": "QR Code",
+  "scan_title": "Scan QR Code",
+  "saved": "Saved to",
+  "save_failed": "The QR code could not be saved to the memory card.",
+  "make_failed": "Could not make a QR code for this Mii.",
+  "aim": "Point the back camera at a Mii QR code.",
+  "not_a_mii": "That QR code does not hold a Mii.",
+  "formats": "Reads Mii QR codes from a 3DS, a Wii U, a Switch 2, Tomodachi Life and this app.",
+  "no_camera": "There is no camera here. Put pictures of Mii QR codes in",
+  "no_camera_then": "and choose Import from SD Card.",
+  "camera_failed": "The camera could not be started.",
+  "added": "Added",
+  "need_key": "Mii QR codes are sealed with Nintendo's Mii QR key, which is not included. Put your copy of it (32 hex digits; the Switch 2 key may follow on the next line) in this file and restart the app:"
+}

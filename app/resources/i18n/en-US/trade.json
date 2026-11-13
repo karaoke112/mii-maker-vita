@@ -1,0 +1,18 @@
+{
+  "joining": "Joining the ad-hoc network...",
+  "not_joined": "Not connected. Press B and try again; the other Vita must join too.",
+  "no_socket": "Could not open the connection.",
+  "waiting": "Waiting for a Mii. Other Vitas see this one as",
+  "looking": "Looking for a Vita that is receiving...",
+  "choose": "Choose who to send the Mii to:",
+  "offering": "Waiting for an answer from",
+  "accepted": "received the Mii!",
+  "declined": "declined the Mii.",
+  "no_answer": "Nobody answered. Choose again to retry.",
+  "wants_to_send": "wants to send you",
+  "accept": "Accept",
+  "decline": "Decline",
+  "received": "Received",
+  "receive_note": "On the other Vita, choose Send Mii, then Send to Another Vita. Wireless must be on.",
+  "send_note": "On the other Vita, choose Add Mii, then Receive from Another Vita. Wireless must be on."
+}

@@ -1,0 +1,58 @@
+diff --git a/library/lib/extern/nanovg/nanovg.c b/library/lib/extern/nanovg/nanovg.c
+index 8db38447..5c782668 100644
+--- a/library/lib/extern/nanovg/nanovg.c
++++ b/library/lib/extern/nanovg/nanovg.c
+@@ -350,7 +350,9 @@ NVGcontext* nvgCreateInternal(NVGparams* params)
+ 	if (ctx->fs == NULL) goto error;
+ 
+ 	// Create font texture
+-	ctx->fontImages[0] = ctx->params.renderCreateTexture(ctx->params.userPtr, NVG_TEXTURE_ALPHA, fontParams.width, fontParams.height, 0, NULL);
++	// glyphs are rasterized at screen size and drawn on whole pixels: copy
++	// them 1:1 (nearest) rather than filter them, which blurs small text
++	ctx->fontImages[0] = ctx->params.renderCreateTexture(ctx->params.userPtr, NVG_TEXTURE_ALPHA, fontParams.width, fontParams.height, NVG_IMAGE_NEAREST, NULL);
+ 	if (ctx->fontImages[0] == 0) goto error;
+ 	ctx->fontImageIdx = 0;
+ 
+@@ -2466,7 +2468,7 @@ static int nvg__allocTextAtlas(NVGcontext* ctx)
+ 			iw *= 2;
+ 		if (iw > NVG_MAX_FONTIMAGE_SIZE || ih > NVG_MAX_FONTIMAGE_SIZE)
+ 			iw = ih = NVG_MAX_FONTIMAGE_SIZE;
+-		ctx->fontImages[ctx->fontImageIdx+1] = ctx->params.renderCreateTexture(ctx->params.userPtr, NVG_TEXTURE_ALPHA, iw, ih, 0, NULL);
++		ctx->fontImages[ctx->fontImageIdx+1] = ctx->params.renderCreateTexture(ctx->params.userPtr, NVG_TEXTURE_ALPHA, iw, ih, NVG_IMAGE_NEAREST, NULL);
+ 	}
+ 	++ctx->fontImageIdx;
+ 	fonsResetAtlas(ctx->fs, iw, ih);
+@@ -2553,6 +2555,16 @@ float nvgText(NVGcontext* ctx, float x, float y, const char* string, const char*
+ 		nvgTransformPoint(&c[2],&c[3], state->xform, q.x1*invscale, q.y0*invscale);
+ 		nvgTransformPoint(&c[4],&c[5], state->xform, q.x1*invscale, q.y1*invscale);
+ 		nvgTransformPoint(&c[6],&c[7], state->xform, q.x0*invscale, q.y1*invscale);
++		// Snap the glyph to whole device pixels (when not rotated), so its
++		// bitmap, rasterized at this size, is copied 1:1 instead of being
++		// resampled between pixels (which blurs small text).
++		if (state->xform[1] == 0.0f && state->xform[2] == 0.0f) {
++			float r = ctx->devicePxRatio > 0.0f ? ctx->devicePxRatio : 1.0f;
++			float dx = floorf(c[0]*r + 0.5f)/r - c[0];
++			float dy = floorf(c[1]*r + 0.5f)/r - c[1];
++			int k;
++			for (k = 0; k < 8; k += 2) { c[k] += dx; c[k+1] += dy; }
++		}
+ 		// Create triangles
+ 		if (nverts+6 <= cverts) {
+ 			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
+@@ -2630,6 +2642,16 @@ float nvgTextWithCursor(NVGcontext* ctx, float x, float y, const char* string, c
+ 		nvgTransformPoint(&c[2],&c[3], state->xform, q.x1*invscale, q.y0*invscale);
+ 		nvgTransformPoint(&c[4],&c[5], state->xform, q.x1*invscale, q.y1*invscale);
+ 		nvgTransformPoint(&c[6],&c[7], state->xform, q.x0*invscale, q.y1*invscale);
++		// Snap the glyph to whole device pixels (when not rotated), so its
++		// bitmap, rasterized at this size, is copied 1:1 instead of being
++		// resampled between pixels (which blurs small text).
++		if (state->xform[1] == 0.0f && state->xform[2] == 0.0f) {
++			float r = ctx->devicePxRatio > 0.0f ? ctx->devicePxRatio : 1.0f;
++			float dx = floorf(c[0]*r + 0.5f)/r - c[0];
++			float dy = floorf(c[1]*r + 0.5f)/r - c[1];
++			int k;
++			for (k = 0; k < 8; k += 2) { c[k] += dx; c[k+1] += dy; }
++		}
+ 		// Create triangles
+ 		if (nverts+6 <= cverts) {
+ 			nvg__vset(&verts[nverts], c[0], c[1], q.s0, q.t0); nverts++;
