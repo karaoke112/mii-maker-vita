@@ -13,6 +13,9 @@
 #include <cstring>
 #include <random>
 #include <sys/stat.h>
+#include <thread>
+#include <mutex>
+#include <memory>
 #include <vector>
 
 #include "paths.hpp"
@@ -128,7 +131,6 @@ bool MiiLibrary::save()
 bool MiiLibrary::exportWii() const
 {
     static uint8_t miis[MII_WII_DB_MAX][MII_WII_DATA_SIZE];
-    static uint8_t file[MII_WII_DB_SIZE];
     mii_wii_info_t info;
     mii_wii_info_init_default(&info);
     std::memcpy(info.system_id, authorId, sizeof(info.system_id));
@@ -138,15 +140,24 @@ bool MiiLibrary::exportWii() const
         if (get(i, &ci) && mii_wii_encode(&ci, &info, miis[n]) == MII_OK)
             n++;
     }
-    if (mii_wii_db_write(miis, n, file, sizeof(file)) != MII_OK)
+    auto data = std::make_shared<std::vector<uint8_t>>(MII_WII_DB_SIZE);
+    if (mii_wii_db_write(miis, n, data->data(), data->size()) != MII_OK)
         return false;
-    const std::string dir = paths::wiiDir(), path = dir + "/RFL_DB.dat", tmp = path + ".tmp";
-    if (!writeFile(tmp, file, sizeof(file))) {
-        brls::Logger::error("Could not write {}", tmp);
-        return false;
-    }
-    std::remove(path.c_str());
-    return std::rename(tmp.c_str(), path.c_str()) == 0;
+    // Written on its own thread: the file is 768 KB, and saving (moving a
+    // Mii, say) should not wait for the memory card. One write at a time,
+    // the newest last.
+    static std::mutex writing;
+    std::thread([data] {
+        std::lock_guard<std::mutex> lock(writing);
+        const std::string path = paths::wiiDir() + "/RFL_DB.dat", tmp = path + ".tmp";
+        if (!writeFile(tmp, data->data(), data->size())) {
+            brls::Logger::error("Could not write {}", tmp);
+            return;
+        }
+        std::remove(path.c_str());
+        std::rename(tmp.c_str(), path.c_str());
+    }).detach();
+    return true;
 }
 
 bool MiiLibrary::get(int index, mii_charinfo_t* out) const

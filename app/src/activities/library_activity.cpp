@@ -68,6 +68,8 @@ brls::View* LibraryActivity::createContentView()
     });
     actions->addView(add);
     createButton = add;
+    topButtons.clear();
+    topButtons.push_back(add);
     auto* send = new brls::Button();
     send->setText("library/send"_i18n);
     send->setWidth(260);
@@ -79,6 +81,7 @@ brls::View* LibraryActivity::createContentView()
         return true;
     });
     actions->addView(send);
+    topButtons.push_back(send);
     auto* receive = new brls::Button();
     receive->setText("library/receive"_i18n);
     receive->setWidth(260);
@@ -89,6 +92,7 @@ brls::View* LibraryActivity::createContentView()
         return true;
     });
     actions->addView(receive);
+    topButtons.push_back(receive);
     pickLabel = new brls::Label();
     pickLabel->setFontSize(22);
     pickLabel->setTextColor(ui::accent());
@@ -129,11 +133,10 @@ brls::View* LibraryActivity::createContentView()
     countLabel->setMarginTop(4);
     frame->getHeader()->setAlignItems(brls::AlignItems::CENTER);
     frame->getHeader()->addView(countLabel);
-    settingsShown = false; // a new frame (the theme changed): no actions yet
     // This is the root screen: "back" only leaves "choose a Mii" mode (popping
     // the last activity would leave borealis with input blocked). The app is
     // closed from the system (PS button), like other Vita apps.
-    settingsAction();
+    settingsAction(true);
     frame->registerAction("", brls::BUTTON_BACK, [status](brls::View*) {
         MiiPreview::showTimings = !MiiPreview::showTimings;
         status->setVisibility(MiiPreview::showTimings ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
@@ -141,7 +144,7 @@ brls::View* LibraryActivity::createContentView()
     }, true);
     // desktop builds: P (keyboards have no START)
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_P), [this](brls::View*) {
-        if (held < 0)
+        if (held < 0 && pick == Pick::NONE)
             showSettings();
         return true;
     });
@@ -165,17 +168,19 @@ brls::View* LibraryActivity::createContentView()
     return frame;
 }
 
-// START opens the settings (taken away, hint and all, while a Mii is held).
-void LibraryActivity::settingsAction()
+// START opens the settings; while a Mii is held or one is being chosen its
+// hint is hidden and it does nothing. (Registered again in place, never
+// unregistered: borealis numbers a new action after the last in its list,
+// which can repeat the number of one replaced in place, like the frame's
+// Circle, and unregistering by number then removed that one instead.)
+void LibraryActivity::settingsAction(bool shown)
 {
-    if (settingsShown)
-        return;
-    settingsShown = true;
-    settingsActionId = rootFrame->registerAction("settings/title"_i18n, brls::BUTTON_START, [this](brls::View*) {
-        if (held < 0)
+    settingsShown = shown;
+    rootFrame->registerAction(shown ? "settings/title"_i18n : "", brls::BUTTON_START, [this](brls::View*) {
+        if (held < 0 && pick == Pick::NONE)
             showSettings();
         return true;
-    });
+    }, !shown);
     brls::Application::getGlobalHintsUpdateEvent()->fire();
 }
 
@@ -225,8 +230,10 @@ void LibraryActivity::rebuild()
 
     brls::Box* row = nullptr;
     held = heldAt = -1;
+    for (brls::View* b : topButtons)
+        b->setFocusable(true);
     if (rootFrame)
-        settingsAction(); // in case a Mii was held
+        updateSettingsAction(); // in case a Mii was held, or the mode changed
     cardActionIds.assign(miis.size(), {});
     for (size_t i = 0; i < miis.size(); i++) {
         if (i % kColumns == 0) {
@@ -299,9 +306,41 @@ void LibraryActivity::rebuild()
         if (i / kColumns < (n - 1) / kColumns)
             cards[i]->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards[std::min(i + kColumns, n - 1)]);
     }
+    // up from the first row: the Add Mii button; down from the buttons: the
+    // first Mii
+    for (int i = 0; i < std::min(n, kColumns); i++)
+        cards[i]->setCustomNavigationRoute(brls::FocusDirection::UP, createButton);
+    for (brls::View* b : topButtons) {
+        if (n > 0)
+            b->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards[0]);
+        else
+            b->setCustomNavigationRoute(brls::FocusDirection::DOWN, nullptr);
+    }
+    allCardActions();
+    thumbPriorities(0);
+}
+
+// Every card's buttons, then one hints update (one per card made picking a
+// Mii up and putting it down stutter).
+void LibraryActivity::allCardActions()
+{
+    batchingHints = true;
     for (size_t i = 0; i < cards.size(); i++)
         cardActions((int)i);
-    thumbPriorities(0);
+    batchingHints = false;
+    brls::Application::getGlobalHintsUpdateEvent()->fire();
+}
+
+// START (settings) is there only in the plain list: not while a Mii is held
+// or one is being chosen. Changed after this input is handled (the frame may
+// be going through its actions right now).
+void LibraryActivity::updateSettingsAction()
+{
+    brls::sync([this] {
+        const bool want = held < 0 && pick == Pick::NONE;
+        if (want != settingsShown)
+            settingsAction(want);
+    });
 }
 
 // Thumbnails nearest the cursor are drawn first.
@@ -338,6 +377,18 @@ void LibraryActivity::cardActions(int index)
                 : pick == Pick::SEND                                    ? "library/send_this"_i18n
                 : pick == Pick::PARENT1 || pick == Pick::PARENT2 || pick == Pick::KID ? "library/child_choose"_i18n
                                                                         : "library/edit"_i18n);
+        if (pick != Pick::NONE) {
+            // choosing a Mii: Circle ends it (Done after exporting several);
+            // no deleting or picking up meanwhile
+            ids.push_back(card->registerAction(pick == Pick::EXPORT ? "library/pick_done"_i18n : "hints/cancel"_i18n,
+                brls::BUTTON_B, [this](brls::View*) {
+                    setPick(Pick::NONE);
+                    return true;
+                }));
+            if (!batchingHints)
+                brls::Application::getGlobalHintsUpdateEvent()->fire();
+            return;
+        }
         ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
             auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
             dialog->addButton("hints/cancel"_i18n, [] {});
@@ -356,7 +407,8 @@ void LibraryActivity::cardActions(int index)
                 return true;
             }));
     }
-    brls::Application::getGlobalHintsUpdateEvent()->fire();
+    if (!batchingHints)
+        brls::Application::getGlobalHintsUpdateEvent()->fire();
 }
 
 void LibraryActivity::startHold(int index)
@@ -373,18 +425,12 @@ void LibraryActivity::startHold(int index)
         c->setHideHighlight(true);
     static_cast<MiiCard*>(cards[index])->empty = true;
     showHeldAt(index);
-    // no settings while holding a Mii (nor their hint)
-    // after this input is handled: the frame may be going through its
-    // actions right now
-    brls::sync([this] {
-        if (held >= 0 && settingsShown) {
-            rootFrame->unregisterAction(settingsActionId);
-            settingsShown = false;
-            brls::Application::getGlobalHintsUpdateEvent()->fire();
-        }
-    });
-    for (size_t i = 0; i < cards.size(); i++)
-        cardActions((int)i);
+    // no settings while holding a Mii (nor their hint), and the cursor stays
+    // in the list
+    updateSettingsAction();
+    for (brls::View* b : topButtons)
+        b->setFocusable(false);
+    allCardActions();
 }
 
 // The held Mii floats above the card under the cursor, shifted up and left
@@ -429,10 +475,9 @@ void LibraryActivity::endHold(bool place)
 {
     const int from = held, to = heldAt;
     held = heldAt = -1;
-    brls::sync([this] {
-        if (held < 0)
-            settingsAction();
-    });
+    updateSettingsAction();
+    for (brls::View* b : topButtons)
+        b->setFocusable(true);
     for (brls::View* c : cards) {
         static_cast<MiiCard*>(c)->overlay = nullptr;
         c->setHideHighlight(false);
@@ -448,8 +493,7 @@ void LibraryActivity::endHold(bool place)
             brls::Application::notify("library/move_failed"_i18n);
         reloadOrder();
     }
-    for (size_t i = 0; i < cards.size(); i++)
-        cardActions((int)i);
+    allCardActions();
 }
 
 // Puts the held Mii where the hovered one is and picks that one up (it
@@ -533,14 +577,10 @@ void LibraryActivity::setPick(Pick mode)
             : mode == Pick::PARENT2         ? parent2Prompt()
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
-    brls::View* focus = brls::Application::getCurrentFocus();
-    int focusIndex = -1;
-    for (size_t i = 0; i < cards.size(); i++)
-        if (cards[i] == focus)
-            focusIndex = (int)i;
     rebuild();
+    // choosing a Mii starts on the first one
     if (mode != Pick::NONE && !cards.empty())
-        brls::Application::giveFocus(cards[focusIndex >= 0 ? focusIndex : 0]);
+        brls::Application::giveFocus(cards[0]);
 }
 
 // Mii QR codes need the user's own copy of the key (like the .dat files).
