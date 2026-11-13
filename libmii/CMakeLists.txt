@@ -5,6 +5,7 @@ add_library(mii STATIC
     src/mii_common.c
     src/mii_switch.c
     src/mii_ver3.c
+    src/mii_wii.c
     src/mii_qr.c
     src/mii_nfdb.c
     src/mii_editor.c

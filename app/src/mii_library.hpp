@@ -23,6 +23,9 @@ class MiiLibrary
 
     int count() const { return db.count; }
     bool get(int index, mii_charinfo_t* out) const;
+    // Writes the Miis as the Wii's Mii database for Wii game ports (done
+    // by save(), and at start-up when there is none).
+    bool exportWii() const;
     // Inserts or replaces (matched by create id). Assigns a create id first
     // if the Mii has none. Saves to disk. Returns the index or -1.
     int put(mii_charinfo_t* ci);

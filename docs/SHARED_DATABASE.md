@@ -9,6 +9,9 @@ This page is the contract.
 ux0:data/mii/
 ├── database.nfdb       the Miis (Switch NFDB format, 6808 bytes)
 ├── database.nfdb.bak   previous version, written before each save
+├── wii/
+│   ├── RFL_DB.dat      the same Miis as the Wii's Mii database, for ports of Wii games
+│   └── RFL_Res.dat     the Wii's Mii face resource, if the player provides it (not made here)
 ├── export/             files written by "Export": <name>_<id>.charinfo/.nfsd/.ffsd
 └── import/             Mii files to add with "Import" (moved to import/imported/ once added)
 ```
@@ -58,6 +61,36 @@ if (mii_nfdb_decode(&db, buf, n) == MII_OK) {
 
 Add libmii to your build with `add_subdirectory(path/to/libmii)` and link
 `mii`; it has no dependencies.
+
+## For ports of Wii games: `wii/RFL_DB.dat`
+
+Every save also writes the first 100 Miis to `wii/RFL_DB.dat`, byte for
+byte the file the Wii keeps at `/shared2/menu/FaceLib/RFL_DB.dat` and that
+its face library (RVLFaceLib, "RFL") reads. A port that compiles RFL (from
+a decompilation) can map that NAND folder to `ux0:data/mii/wii/`:
+
+| Offset | Size | Content |
+| --- | --- | --- |
+| 0x00000 | 4 | `"RNOD"` |
+| 0x00004 | 100 × 0x4A | RFLCharData slots (big-endian bit-fields, most significant first); an empty slot is all zero |
+| 0x01CEC | 4 | flags (isolation, bit 31) |
+| 0x01D00 | 0x1D4E0 | the hidden database's header: `"RNHD"`, head and tail -1, 10000 empty entries |
+| 0x3B1DE | 2 | RFL's CRC-16 over 0x00000–0x3B1DF with this field zero, big-endian (the whole header then checks to 0) |
+| 0x3B1E0 | 10000 × 0x4A | room for hidden Miis (zero) |
+
+RFL's structures are big-endian; a little-endian port converts them after
+reading (and checks the CRC on the bytes as read). The Mii IDs are stable
+per Mii (from its create ID), with bit 31 set (a normal Mii); the system
+ID is the first four bytes of Mii Maker Vita's author ID.
+
+The Wii has fewer parts and colors than later consoles: Miis using newer
+ones get the Wii's default part, or the nearest color, in this copy only.
+`libmii` reads and writes the format (`mii_wii_encode`, `mii_wii_decode`,
+`mii_wii_db_write`).
+
+RFL also needs the Wii's face resource, `RFL_Res.dat`. It is Nintendo's
+file and is not included: players copy it from their own Wii's NAND
+(`/shared2/menu/FaceLib/RFL_Res.dat`) into `ux0:data/mii/wii/`.
 
 ## Rules
 

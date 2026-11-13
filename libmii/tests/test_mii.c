@@ -242,6 +242,122 @@ static void test_ver3(void)
     for (uint8_t v = 0; v < 6; v++) CHECK_EQ(mii_common_to_ver3_glass_color(mii_ver3_glass_color_to_common(v)), v);
 }
 
+/* The Wii's face textures as { makeup, wrinkle } (MiiToStudio's table). */
+static const uint8_t tex[12][2] = { { 0, 0 }, { 1, 0 }, { 6, 0 }, { 9, 0 }, { 0, 5 }, { 0, 2 },
+                                    { 0, 3 }, { 0, 7 }, { 0, 8 }, { 10, 0 }, { 0, 9 }, { 0, 11 } };
+
+static unsigned mii_wii_face_tex_test(unsigned make, unsigned wrinkle)
+{
+    for (unsigned t = 0; t < 12; t++)
+        if (tex[t][0] == make && tex[t][1] == wrinkle)
+            return t;
+    return 99;
+}
+
+/* A random Mii limited to what the Wii has. */
+static void make_wii_mii(mii_charinfo_t *ci)
+{
+    make_random_mii(ci, 1);
+    const unsigned t = rng_next() % 12;
+    ci->faceline_make = tex[t][0];
+    ci->faceline_wrinkle = tex[t][1];
+    ci->faceline_type %= 8;
+    ci->faceline_color = (uint8_t)(rng_next() % 6);
+    ci->hair_type %= 72;
+    ci->eye_type %= 48;
+    ci->nose_type %= 12;
+    ci->mouth_type %= 24;
+    ci->mustache_type %= 4;
+    ci->beard_type %= 4;
+    ci->glass_type %= 9;
+    ci->hair_color = mii_ver3_hair_color_to_common((uint8_t)(rng_next() % 8));
+    ci->eyebrow_color = mii_ver3_hair_color_to_common((uint8_t)(rng_next() % 8));
+    ci->beard_color = mii_ver3_hair_color_to_common((uint8_t)(rng_next() % 8));
+    ci->eye_color = mii_ver3_eye_color_to_common((uint8_t)(rng_next() % 6));
+    ci->mouth_color = mii_ver3_mouth_color_to_common((uint8_t)(rng_next() % 3));
+    ci->glass_color = mii_ver3_glass_color_to_common((uint8_t)(rng_next() % 6));
+    ci->eye_aspect = ci->eyebrow_aspect = ci->mouth_aspect = 3; /* the Wii has none */
+}
+
+static void test_wii(void)
+{
+    for (int n = 0; n < 300; n++) {
+        mii_charinfo_t a, b;
+        mii_wii_info_t ia, ib;
+        uint8_t buf[MII_WII_DATA_SIZE], buf2[MII_WII_DATA_SIZE];
+        make_wii_mii(&a);
+        CHECK(mii_wii_compatible(&a));
+        mii_wii_info_init_default(&ia);
+        ia.birth_month = (uint8_t)(1 + rng_next() % 12);
+        ia.birth_day = (uint8_t)(1 + rng_next() % 28);
+        ia.favorite = (uint8_t)(rng_next() & 1);
+        memcpy(ia.creator_name, a.name, sizeof(a.name));
+        memcpy(ia.system_id, "\x12\x34\x56\x78", 4);
+        CHECK_EQ(mii_wii_encode(&a, &ia, buf), MII_OK);
+        CHECK_EQ(mii_wii_decode(&b, &ib, buf, sizeof(buf)), MII_OK);
+        /* everything but the create ID (the Wii has its own IDs) */
+        b.create_id = a.create_id;
+        b.type = a.type;
+        b.region_move = a.region_move;
+        b.font_region = a.font_region;
+        CHECK(charinfo_equal(&a, &b, 0));
+        CHECK_EQ(ib.birth_month, ia.birth_month);
+        CHECK_EQ(ib.birth_day, ia.birth_day);
+        CHECK_EQ(ib.favorite, ia.favorite);
+        CHECK_EQ(ib.mii_id, mii_wii_id_for(&a));
+        CHECK(ib.mii_id >> 31);              /* a normal Mii */
+        CHECK(((ib.mii_id >> 29) & 1) == 0); /* not temporary */
+        CHECK(memcmp(ib.creator_name, ia.creator_name, sizeof(ia.creator_name)) == 0);
+        /* decoding gives the same Mii again */
+        CHECK_EQ(mii_wii_encode(&b, &ib, buf2), MII_OK);
+        CHECK(memcmp(buf, buf2, sizeof(buf)) == 0);
+
+        /* fields read the way other tools read Wii Miis */
+        CHECK_EQ(buf[0x22] >> 1, a.hair_type);
+        CHECK_EQ(((buf[0x21] >> 6) | (buf[0x20] & 3) << 2), mii_wii_face_tex_test(a.faceline_make, a.faceline_wrinkle));
+        CHECK_EQ(buf[0x16], a.height);
+        CHECK_EQ((buf[0] >> 6) & 1, a.gender);
+        CHECK_EQ(buf[0x28] >> 2, a.eye_type);
+        CHECK_EQ(buf[0x2C] >> 4, a.nose_type);
+        CHECK_EQ(buf[0x2E] >> 3, a.mouth_type);
+        CHECK_EQ(buf[0x30] >> 4, a.glass_type);
+        CHECK_EQ(buf[0x34] >> 7, a.mole_type);
+    }
+
+    /* parts the Wii lacks become default ones, and are reported */
+    mii_charinfo_t ci, back;
+    uint8_t buf[MII_WII_DATA_SIZE];
+    mii_charinfo_init_default(&ci, 0);
+    CHECK(mii_wii_compatible(&ci));
+    ci.hair_type = 100;
+    ci.eye_type = 55;
+    CHECK(!mii_wii_compatible(&ci));
+    CHECK_EQ(mii_wii_encode(&ci, NULL, buf), MII_OK);
+    CHECK_EQ(mii_wii_decode(&back, NULL, buf, sizeof(buf)), MII_OK);
+    mii_charinfo_t def;
+    mii_charinfo_init_default(&def, 0);
+    CHECK_EQ(back.hair_type, def.hair_type);
+    CHECK_EQ(back.eye_type, def.eye_type);
+
+    /* the database: RFL's CRC holds, slots read back, empty ones are empty */
+    static uint8_t db[MII_WII_DB_SIZE];
+    uint8_t miis[3][MII_WII_DATA_SIZE], got[MII_WII_DATA_SIZE];
+    for (int i = 0; i < 3; i++) {
+        mii_charinfo_t m;
+        make_wii_mii(&m);
+        CHECK_EQ(mii_wii_encode(&m, NULL, miis[i]), MII_OK);
+    }
+    CHECK_EQ(mii_wii_db_write(miis, 3, db, sizeof(db)), MII_OK);
+    CHECK(mii_wii_db_valid(db, sizeof(db)));
+    CHECK(memcmp(db, "RNOD", 4) == 0);
+    CHECK(memcmp(db + 0x1D00, "RNHD", 4) == 0);
+    CHECK_EQ(mii_wii_crc(db, 0x3B1E0), 0);
+    CHECK(mii_wii_db_get(db, sizeof(db), 1, got) && memcmp(got, miis[1], sizeof(got)) == 0);
+    CHECK(!mii_wii_db_get(db, sizeof(db), 3, got));
+    db[0x100] ^= 1;
+    CHECK(!mii_wii_db_valid(db, sizeof(db)));
+}
+
 static void test_nfdb(void)
 {
     static mii_nfdb_t db, db2;
@@ -590,6 +706,7 @@ int main(int argc, char **argv)
     test_random();
     test_switch_roundtrips();
     test_ver3();
+    test_wii();
     test_qr();
     test_nfdb();
     test_editor_data();

@@ -312,6 +312,39 @@ uint8_t mii_glass_type_to_ver3(uint8_t switch_type);
 /* NFDB: the Switch's own Mii database file, used as the shared Vita store   */
 /* ------------------------------------------------------------------------- */
 
+/* ---- Wii (RFLCharData) -------------------------------------------------- */
+
+#define MII_WII_DATA_SIZE 0x4A
+#define MII_WII_DB_MAX    100
+#define MII_WII_DB_SIZE   0xEFC20 /* RFL_DB.dat as the Wii formats it */
+
+/* What a Wii Mii carries besides the face. */
+typedef struct mii_wii_info {
+    uint8_t  birth_month;  /* 0 = unset, 1-12 */
+    uint8_t  birth_day;    /* 0 = unset, 1-31 */
+    uint8_t  favorite;
+    uint8_t  local_only;   /* "don't mingle" */
+    uint32_t mii_id;       /* 0: mii_wii_id_for() */
+    uint8_t  system_id[4]; /* the console's ID */
+    uint16_t creator_name[MII_NAME_LENGTH + 1];
+} mii_wii_info_t;
+
+void mii_wii_info_init_default(mii_wii_info_t *info);
+/* Whether every part and color exists on the Wii (otherwise
+ * mii_wii_encode uses the nearest it has or the default part). */
+int mii_wii_compatible(const mii_charinfo_t *ci);
+/* A Wii Mii ID for a Mii, the same every time (from its create ID). */
+uint32_t mii_wii_id_for(const mii_charinfo_t *ci);
+mii_result_t mii_wii_encode(const mii_charinfo_t *ci, const mii_wii_info_t *info, uint8_t out[MII_WII_DATA_SIZE]);
+mii_result_t mii_wii_decode(mii_charinfo_t *ci, mii_wii_info_t *info, const uint8_t *data, size_t size);
+/* The Wii's Mii database (RFL_DB.dat, on the Wii in
+ * /shared2/menu/FaceLib/): up to 100 Miis, out_size >= MII_WII_DB_SIZE. */
+mii_result_t mii_wii_db_write(const uint8_t (*miis)[MII_WII_DATA_SIZE], int count, uint8_t *out, size_t out_size);
+int mii_wii_db_valid(const uint8_t *db, size_t size);
+/* Copies slot `index` (0-99); 0 when the slot is empty or the file invalid. */
+int mii_wii_db_get(const uint8_t *db, size_t size, int index, uint8_t out[MII_WII_DATA_SIZE]);
+uint16_t mii_wii_crc(const uint8_t *p, size_t len);
+
 typedef struct mii_nfdb {
     uint8_t  count;
     uint8_t  version;
