@@ -33,7 +33,7 @@ typedef struct tex_slot { int index; mii3d_image_t img; int ok; } tex_slot;
 typedef struct mesh_slot { int index; mii3d_mesh_t mesh; int ok; } mesh_slot;
 
 enum { SLOT_EYE, SLOT_EYEBROW, SLOT_MOUTH, SLOT_MUSTACHE, SLOT_MOLE, SLOT_GLASS, SLOT_NOSELINE,
-       SLOT_WRINKLE, SLOT_MAKEUP, SLOT_BEARD, SLOT_CAP, SLOT_TEX_COUNT };
+       SLOT_WRINKLE, SLOT_MAKEUP, SLOT_BEARD, SLOT_CAP, SLOT_EYE2, SLOT_TEX_COUNT };
 enum { MS_FACELINE, MS_MASK, MS_HAIR, MS_FOREHEAD, MS_NOSE, MS_NOSELINE, MS_BEARD, MS_GLASS, MS_HAT, MS_COUNT };
 
 struct mii3d_renderer {
@@ -47,7 +47,7 @@ struct mii3d_renderer {
     uint8_t *ss_color;
     int ss_size;
     /* the textures above are reused while the Mii is unchanged */
-    uint8_t composed_for[32]; /* face_key() of the composed Mii */
+    uint8_t composed_for[33]; /* face_key() of the composed Mii */
     int composed_valid, composed_has_faceline;
     m3_vertex *verts;
     int verts_cap;
@@ -65,7 +65,7 @@ struct mii3d_renderer {
 static const mii3d_tex_kind_t k_slot_kind[SLOT_TEX_COUNT] = {
     MII3D_TEX_EYE, MII3D_TEX_EYEBROW, MII3D_TEX_MOUTH, MII3D_TEX_MUSTACHE, MII3D_TEX_MOLE,
     MII3D_TEX_GLASS, MII3D_TEX_NOSELINE, MII3D_TEX_FACELINE, MII3D_TEX_MAKEUP, MII3D_TEX_BEARD,
-    MII3D_TEX_CAP,
+    MII3D_TEX_CAP, MII3D_TEX_EYE, /* SLOT_EYE2: the other eye of a wink */
 };
 static const mii3d_shape_kind_t k_mesh_kind[MS_COUNT] = {
     MII3D_SHAPE_FACELINE, MII3D_SHAPE_MASK, MII3D_SHAPE_HAIR_NORMAL, MII3D_SHAPE_FOREHEAD_NORMAL,
@@ -236,9 +236,160 @@ static const uint8_t k_eye_rot_offset[80] = {
     4, 4, 4, 3, 3, 3, 4, 4, 3, 3, 3, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 3, 4, 4, 3,
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
 };
-static const uint8_t k_eyebrow_rot_offset[24] = {
+static const uint8_t k_eyebrow_rot_offset[28] = {
     26, 26, 27, 25, 26, 25, 26, 25, 28, 25, 26, 24, 27, 27, 26, 26, 25, 25, 26, 26, 27, 26, 25, 27,
+    26, 26, 26, 26, /* the expressions' own eyebrows */
 };
+
+/* ---- expressions (as FFL makes its mask textures) ------------------------ */
+
+#include "expressions.inc"
+
+int mii3d_expression_count(const mii3d_res_t *res)
+{
+    if (mii3d_res_texture_count(res, MII3D_TEX_EYE) >= 80 && mii3d_res_texture_count(res, MII3D_TEX_MOUTH) >= 52 &&
+        mii3d_res_texture_count(res, MII3D_TEX_EYEBROW) >= 28)
+        return 70;
+    if (mii3d_res_texture_count(res, MII3D_TEX_EYE) >= 62 && mii3d_res_texture_count(res, MII3D_TEX_MOUTH) >= 37)
+        return 19;
+    return 1;
+}
+
+/* The textures the face is drawn with: the Mii's own, or an expression's */
+typedef struct face_sel {
+    int eye_r, eye_l, mouth, eyebrow; /* texture indices (eye_r: the eye at 32 - spacing) */
+    int eye_r_direct, eye_l_direct, mouth_direct; /* colored textures, drawn as they are */
+} face_sel;
+
+static int expr_eye_index(const mii_charinfo_t *ci, int type)
+{
+    static const int8_t k[29] = { -1, 60, -1, 61, 26, 47, 18, 23, 47, 60, 61, 62, 63, 64, 65,
+                                  66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79 };
+    return type < 0 || type > 28 || k[type] < 0 ? ci->eye_type : k[type];
+}
+
+static int expr_mouth_index(const mii_charinfo_t *ci, int type)
+{
+    static const int8_t k[26] = { -1, 10, 12, 36, 19, 19, 23, 2, 14, 15, 32, 37, 38,
+                                  39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51 };
+    return type <= 0 || type > 25 ? ci->mouth_type : k[type];
+}
+
+static int eye_tex_direct(int index)
+{
+    static const uint8_t k[] = { 60, 62, 65, 69, 70, 71, 72, 73, 74, 75, 78, 79 };
+    for (size_t i = 0; i < sizeof(k); i++)
+        if (index == k[i])
+            return 1;
+    return 0;
+}
+
+/* FFL's eye rotate offset (32 - the table above) */
+static int eye_rot_ffl(int type) { return 32 - k_eye_rot_offset[type % 80]; }
+
+/* The Mii as `expression` draws it (FFL's SetupExpressionCharInfo, which
+ * Miitomo's expressions need), and the textures */
+static void apply_expression(const mii_charinfo_t *src, int expression, mii_charinfo_t *ci, face_sel *sel)
+{
+    *ci = *src;
+    if (expression < 0 || expression >= 70)
+        expression = 0;
+    const uint8_t *tex = k_expr_tex[expression];
+    sel->eye_r = expr_eye_index(src, tex[0]);
+    sel->eye_l = expr_eye_index(src, tex[1]);
+    sel->mouth = expr_mouth_index(src, tex[2]);
+    sel->eyebrow = tex[3] == 0 ? src->eyebrow_type : tex[3];
+    sel->eye_r_direct = eye_tex_direct(sel->eye_r);
+    sel->eye_l_direct = eye_tex_direct(sel->eye_l);
+    sel->mouth_direct = sel->mouth > 36;
+    if (expression == 0)
+        return;
+
+    switch (expression) {
+    case 19: case 20:
+        ci->eye_scale = 4;
+        ci->eye_aspect = 3;
+        /* fall through */
+    case 45: case 46: case 53: case 54:
+        ci->mouth_aspect = 3;
+        ci->mouth_scale = 4;
+        break;
+    case 25: case 26: case 37: case 38: case 55: case 56: case 57: case 58:
+        ci->eye_scale = 4;
+        ci->eye_aspect = 3;
+        ci->eye_rotate = 4;
+        break;
+    case 33: case 34:
+        ci->eye_rotate = 4;
+        ci->mouth_aspect = 3;
+        ci->mouth_scale = 4;
+        break;
+    case 35: case 36:
+        ci->eye_rotate = 4;
+        ci->eye_aspect = 3;
+        ci->eye_scale = 4;
+        ci->mouth_scale = 4;
+        ci->mouth_aspect = 3;
+        break;
+    case 39: case 40:
+        ci->eye_rotate = 4;
+        ci->eye_aspect = 3;
+        ci->eye_scale = 4;
+        ci->eyebrow_rotate = 6;
+        break;
+    case 43: case 44: case 47: case 48:
+        ci->eye_rotate = 4;
+        break;
+    case 49: case 50: case 51: case 52: /* cat, dog: a face of their own */
+        ci->eye_rotate = 4;
+        ci->eye_aspect = 3;
+        ci->eye_scale = 4;
+        ci->eyebrow_scale = 4;
+        ci->eyebrow_aspect = 3;
+        ci->eyebrow_rotate = 6;
+        ci->mouth_aspect = 3;
+        ci->mouth_scale = 4;
+        ci->eye_x = 2;
+        ci->eye_y = 12;
+        ci->eyebrow_x = 2;
+        ci->eyebrow_y = 10;
+        ci->mouth_y = 13;
+        ci->mustache_type = 0;
+        break;
+    case 67: case 68:
+        ci->mouth_aspect = 3;
+        break;
+    case 69:
+        ci->eye_aspect = 3;
+        break;
+    default:
+        break;
+    }
+
+    const int8_t *p = k_expr_correct[expression];
+    if (p[1] >= 0)
+        ci->mouth_type = (uint8_t)p[1];
+    int eye_off = p[2];
+    if (p[0] >= 0 && p[0] != ci->eye_type) {
+        const int cur = eye_rot_ffl(ci->eye_type), want = eye_rot_ffl(p[0]);
+        eye_off = p[0] < 62 ? eye_off + cur - want : eye_off - cur + want;
+    }
+    if (eye_off != 0) {
+        const int v = ci->eye_rotate + eye_off;
+        ci->eye_rotate = (uint8_t)(v < 0 ? 0 : v > 7 ? 7 : v);
+    }
+    if (ci->mouth_type == 48)
+        ci->mouth_scale = 8;
+    if (expression == 67) {
+        const int v = ci->mouth_aspect < 3 ? 0 : ci->mouth_aspect - 3;
+        ci->mouth_aspect = (uint8_t)(v > 6 ? 6 : v);
+    }
+    ci->eyebrow_y = (uint8_t)(ci->eyebrow_y + p[4]);
+    if (p[3] != 0) {
+        const int v = ci->eyebrow_rotate + p[3];
+        ci->eyebrow_rotate = (uint8_t)(v < 0 ? 0 : v > 11 ? 11 : v);
+    }
+}
 
 typedef enum origin { ORIGIN_CENTER, ORIGIN_LEFT, ORIGIN_RIGHT } origin;
 
@@ -289,9 +440,16 @@ static void draw_part(mii3d_renderer_t *r, m3_target *t, float res, const part *
 
 enum { FACE_EYES = 1, FACE_BROWS = 2, FACE_MOUTH = 4, FACE_MUSTACHE = 8, FACE_MOLE = 16, FACE_ALL = 31 };
 
-static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_target *t, unsigned parts)
+static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_target *t, unsigned parts,
+                         const face_sel *sel)
 {
     const float res = 256.0f, unit = res / 64.0f;
+    face_sel own;
+    if (!sel) {
+        mii_charinfo_t unused;
+        apply_expression(ci, 0, &unused, &own);
+        sel = &own;
+    }
     if (t->rgba)
         m3_clear(t, 0x00000000u);
     m3_material m;
@@ -304,19 +462,30 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
         const float y = 18.451525f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->eye_y;
         const float w = 342.0f / 64.0f * scale, h = 288.0f / 64.0f * scale * sy;
         const float ang = rot2deg(ci->eye_rotate + (32 - k_eye_rot_offset[ci->eye_type % 80]));
-        const mii3d_image_t *tex = get_tex(r, SLOT_EYE, ci->eye_type);
-        if (tex) {
+        for (int side = 0; side < 2; side++) {
+            /* side 0: the left eye (at 32 + spacing), 1: the right one; they
+             * differ only in a wink */
+            const int index = side ? sel->eye_r : sel->eye_l;
+            const int other = side ? sel->eye_l : sel->eye_r;
+            const mii3d_image_t *tex = get_tex(r, side && index != other ? SLOT_EYE2 : SLOT_EYE, index);
+            if (!tex)
+                continue;
             memset(&m, 0, sizeof(m));
             m.tex = tex;
-            m.mode = M3_MOD_LAYERED_RGB;
-            /* r: the eyeshadow band (only eye type 20 has one), which the
-             * Switch 2 draws light blue; the lines and pupil are r = g = b = 0 */
-            m3_rgb(m.c[0], 0x00FFFFu, 1.0f);
-            white(m.c[1]);
-            common(m.c[2], ci->eye_color);
-            p = (part){ unit * (32.0f + spacing), y * unit, w * unit, h * unit, 360.0f - ang, ORIGIN_LEFT };
-            draw_part(r, t, res, &p, &m);
-            p = (part){ unit * (32.0f - spacing), y * unit, w * unit, h * unit, ang, ORIGIN_RIGHT };
+            if (side ? sel->eye_r_direct : sel->eye_l_direct) {
+                m.mode = M3_MOD_DIRECT;
+            } else {
+                m.mode = M3_MOD_LAYERED_RGB;
+                /* r: the eyeshadow band (only eye type 20 has one), which the
+                 * Switch 2 draws light blue; the lines and pupil are r = g = b = 0 */
+                m3_rgb(m.c[0], 0x00FFFFu, 1.0f);
+                white(m.c[1]);
+                common(m.c[2], ci->eye_color);
+            }
+            if (side == 0)
+                p = (part){ unit * (32.0f + spacing), y * unit, w * unit, h * unit, 360.0f - ang, ORIGIN_LEFT };
+            else
+                p = (part){ unit * (32.0f - spacing), y * unit, w * unit, h * unit, ang, ORIGIN_RIGHT };
             draw_part(r, t, res, &p, &m);
         }
     }
@@ -326,8 +495,8 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
         const float spacing = TEX_SCALE_X * ci->eyebrow_x;
         const float y = 16.549807f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->eyebrow_y;
         const float w = 324.0f / 64.0f * scale, h = 288.0f / 64.0f * scale * sy;
-        const float ang = rot2deg(ci->eyebrow_rotate + k_eyebrow_rot_offset[ci->eyebrow_type % 24]);
-        const mii3d_image_t *tex = get_tex(r, SLOT_EYEBROW, ci->eyebrow_type);
+        const float ang = rot2deg(ci->eyebrow_rotate + k_eyebrow_rot_offset[ci->eyebrow_type % 28]);
+        const mii3d_image_t *tex = get_tex(r, SLOT_EYEBROW, sel->eyebrow);
         if (tex) {
             memset(&m, 0, sizeof(m));
             m.tex = tex;
@@ -343,14 +512,18 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
     if (parts & FACE_MOUTH) {
         const float scale = scale2dim(ci->mouth_scale), sy = 0.12f * ci->mouth_aspect + 0.64f;
         const float y = 29.25885f + RFL_Y_OFFSET * TEX_SCALE_Y * ci->mouth_y;
-        const mii3d_image_t *tex = get_tex(r, SLOT_MOUTH, ci->mouth_type);
+        const mii3d_image_t *tex = get_tex(r, SLOT_MOUTH, sel->mouth);
         if (tex) {
             memset(&m, 0, sizeof(m));
             m.tex = tex;
-            m.mode = M3_MOD_LAYERED_RGB;
-            common(m.c[0], ci->mouth_color);
-            m3_rgb(m.c[1], mii_upper_lip_color_rgb(ci->mouth_color), 1.0f);
-            white(m.c[2]);
+            if (sel->mouth_direct) {
+                m.mode = M3_MOD_DIRECT; /* the expressions' tongues and such */
+            } else {
+                m.mode = M3_MOD_LAYERED_RGB;
+                common(m.c[0], ci->mouth_color);
+                m3_rgb(m.c[1], mii_upper_lip_color_rgb(ci->mouth_color), 1.0f);
+                white(m.c[2]);
+            }
             p = (part){ unit * 32.0f, y * unit, 396.0f / 64.0f * scale * unit, 288.0f / 64.0f * scale * sy * unit, 0, ORIGIN_CENTER };
             draw_part(r, t, res, &p, &m);
         }
@@ -391,7 +564,7 @@ static void compose_face(mii3d_renderer_t *r, const mii_charinfo_t *ci, m3_targe
 /* The fields the face and faceline textures depend on: Miis that differ
  * only in hair, nose, glasses, face shape or body reuse the textures
  * (this is what makes a grid of hair or nose icons cheap). */
-static void face_key(const mii_charinfo_t *ci, uint8_t out[32])
+static void face_key(const mii_charinfo_t *ci, int expression, uint8_t out[33])
 {
     const uint8_t k[] = {
         ci->eye_type, ci->eye_color, ci->eye_scale, ci->eye_aspect, ci->eye_rotate, ci->eye_x, ci->eye_y,
@@ -403,6 +576,7 @@ static void face_key(const mii_charinfo_t *ci, uint8_t out[32])
         ci->faceline_color, ci->faceline_wrinkle, ci->faceline_make, ci->gender,
     };
     memcpy(out, k, 32);
+    out[32] = (uint8_t)expression;
 }
 
 /* ---- faceline texture: skin, wrinkles, makeup, texture beards ----------- */
@@ -462,7 +636,7 @@ mii3d_result_t mii3d_render_face_texture(mii3d_renderer_t *r, const mii_charinfo
     if (!r || !mii || !rgba || size <= 0)
         return MII3D_ERR_ARGUMENT;
     m3_target t = { size, size, rgba, NULL };
-    compose_face(r, mii, &t, FACE_ALL);
+    compose_face(r, mii, &t, FACE_ALL, NULL);
     return MII3D_OK;
 }
 
@@ -782,10 +956,14 @@ static mii3d_result_t render_head_1x(mii3d_renderer_t *r, const mii_charinfo_t *
         return MII3D_ERR_MEMORY;
 
     uint8_t key[sizeof(r->composed_for)];
-    face_key(ci, key);
+    const int expression = view->expression > 0 && view->expression < mii3d_expression_count(r->res) ? view->expression : 0;
+    face_key(ci, expression, key);
     if (!r->composed_valid || memcmp(r->composed_for, key, sizeof(key)) != 0 || r->face_tex.width != fs) {
         m3_target face = { fs, fs, r->face_tex.pixels, NULL };
-        compose_face(r, ci, &face, FACE_ALL);
+        mii_charinfo_t eci;
+        face_sel sel;
+        apply_expression(ci, expression, &eci, &sel);
+        compose_face(r, &eci, &face, FACE_ALL, &sel);
         m3_target fl = { fs / 2, fs, r->faceline_tex.pixels, NULL };
         r->composed_has_faceline = compose_faceline(r, ci, &fl);
         memcpy(r->composed_for, key, sizeof(key));
@@ -1059,13 +1237,13 @@ static mii3d_result_t part_icon_compose(mii3d_renderer_t *r, const mii_charinfo_
     ci.mole_type = 1;                      ci.mole_scale = 8;
 
     switch (part) {
-    case MII3D_ICON_EYES:     compose_face(r, &ci, t, FACE_EYES); break;
-    case MII3D_ICON_EYEBROWS: compose_face(r, &ci, t, FACE_BROWS); break;
-    case MII3D_ICON_EYE:      compose_face(r, &ci, t, FACE_EYES); break;
-    case MII3D_ICON_EYEBROW:  compose_face(r, &ci, t, FACE_BROWS); break;
-    case MII3D_ICON_MOUTH:    compose_face(r, &ci, t, FACE_MOUTH); break;
-    case MII3D_ICON_MUSTACHE: compose_face(r, &ci, t, FACE_MUSTACHE); break;
-    case MII3D_ICON_MOLE:     compose_face(r, &ci, t, FACE_MOLE); break;
+    case MII3D_ICON_EYES:     compose_face(r, &ci, t, FACE_EYES, NULL); break;
+    case MII3D_ICON_EYEBROWS: compose_face(r, &ci, t, FACE_BROWS, NULL); break;
+    case MII3D_ICON_EYE:      compose_face(r, &ci, t, FACE_EYES, NULL); break;
+    case MII3D_ICON_EYEBROW:  compose_face(r, &ci, t, FACE_BROWS, NULL); break;
+    case MII3D_ICON_MOUTH:    compose_face(r, &ci, t, FACE_MOUTH, NULL); break;
+    case MII3D_ICON_MUSTACHE: compose_face(r, &ci, t, FACE_MUSTACHE, NULL); break;
+    case MII3D_ICON_MOLE:     compose_face(r, &ci, t, FACE_MOLE, NULL); break;
     case MII3D_ICON_NOSE: {
         /* the nose's line drawing (the Switch shows these), in black */
         if (t->rgba)

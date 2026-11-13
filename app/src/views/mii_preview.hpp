@@ -37,6 +37,8 @@ class MiiPreview : public brls::View
     // While *source is true the Mii turns smoothly back to face the front
     // (then it is set to false).
     void setFrontSource(bool* source) { frontSource = source; }
+    // The expression to draw the Mii with (the editor's L menu); 0: normal.
+    void setExpressionSource(const int* source) { expressionSource = source; }
     // Previews with the same share key (the editor's screens) use one
     // render: a new screen shows the latest picture at once instead of
     // nothing, and a screen shown again redraws if another one rendered.
@@ -101,6 +103,9 @@ class MiiPreview : public brls::View
     float pitch = 0.0f;
     float* pitchSource = nullptr;
     bool* frontSource = nullptr;
+    const int* expressionSource = nullptr;
+    int expression() const { return expressionSource ? *expressionSource : 0; }
+    int requestedExpression = 0;
     bool stage = false;
     bool compact = false;
     bool interactive = true;

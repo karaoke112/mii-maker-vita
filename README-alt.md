@@ -32,7 +32,9 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   category menu, nickname and Done button; each category opens a page with
   Types / Position / Color tabs (L / R) and picture tiles; Style, Body and
   Favorite Color are single prompt pages. The right stick or a finger drag
-  turns the Mii. "Add Mii" starts from scratch, offers ten look-alikes
+  turns the Mii; L shows it with an **expression** (a checkmark list: 19
+  with an FFLRes, 60 with Miitomo's AFLRes, such as winks, hearts, cat and
+  dog; only the preview, Miis have no expression of their own). "Add Mii" starts from scratch, offers ten look-alikes
   (curated, or any combination at all), and has two generators from
   InfiniMii (ported from MiiJS and checked against it): **Kid-o-matic**
   shows a Mii at six stages of life, newborn to adult, and the **Child
@@ -67,7 +69,8 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   resources (including untiling Wii U GPU-tiled textures) and draws a Mii,
   head and (with `FFLBodyRes.dat`) body, with the Switch's lighting model in
   a small software rasterizer, so
-  it runs the same on the Vita and on a PC.
+  it runs the same on the Vita and on a PC. It also draws FFL's facial
+  expressions (the 70 of Miitomo's resource, as FFL sets them up).
   On the Vita the app draws with the GPU (GXM) when the shader compiler
   (`libshacccg.suprx`) is installed, otherwise in software on worker threads;
   drawn icons are kept in one cache file.
