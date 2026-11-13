@@ -87,6 +87,10 @@ bool MiiLibrary::load()
         mii_result_t r = mii_nfdb_decode(&db, data.data(), data.size());
         if (r == MII_OK) {
             brls::Logger::info("Loaded {} Miis from {}", db.count, path);
+            // the Wii copy, for game ports, if an older version made none
+            struct stat st;
+            if (stat((paths::wiiDir() + "/RFL_DB.dat").c_str(), &st) != 0)
+                exportWii();
             return true;
         }
         brls::Logger::error("{}: {}", path, mii_result_string(r));
@@ -114,7 +118,35 @@ bool MiiLibrary::save()
         brls::Logger::error("Could not replace {}", path);
         return false;
     }
+    exportWii();
     return true;
+}
+
+// The first 100 Miis as a Wii Mii database, where Wii game ports can read
+// them (ux0:data/mii/wii/RFL_DB.dat, the Wii's /shared2/menu/FaceLib/).
+// Parts the Wii lacks become its default ones there.
+bool MiiLibrary::exportWii() const
+{
+    static uint8_t miis[MII_WII_DB_MAX][MII_WII_DATA_SIZE];
+    static uint8_t file[MII_WII_DB_SIZE];
+    mii_wii_info_t info;
+    mii_wii_info_init_default(&info);
+    std::memcpy(info.system_id, authorId, sizeof(info.system_id));
+    int n = 0;
+    for (int i = 0; i < count() && n < MII_WII_DB_MAX; i++) {
+        mii_charinfo_t ci;
+        if (get(i, &ci) && mii_wii_encode(&ci, &info, miis[n]) == MII_OK)
+            n++;
+    }
+    if (mii_wii_db_write(miis, n, file, sizeof(file)) != MII_OK)
+        return false;
+    const std::string dir = paths::wiiDir(), path = dir + "/RFL_DB.dat", tmp = path + ".tmp";
+    if (!writeFile(tmp, file, sizeof(file))) {
+        brls::Logger::error("Could not write {}", tmp);
+        return false;
+    }
+    std::remove(path.c_str());
+    return std::rename(tmp.c_str(), path.c_str()) == 0;
 }
 
 bool MiiLibrary::get(int index, mii_charinfo_t* out) const

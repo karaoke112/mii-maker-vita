@@ -37,6 +37,12 @@ const std::string& datDir()
     return d;
 }
 
+const std::string& wiiDir()
+{
+    static const std::string d = miiDir() + "/wii";
+    return d;
+}
+
 const std::string& iconCache()
 {
     static const std::string f = appDir() + "/icons.cache";
@@ -72,6 +78,7 @@ void prepare()
     makeDir(kRoot);
     makeDir(miiDir());
     makeDir(miiDir() + "/export");
+    makeDir(wiiDir());
     makeDir(miiDir() + "/import");
     makeDir(miiDir() + "/qr");
     makeDir(appDir());
