@@ -36,8 +36,6 @@ void Settings::load()
             theme = !std::strcmp(value, "dark") ? ui::Theme::DARK
                 : !std::strcmp(value, "dark2")  ? ui::Theme::DARK_BLUE
                                                 : ui::Theme::LIGHT;
-        else if (!std::strcmp(key, "renderer"))
-            gpu = std::strcmp(value, "software") != 0;
         else if (!std::strcmp(key, "skin"))
             skinTone = (uint8_t)std::min(9, std::max(0, std::atoi(value)));
         else if (!std::strcmp(key, "music"))
@@ -54,7 +52,6 @@ void Settings::save() const
     if (!f)
         return;
     std::fprintf(f, "theme=%s\n", theme == ui::Theme::DARK ? "dark" : theme == ui::Theme::DARK_BLUE ? "dark2" : "light");
-    std::fprintf(f, "renderer=%s\n", gpu ? "gpu" : "software");
     std::fprintf(f, "qr=%s\n", qrSwitch2 ? "switch2" : "3ds");
     std::fprintf(f, "skin=%d\n", skinTone);
     std::fprintf(f, "music=%d\n", music);

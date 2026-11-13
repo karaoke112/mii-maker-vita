@@ -68,8 +68,6 @@ brls::View* StartActivity::createContentView()
         preview->setBackdrop(ui::tile());
         preview->setFraming(lookalike ? MiiPreview::Framing::BUST : MiiPreview::Framing::FULL_BODY);
         preview->setDimensions(w, h);
-        if (!lookalike)
-            preview->setZoom(1.35f);
         tile->addView(preview);
         tile->registerClickAction([this, i](brls::View*) {
             OnPicked cb = onPicked;

@@ -32,9 +32,10 @@ class LibraryActivity : public brls::Activity
     void addScanned(const mii_charinfo_t& mii);
     void showAddMenu();
     void showSendMenu();
+    void showReceiveMenu();
     void showSettings(int focus = 0);
     void rebuildForTheme();
-    enum class Pick { NONE, EXPORT, QR, SEND, PARENT1, PARENT2 };
+    enum class Pick { NONE, EXPORT, QR, SEND, KID, PARENT1, PARENT2 };
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
 
@@ -56,6 +57,7 @@ class LibraryActivity : public brls::Activity
     brls::Box* grid = nullptr;
     brls::View* createButton = nullptr;
     brls::View* rootFrame = nullptr; // holds the START (settings) action
+    brls::Label* countLabel = nullptr;
     brls::ActionIdentifier settingsActionId = 0;
     bool settingsShown = false;
     void settingsAction();

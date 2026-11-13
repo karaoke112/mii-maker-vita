@@ -23,12 +23,21 @@ ChildActivity::ChildActivity(const mii_charinfo_t& a, const mii_charinfo_t& b, s
     generate();
 }
 
+ChildActivity::ChildActivity(const mii_charinfo_t& mii, std::function<void()> onClosed)
+    : parentA(mii)
+    , parentB(mii)
+    , kid(true)
+    , onClosed(std::move(onClosed))
+{
+    generate();
+}
+
 void ChildActivity::generate()
 {
     std::array<mii_create_id_t, child::kStages> ids;
     for (mii_create_id_t& id : ids)
         MiiLibrary::instance().newCreateId(&id);
-    stages = child::generate(parentA, parentB, ids);
+    stages = kid ? child::growUp(parentA, ids) : child::generate(parentA, parentB, ids);
     saved.fill(false);
 }
 
@@ -49,7 +58,8 @@ brls::View* ChildActivity::createContentView()
     page->setJustifyContent(brls::JustifyContent::CENTER);
     page->setGrow(1);
 
-    page->addView(makePrompt(brls::getStr("child/prompt", miiName(parentA), miiName(parentB))));
+    page->addView(makePrompt(kid ? brls::getStr("child/prompt_kid", miiName(parentA))
+                                 : brls::getStr("child/prompt", miiName(parentA), miiName(parentB))));
 
     static const char* const kStageNames[child::kStages] = { "child/stage0", "child/stage1", "child/stage2",
                                                              "child/stage3", "child/stage4", "child/stage5" };
@@ -81,7 +91,6 @@ brls::View* ChildActivity::createContentView()
         preview->setBackdrop(ui::tile());
         // the whole Mii, all six in one framing: the child grows
         preview->setFraming(MiiPreview::Framing::FULL_BODY);
-        preview->setZoom(1.35f);
         preview->setDimensions(w, h);
         tile->addView(preview);
         tile->registerClickAction([this, i](brls::View*) {
@@ -117,8 +126,8 @@ brls::View* ChildActivity::createContentView()
     refreshLabels();
 
     auto* frame = new brls::AppletFrame(page);
-    frame->setTitle("child/title"_i18n);
-    frame->registerAction("child/again"_i18n, brls::BUTTON_Y, [this](brls::View*) {
+    frame->setTitle(kid ? "child/title_kid"_i18n : "child/title"_i18n);
+    frame->registerAction(kid ? "child/again_kid"_i18n : "child/again"_i18n, brls::BUTTON_Y, [this](brls::View*) {
         generate(); // the previews notice the change and redraw
         refreshLabels();
         return true;
