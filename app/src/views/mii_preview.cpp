@@ -185,7 +185,10 @@ void MiiPreview::easeFrame(float dt)
             return;
         f.leader = this;
     }
-    if (!f.set) {
+    // small tiles (look-alikes, the Child Generator's stages) go straight
+    // to a new Mii's framing: easing there drew every tile again at each
+    // step on the way, at heights in between
+    if (!f.set || compact) {
         f.pivot = pivot;
         f.zoom = zoom;
         f.set = true;
