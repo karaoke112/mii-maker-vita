@@ -56,11 +56,14 @@ class LibraryActivity : public brls::Activity
 
     brls::Box* grid = nullptr;
     brls::View* createButton = nullptr;
+    std::vector<brls::View*> topButtons; // Add, Send, Receive
+    bool batchingHints = false;           // cardActions for every card: one hints update
     brls::View* rootFrame = nullptr; // holds the START (settings) action
     brls::Label* countLabel = nullptr;
-    brls::ActionIdentifier settingsActionId = 0;
     bool settingsShown = false;
-    void settingsAction();
+    void settingsAction(bool shown);
+    void updateSettingsAction();
+    void allCardActions();
     brls::Label* empty = nullptr;
     brls::Label* pickLabel = nullptr;
     Pick pick = Pick::NONE;
