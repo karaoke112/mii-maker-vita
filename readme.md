@@ -4,7 +4,7 @@
 
 Mii Maker Vita is a Mii Maker clone for PlayStation Vita! You can, of course, make your own Miis, but also send your Miis and receive other people's Miis! It is designed to mimic the Nintendo Switch Mii Maker in both aesthetics and function. Miis are rendered with the official renderer and saved in the official format.
 
-You can store unlimited Miis, however only the first 100 will be backed up and stored in Wii format. Simply reorder your Miis to keep your favorites in the Wii catalog. This only matters if you have other software that supports reading Miis from `ux0:`.
+You can store 200 Miis (to be increased), however only the first 100 will be backed up and stored in Wii format. Simply reorder your Miis to keep your favorites in the Wii catalog. This only matters if you have other software that supports reading Miis from `ux0:`, and also needs them in native Wii format.
 
 
 # Full Feature Set
