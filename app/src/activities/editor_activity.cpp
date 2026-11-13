@@ -278,9 +278,10 @@ bool EditorActivity::save()
     }
     session->dirty = false;
     auto cb = onSaved;
-    brls::Application::popActivity(brls::TransitionAnimation::NONE, [cb] {
+    const mii_charinfo_t saved = mii;
+    brls::Application::popActivity(brls::TransitionAnimation::NONE, [cb, saved] {
         if (cb)
-            cb();
+            cb(saved);
     });
     return true;
 }
