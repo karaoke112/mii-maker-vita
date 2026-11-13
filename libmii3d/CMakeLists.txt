@@ -12,6 +12,7 @@ add_library(mii3d STATIC
     src/gx2_untile.c
     src/raster.c
     src/charmodel.c
+    src/pose.c
 )
 target_include_directories(mii3d PUBLIC include)
 target_link_libraries(mii3d PUBLIC mii ZLIB::ZLIB)

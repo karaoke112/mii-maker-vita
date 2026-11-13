@@ -2,6 +2,7 @@
 
 #include "activities/child_activity.hpp"
 #include "activities/editor_activity.hpp"
+#include "activities/mii_view_activity.hpp"
 #include "activities/qr_activity.hpp"
 #include "activities/trade_activity.hpp"
 #include "activities/start_activity.hpp"
@@ -63,6 +64,8 @@ brls::View* LibraryActivity::createContentView()
     add->setFontSize(24);
     add->setMarginRight(20);
     add->registerClickAction([this](brls::View*) {
+        if (busy())
+            return true; // (a tap while choosing a Mii or holding one)
         showAddMenu();
         return true;
     });
@@ -77,6 +80,8 @@ brls::View* LibraryActivity::createContentView()
     send->setHeight(64);
     send->setFontSize(24);
     send->registerClickAction([this](brls::View*) {
+        if (busy())
+            return true;
         showSendMenu();
         return true;
     });
@@ -88,6 +93,8 @@ brls::View* LibraryActivity::createContentView()
     receive->setHeight(64);
     receive->setFontSize(24);
     receive->registerClickAction([this](brls::View*) {
+        if (busy())
+            return true;
         showReceiveMenu();
         return true;
     });
@@ -162,7 +169,7 @@ brls::View* LibraryActivity::createContentView()
     });
     frame->registerAction("", brls::BUTTON_B, [this](brls::View*) {
         if (pick != Pick::NONE)
-            setPick(Pick::NONE);
+            brls::sync([this] { setPick(Pick::NONE); });
         return true;
     }, true);
     return frame;
@@ -208,6 +215,28 @@ void LibraryActivity::openEditor(const mii_charinfo_t& start)
         brls::TransitionAnimation::NONE);
 }
 
+// Cross on a Mii: its own screen. Back here, the cursor is on the Mii it
+// showed last (L / R move through the list there).
+void LibraryActivity::openView(int index)
+{
+    brls::Application::pushActivity(new MiiViewActivity(miis, index, [this](int shown, bool changed) {
+        if (changed)
+            rebuild();
+        if (shown >= 0 && shown < (int)cards.size())
+            brls::Application::giveFocus(cards[shown]);
+    }),
+        brls::TransitionAnimation::NONE);
+}
+
+// Up from the first row: the Add Mii button, except while choosing a Mii
+// or holding one (the cursor stays in the list then).
+void LibraryActivity::upRoutes()
+{
+    const bool toButtons = !busy();
+    for (int i = 0; i < std::min((int)cards.size(), kColumns); i++)
+        cards[i]->setCustomNavigationRoute(brls::FocusDirection::UP, toButtons ? createButton : cards[i]);
+}
+
 void LibraryActivity::rebuild()
 {
     MiiLibrary& lib = MiiLibrary::instance();
@@ -218,7 +247,7 @@ void LibraryActivity::rebuild()
     cards.clear();
     thumbs.clear();
     miis.clear();
-    miis.reserve(MII_NFDB_MAX_MIIS); // previews keep pointers into this vector
+    miis.reserve(MiiLibrary::kMax); // previews keep pointers into this vector
     for (int i = 0; i < lib.count(); i++) {
         mii_charinfo_t ci;
         if (lib.get(i, &ci))
@@ -230,8 +259,9 @@ void LibraryActivity::rebuild()
 
     brls::Box* row = nullptr;
     held = heldAt = -1;
+    // while choosing a Mii, the cursor stays on the Miis
     for (brls::View* b : topButtons)
-        b->setFocusable(true);
+        b->setFocusable(pick == Pick::NONE);
     if (rootFrame)
         updateSettingsAction(); // in case a Mii was held, or the mode changed
     cardActionIds.assign(miis.size(), {});
@@ -284,7 +314,7 @@ void LibraryActivity::rebuild()
                 setPick(Pick::NONE);
                 brls::Application::pushActivity(new QrShowActivity(mii), brls::TransitionAnimation::NONE);
             } else {
-                openEditor(miis[index]);
+                openView(index);
             }
             return true;
         });
@@ -308,14 +338,8 @@ void LibraryActivity::rebuild()
     }
     // up from the first row: the Add Mii button; down from the buttons: the
     // first Mii
-    for (int i = 0; i < std::min(n, kColumns); i++)
-        cards[i]->setCustomNavigationRoute(brls::FocusDirection::UP, createButton);
-    for (brls::View* b : topButtons) {
-        if (n > 0)
-            b->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards[0]);
-        else
-            b->setCustomNavigationRoute(brls::FocusDirection::DOWN, nullptr);
-    }
+    upRoutes();
+    buttonRoutes();
     allCardActions();
     thumbPriorities(0);
 }
@@ -376,13 +400,14 @@ void LibraryActivity::cardActions(int index)
                 : pick == Pick::QR                                      ? "library/qr"_i18n
                 : pick == Pick::SEND                                    ? "library/send_this"_i18n
                 : pick == Pick::PARENT1 || pick == Pick::PARENT2 || pick == Pick::KID ? "library/child_choose"_i18n
-                                                                        : "library/edit"_i18n);
+                                                                        : "library/view"_i18n);
         if (pick != Pick::NONE) {
             // choosing a Mii: Circle ends it (Done after exporting several);
             // no deleting or picking up meanwhile
             ids.push_back(card->registerAction(pick == Pick::EXPORT ? "library/pick_done"_i18n : "hints/cancel"_i18n,
                 brls::BUTTON_B, [this](brls::View*) {
-                    setPick(Pick::NONE);
+                    // after this action: leaving the mode replaces it
+                    brls::sync([this] { setPick(Pick::NONE); });
                     return true;
                 }));
             if (!batchingHints)
@@ -430,6 +455,7 @@ void LibraryActivity::startHold(int index)
     updateSettingsAction();
     for (brls::View* b : topButtons)
         b->setFocusable(false);
+    upRoutes();
     allCardActions();
 }
 
@@ -477,7 +503,8 @@ void LibraryActivity::endHold(bool place)
     held = heldAt = -1;
     updateSettingsAction();
     for (brls::View* b : topButtons)
-        b->setFocusable(true);
+        b->setFocusable(pick == Pick::NONE);
+    upRoutes();
     for (brls::View* c : cards) {
         static_cast<MiiCard*>(c)->overlay = nullptr;
         c->setHideHighlight(false);
@@ -568,6 +595,7 @@ std::string LibraryActivity::parent2Prompt() const
 // "Choose a Mii" mode: the next card pressed is exported instead of edited.
 void LibraryActivity::setPick(Pick mode)
 {
+    const bool wasChoosing = pick != Pick::NONE;
     pick = mode;
     pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
             : mode == Pick::QR              ? "library/pick_qr"_i18n
@@ -577,10 +605,28 @@ void LibraryActivity::setPick(Pick mode)
             : mode == Pick::PARENT2         ? parent2Prompt()
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
-    rebuild();
+    // The cards stay as they are (this often runs from a card's own action,
+    // which must not delete that card): only their buttons, the top
+    // buttons and the routes change.
+    for (brls::View* b : topButtons)
+        b->setFocusable(mode == Pick::NONE);
+    buttonRoutes();
+    upRoutes();
+    updateSettingsAction();
+    allCardActions();
     // choosing a Mii starts on the first one
-    if (mode != Pick::NONE && !cards.empty())
+    if (mode != Pick::NONE && !wasChoosing && !cards.empty())
         brls::Application::giveFocus(cards[0]);
+}
+
+// Down from the top buttons: the first Mii.
+void LibraryActivity::buttonRoutes()
+{
+    for (brls::View* b : topButtons) {
+        if (!b->isFocusable())
+            continue; // (borealis refuses routes on those)
+        b->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards.empty() ? nullptr : cards[0]);
+    }
 }
 
 // Mii QR codes need the user's own copy of the key (like the .dat files).

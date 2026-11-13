@@ -16,6 +16,7 @@
 #include <vector>
 
 struct mii3d_res;
+struct mii3d_poses;
 struct mii3d_renderer;
 
 // Renders Miis in 3D on worker threads, using resource files the user
@@ -64,6 +65,8 @@ class HeadRenderer
         uint32_t background = 0;
         // FFL's expressions (0: the normal face); see expressionCount()
         int expression = 0;
+        // whole-Mii views: 0 standing, n the pose of animation n - 1 (see poseCount)
+        int pose = 0;
     };
 
     static HeadRenderer& instance();
@@ -86,6 +89,12 @@ class HeadRenderer
     // How many expressions the installed face resource has: 70 with
     // Miitomo's AFLRes, 19 with an FFLRes, 1 without one.
     int expressionCount() const;
+    // The poses from MiiBodyMiddle.bfres (Mario Kart 8's), when installed
+    // with FFLBodyRes.dat: how many, and each one's animation name.
+    int poseCount() const;
+    std::string poseName(int index) const;
+    // How high the neck is in a pose, a fraction of standing (1 for pose 0)
+    float poseNeck(int gender, int pose) const;
     const std::string& status() const { return statusText; }
     // How long the latest renders took, in ms (quick preview pass, full
     // preview pass, icon), for the SELECT timing readout.
@@ -130,6 +139,10 @@ class HeadRenderer
     mii3d_res* res = nullptr;
     std::vector<uint8_t> bodyFile;
     mii3d_res* bodyRes = nullptr;
+    std::vector<uint8_t> posesFile;
+    mii3d_poses* poses = nullptr;
+    mutable std::map<int, float> neckCache; // UI thread
+    void loadPoses(const std::string& dataDir);
     std::vector<mii3d_renderer*> renderers; // one per worker
     std::string statusText;
     std::string cacheDir; // the cache file's path (empty: no cache file)

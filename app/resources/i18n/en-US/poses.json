@@ -1,0 +1,17 @@
+{
+  "title": "Pose",
+  "hint": "Pose",
+  "standing": "Standing",
+  "need_file": "Poses come from Mario Kart 8's MiiBodyMiddle.bfres (your own copy, from your Wii U): copy it to ux0:data/mii-maker-vita/dat/ beside FFLBodyRes.dat.",
+  "need_body": "Poses need FFLBodyRes.dat and Mario Kart 8's MiiBodyMiddle.bfres (your own copies) in ux0:data/mii-maker-vita/dat/.",
+  "names": {
+    "Rps": "Rock-Paper-Scissors",
+    "GetMii": "Got a Mii",
+    "GetDupMii": "Got a Mii Again",
+    "InFamily": "Family",
+    "InFamilyClap": "Family Clap",
+    "InFamilyEmbarrassed": "Family Embarrassed",
+    "ShoseL": "Shose Left",
+    "ShoseR": "Shose Right"
+  }
+}

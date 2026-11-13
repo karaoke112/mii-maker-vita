@@ -6,6 +6,7 @@
 #include <string>
 
 struct mii3d_res;
+struct mii3d_poses;
 
 // Draws Mii previews with the Vita's GPU (GXM), using the shader compiler
 // from the console (libshacccg.suprx, installed by ShaRKF00D) to build its
@@ -33,7 +34,9 @@ class GpuRenderer
     // `background` (0xRRGGBB). Returns a NanoVG image id (owned here), or -1
     // on failure. Main thread, outside a frame.
     int render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
-        bool fullBody, uint32_t background, int expression = 0);
+        bool fullBody, uint32_t background, int expression = 0, int pose = 0);
+    // MiiBodyMiddle.bfres's poses (or none), after init.
+    void setPoses(const mii3d_poses* poses);
     // Draws a transparent icon (square, any `size`) and reads it back into
     // `rgba` (size*size*4, not premultiplied), with the GPU's 4x MSAA for
     // smooth edges. Main thread, outside a frame.

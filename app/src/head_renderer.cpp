@@ -51,8 +51,8 @@ static uint64_t hashKey(const HeadRenderer::Spec& spec, int pass)
         mix(bytes, sizeof(bytes));
     else
         mix(&spec.mii, sizeof(spec.mii));
-    const int v[10] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
-                        spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0, spec.expression };
+    const int v[11] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
+                        spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0, spec.expression, spec.pose };
     mix(v, sizeof(v));
     return h;
 }
@@ -96,6 +96,7 @@ HeadRenderer::~HeadRenderer()
         mii3d_renderer_destroy(r);
     mii3d_res_close(res);
     mii3d_res_close(bodyRes);
+    mii3d_poses_close(poses);
 }
 
 void HeadRenderer::init(const std::string& dataDir, const std::string& iconCacheFile, const std::string& gpuLog,
@@ -132,10 +133,14 @@ void HeadRenderer::init(const std::string& dataDir, const std::string& iconCache
         statusText = std::string("Face resource: ") + name;
         brls::Logger::info("Loaded face resource {}", path);
         loadBody(dataDir);
+        if (bodyRes)
+            loadPoses(dataDir);
         resourceSalt = kIconCacheVersion * 1000003u + file.size() * 31u + bodyFile.size() + (uint64_t)name[0];
         if (useGpu) {
             GpuRenderer& gpu = GpuRenderer::instance();
             gpuOn = gpu.init(res, bodyRes, gpuLog);
+            if (gpuOn)
+                gpu.setPoses(poses);
             statusText += gpuOn ? ". Renderer: GPU" : ". Renderer: software (" + gpu.reason() + ")";
         }
         // before the workers start: they own the renderers afterwards
@@ -172,6 +177,45 @@ void HeadRenderer::loadBody(const std::string& dataDir)
     statusText += ", body resource: FFLBodyRes.dat";
     brls::Logger::info("Loaded body resource {}", path);
 }
+
+// Poses are optional too: Mario Kart 8's rigged bodies and animations.
+void HeadRenderer::loadPoses(const std::string& dataDir)
+{
+    const std::string path = dataDir + "/MiiBodyMiddle.bfres";
+    if (!readFile(path, &posesFile))
+        return;
+    mii3d_poses_t* opened = nullptr;
+    mii3d_result_t r = mii3d_poses_open(&opened, posesFile.data(), posesFile.size());
+    if (r != MII3D_OK) {
+        brls::Logger::error("{}: {}", path, mii3d_result_string(r));
+        statusText += " (MiiBodyMiddle.bfres is not a file this app can read)";
+        posesFile.clear();
+        return;
+    }
+    poses = opened;
+    for (mii3d_renderer* r : renderers)
+        mii3d_renderer_set_poses(r, poses);
+    statusText += ", poses: MiiBodyMiddle.bfres";
+    brls::Logger::info("Loaded {} poses from {}", mii3d_poses_count(poses), path);
+}
+
+float HeadRenderer::poseNeck(int gender, int pose) const
+{
+    if (!poses || pose <= 0)
+        return 1.0f;
+    // asked every frame a stage is drawn: worked out once per pose
+    const int key = pose * 2 + (gender ? 1 : 0);
+    auto it = neckCache.find(key);
+    if (it != neckCache.end())
+        return it->second;
+    const float v = mii3d_poses_neck(poses, gender, pose - 1, -1.0f);
+    neckCache[key] = v;
+    return v;
+}
+
+int HeadRenderer::poseCount() const { return poses ? mii3d_poses_count(poses) : 0; }
+
+std::string HeadRenderer::poseName(int index) const { return poses ? mii3d_poses_name(poses, index) : ""; }
 
 void HeadRenderer::request(const void* owner, const Spec& spec, Callback cb)
 {
@@ -316,7 +360,7 @@ void HeadRenderer::pumpGpuPreviews()
         const Spec& sp = job.spec;
         const brls::Time started = brls::getCPUTimeUsec();
         const int image = gpu.render(job.owner, sp.mii, sp.size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes,
-            sp.background & 0xFFFFFFu, sp.expression);
+            sp.background & 0xFFFFFFu, sp.expression, sp.pose);
         lastUs[1] = (int)(brls::getCPUTimeUsec() - started);
         if (image > 0) {
             job.cb(nullptr, (sp.size + 7) & ~7, image);
@@ -657,6 +701,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 view.center_y = sp.centerY;
                 view.full_body = sp.fullBody && bodyRes;
                 view.expression = sp.expression;
+                view.pose = sp.pose;
                 // thumbnails are drawn once (then cached): smooth them
                 view.supersample = job.pass == PASS_SMOOTH || sp.smooth ? 2 : 1;
                 // small images do not need a detailed face texture

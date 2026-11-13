@@ -1,0 +1,37 @@
+diff --git a/library/include/borealis/views/hint.hpp b/library/include/borealis/views/hint.hpp
+index 101fc461..3db698cb 100644
+--- a/library/include/borealis/views/hint.hpp
++++ b/library/include/borealis/views/hint.hpp
+@@ -28,7 +28,7 @@ namespace brls
+ class Hint : public Box
+ {
+   public:
+-    Hint(std::shared_ptr<Action> action, bool allowAButtonTouch = false);
++    Hint(std::shared_ptr<Action> action, bool allowAButtonTouch = true);
+     static std::string getKeyIcon(ControllerButton button, bool ignoreKeysSwap = false);
+ 
+   private:
+@@ -69,7 +69,7 @@ class Hints : public Box
+   private:
+     void refillHints(View* focusView);
+     bool addUnableAButtonAction = true;
+-    bool allowAButtonTouch      = false;
++    bool allowAButtonTouch      = true;
+     bool forceShown             = false;
+ 
+     VoidEvent::Subscription hintSubscription;
+diff --git a/library/lib/views/hint.cpp b/library/lib/views/hint.cpp
+index 2a6ae1d9..48cacc35 100644
+--- a/library/lib/views/hint.cpp
++++ b/library/lib/views/hint.cpp
+@@ -67,7 +67,9 @@ Hint::Hint(std::shared_ptr<Action> action, bool allowAButtonTouch)
+     {
+         this->addGestureRecognizer(new TapGestureRecognizer(this, [this, action]()
+         {
+-            action->getActionListener()(this);
++            // act on the focused view, as the button would
++            View* focus = Application::getCurrentFocus();
++            action->getActionListener()(focus ? focus : this);
+         }));
+     }
+ 

@@ -34,14 +34,21 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   Favorite Color are single prompt pages. The right stick or a finger drag
   turns the Mii; L shows it with an **expression** (a checkmark list: 19
   with an FFLRes, 60 with Miitomo's AFLRes, such as winks, hearts, cat and
-  dog; only the preview, Miis have no expression of their own). "Add Mii" starts from scratch, offers ten look-alikes
+  dog; only the preview, Miis have no expression of their own), and R in
+  a **pose** (171 of them, waving, bowing, dancing, sitting, lying down...,
+  from Mario Kart 8's `MiiBodyMiddle.bfres`: your own copy, from your Wii U,
+  in `ux0:data/mii-maker-vita/dat/`; pages with tabs keep L / R for the
+  tabs). Cross on a Mii in the list opens it on its own screen: the whole
+  Mii to turn, and Edit, Change Expression, Change Pose, View QR Code, Use
+  Kid-o-matic and Delete; L / R show the Mii before / after it. The list
+  holds 200 Miis. "Add Mii" starts from scratch, offers ten look-alikes
   (curated, or any combination at all), and has two generators from
   InfiniMii (ported from MiiJS and checked against it): **Kid-o-matic**
   shows a Mii at six stages of life, newborn to adult, and the **Child
   Generator** makes the child of two Miis at those six stages; each stage
   can be edited and saved. "Receive Mii" scans a **Mii QR code** with the
   back camera (3DS, Wii U, Switch 2 and Tomodachi Life codes), imports
-  `.charinfo` / `.nfsd` / `.ffsd` files and QR code pictures from
+  `.charinfo` / `.nfsd` / `.ffsd` / `.cfsd` files and QR code pictures from
   `ux0:data/mii/import/`, or receives from another Vita; "Send Mii"
   exports Miis to `ux0:data/mii/export/` (several in a row) or makes a QR code (Switch 2
   format, which keeps Switch-only colors; 3DS and Wii U read it too), shown
@@ -58,19 +65,24 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   `ux0:data/mii-maker-vita/music/` (`mii_channel.ogg`, `mii_maker_3ds.ogg`,
   `mii_maker_wiiu.ogg`; loop points from `LOOPSTART` / `LOOPLENGTH` or
   `LOOPEND` comments, in samples; not included). Miis are saved to
-  `ux0:data/mii/database.nfdb` (shared with other apps; the app's own files
+  `ux0:data/mii/database.nfdb` (the first 100, shared with other apps;
+  Miis 101-200 in `database2.nfdb`; the app's own files
   go in `ux0:data/mii-maker-vita/`), and the first 100 also as a Wii Mii
   database, `ux0:data/mii/wii/RFL_DB.dat`, which ports of Wii games can read
   (a Super Mario Galaxy port change for this is in progress). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,
-  Tabler) and the button glyphs from PromptFont. Builds to a `.vpk`, tested
+  Tabler) and the button glyphs from PromptFont. Every button hint can be
+  tapped, and a tap beside a menu closes it. Builds to a `.vpk`, tested
   on a real Vita by the project owner.
 - **libmii3d** (`libmii3d/`, C99 + zlib): reads the Wii U and Miitomo face
   resources (including untiling Wii U GPU-tiled textures) and draws a Mii,
   head and (with `FFLBodyRes.dat`) body, with the Switch's lighting model in
   a small software rasterizer, so
   it runs the same on the Vita and on a PC. It also draws FFL's facial
-  expressions (the 70 of Miitomo's resource, as FFL sets them up).
+  expressions (the 70 of Miitomo's resource, as FFL sets them up), and
+  poses: it reads `MiiBodyMiddle.bfres` (BFRES 3: the rigged bodies and
+  their skeletal animations' curves) and draws its body posed at a frame of
+  an animation, the head on the head bone.
   On the Vita the app draws with the GPU (GXM) when the shader compiler
   (`libshacccg.suprx`) is installed, otherwise in software on worker threads;
   drawn icons are kept in one cache file.
