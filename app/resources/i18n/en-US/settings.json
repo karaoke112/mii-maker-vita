@@ -4,9 +4,6 @@
   "light": "Light",
   "dark": "Dark 1",
   "dark2": "Dark 2",
-  "renderer": "Mii Renderer",
-  "gpu": "GPU",
-  "software": "Software",
   "qr": "QR Codes",
   "skin": "Default Skin Tone",
   "music": "Music",
@@ -19,6 +16,5 @@
   "qr_3ds": "3DS / Wii U",
   "reset_cache": "Reset Cache",
   "reset_cache_confirm": "Are you sure? All saved icons and thumbnails will be deleted and drawn again as they are shown.",
-  "reset_cache_done": "Cache cleared",
-  "restart": "Restart the app to switch renderers. The GPU renderer needs libshacccg.suprx."
+  "reset_cache_done": "Cache cleared"
 }

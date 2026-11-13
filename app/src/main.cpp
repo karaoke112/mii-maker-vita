@@ -44,7 +44,9 @@ int main(int argc, char* argv[])
     MiiLibrary::instance().load();
     // 3D heads need a face resource the user provides; without it the
     // previews say where to put it.
-    HeadRenderer::instance().init(paths::datDir(), paths::iconCache(), paths::appDir() + "/gpu.log", Settings::get().gpu);
+    // Miis are drawn on the GPU whenever the shader compiler (libshacccg.suprx) is
+    // installed, in software otherwise
+    HeadRenderer::instance().init(paths::datDir(), paths::iconCache(), paths::appDir() + "/gpu.log", true);
     music::Player::instance().play((music::Track)Settings::get().music);
 
     // no fade-in: the first frame follows the boot splash directly

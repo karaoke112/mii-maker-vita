@@ -26,6 +26,11 @@ constexpr int kStages = 6;
 std::array<mii_charinfo_t, kStages> generate(const mii_charinfo_t& parentA, const mii_charinfo_t& parentB,
     const std::array<mii_create_id_t, kStages>& ids);
 
+// Kid-o-matic: one Mii at the same six stages (MiiJS's kidomatic): the
+// hairstyles follow the group its own hair is in, and the grown-up stage is
+// the Mii itself with a hairstyle of its age group or its own.
+std::array<mii_charinfo_t, kStages> growUp(const mii_charinfo_t& mii, const std::array<mii_create_id_t, kStages>& ids);
+
 // Tests: draw from `random` (as JavaScript's Math.random, [0, 1)) instead.
 void setRandomForTests(double (*random)());
 

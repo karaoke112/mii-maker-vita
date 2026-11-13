@@ -58,7 +58,7 @@ brls::View* LibraryActivity::createContentView()
     auto* add = new brls::Button();
     add->setText("library/add"_i18n);
     add->setStyle(&brls::BUTTONSTYLE_PRIMARY);
-    add->setWidth(320);
+    add->setWidth(260);
     add->setHeight(64);
     add->setFontSize(24);
     add->setMarginRight(20);
@@ -70,7 +70,8 @@ brls::View* LibraryActivity::createContentView()
     createButton = add;
     auto* send = new brls::Button();
     send->setText("library/send"_i18n);
-    send->setWidth(320);
+    send->setWidth(260);
+    send->setMarginRight(20);
     send->setHeight(64);
     send->setFontSize(24);
     send->registerClickAction([this](brls::View*) {
@@ -78,6 +79,16 @@ brls::View* LibraryActivity::createContentView()
         return true;
     });
     actions->addView(send);
+    auto* receive = new brls::Button();
+    receive->setText("library/receive"_i18n);
+    receive->setWidth(260);
+    receive->setHeight(64);
+    receive->setFontSize(24);
+    receive->registerClickAction([this](brls::View*) {
+        showReceiveMenu();
+        return true;
+    });
+    actions->addView(receive);
     pickLabel = new brls::Label();
     pickLabel->setFontSize(22);
     pickLabel->setTextColor(ui::accent());
@@ -111,6 +122,13 @@ brls::View* LibraryActivity::createContentView()
     auto* frame = new brls::AppletFrame(scroll);
     frame->setTitle("library/title"_i18n);
     rootFrame = frame;
+    // how many Miis there are, at the top right
+    countLabel = new brls::Label();
+    countLabel->setFontSize(22);
+    countLabel->setTextColor(ui::textDim());
+    countLabel->setMarginTop(4);
+    frame->getHeader()->setAlignItems(brls::AlignItems::CENTER);
+    frame->getHeader()->addView(countLabel);
     settingsShown = false; // a new frame (the theme changed): no actions yet
     // This is the root screen: "back" only leaves "choose a Mii" mode (popping
     // the last activity would leave borealis with input blocked). The app is
@@ -202,6 +220,8 @@ void LibraryActivity::rebuild()
             miis.push_back(ci);
     }
     empty->setVisibility(miis.empty() ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    if (countLabel)
+        countLabel->setText(brls::getStr("library/count", std::to_string(miis.size())));
 
     brls::Box* row = nullptr;
     held = heldAt = -1;
@@ -231,12 +251,15 @@ void LibraryActivity::rebuild()
             if (held >= 0) {
                 endHold(true);
             } else if (pick == Pick::EXPORT) {
-                exportMii(index);
-                setPick(Pick::NONE);
+                exportMii(index); // stays in this mode: Circle ends it
             } else if (pick == Pick::SEND) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
                 brls::Application::pushActivity(new TradeActivity(mii), brls::TransitionAnimation::NONE);
+            } else if (pick == Pick::KID) {
+                const mii_charinfo_t mii = miis[index];
+                setPick(Pick::NONE);
+                brls::Application::pushActivity(new ChildActivity(mii, [this] { rebuild(); }), brls::TransitionAnimation::NONE);
             } else if (pick == Pick::PARENT1) {
                 parentA = miis[index];
                 parentAIndex = index;
@@ -313,7 +336,7 @@ void LibraryActivity::cardActions(int index)
         card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
                 : pick == Pick::QR                                      ? "library/qr"_i18n
                 : pick == Pick::SEND                                    ? "library/send_this"_i18n
-                : pick == Pick::PARENT1 || pick == Pick::PARENT2         ? "library/child_choose"_i18n
+                : pick == Pick::PARENT1 || pick == Pick::PARENT2 || pick == Pick::KID ? "library/child_choose"_i18n
                                                                         : "library/edit"_i18n);
         ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
             auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
@@ -505,6 +528,7 @@ void LibraryActivity::setPick(Pick mode)
     pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
             : mode == Pick::QR              ? "library/pick_qr"_i18n
             : mode == Pick::SEND            ? "library/pick_send"_i18n
+            : mode == Pick::KID             ? "library/pick_kid"_i18n
             : mode == Pick::PARENT1         ? "library/pick_parent1"_i18n
             : mode == Pick::PARENT2         ? parent2Prompt()
                                             : "");
@@ -538,6 +562,13 @@ void LibraryActivity::showAddMenu()
             brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, true),
                 brls::TransitionAnimation::NONE);
         }),
+        PopupMenu::item("library/add_kid"_i18n, [this] {
+            if (miis.empty()) {
+                brls::Application::notify("library/empty"_i18n);
+                return;
+            }
+            setPick(Pick::KID);
+        }),
         PopupMenu::item("library/add_child"_i18n, [this] {
             if (miis.size() < 2) {
                 brls::Application::notify("library/child_need_two"_i18n);
@@ -546,6 +577,13 @@ void LibraryActivity::showAddMenu()
             parentAIndex = -1;
             setPick(Pick::PARENT1);
         }),
+    };
+    brls::Application::pushActivity(new PopupMenu("library/add"_i18n, items), brls::TransitionAnimation::NONE);
+}
+
+void LibraryActivity::showReceiveMenu()
+{
+    std::vector<PopupMenu::Item> items = {
         PopupMenu::item("library/add_import"_i18n, [this] { importMiis(); }),
         PopupMenu::item("library/add_qr"_i18n, [this] {
             if (!qr::available()) {
@@ -560,7 +598,7 @@ void LibraryActivity::showAddMenu()
                 brls::TransitionAnimation::NONE);
         }),
     };
-    brls::Application::pushActivity(new PopupMenu("library/add"_i18n, items), brls::TransitionAnimation::NONE);
+    brls::Application::pushActivity(new PopupMenu("library/receive"_i18n, items), brls::TransitionAnimation::NONE);
 }
 
 void LibraryActivity::showSendMenu()
@@ -655,17 +693,6 @@ void LibraryActivity::showSettings(int focus)
         rebuildForTheme();
         showSettings(1); // back on the theme row
     };
-    PopupMenu::Item renderer;
-    renderer.text = [] {
-        return "settings/renderer"_i18n + ": " + (Settings::get().gpu ? "settings/gpu"_i18n : "settings/software"_i18n);
-    };
-    renderer.action = [] {
-        Settings& s = Settings::get();
-        s.gpu = !s.gpu;
-        s.save();
-        brls::Application::notify("settings/restart"_i18n);
-    };
-    renderer.keepOpen = true;
     PopupMenu::Item qrFormat;
     qrFormat.text = [] {
         return "settings/qr"_i18n + ": " + (Settings::get().qrSwitch2 ? "settings/qr_switch2"_i18n : "settings/qr_3ds"_i18n);
@@ -710,6 +737,6 @@ void LibraryActivity::showSettings(int focus)
         });
     });
     brls::Application::pushActivity(
-        new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, qrFormat, renderer, resetCache }, focus),
+        new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, qrFormat, resetCache }, focus),
         brls::TransitionAnimation::NONE);
 }

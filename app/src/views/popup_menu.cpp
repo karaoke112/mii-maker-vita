@@ -6,7 +6,7 @@ using namespace brls::literals;
 
 namespace {
 
-// One row: its text, a rule underneath, the focus frame around it.
+// One row: its text, a rule underneath (not under the last), the focus frame around it.
 class PopupRow : public brls::Box
 {
   public:
@@ -25,14 +25,17 @@ class PopupRow : public brls::Box
     }
 
     brls::Label* label;
+    bool last = false;
 
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override
     {
-        nvgBeginPath(vg);
-        nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
-        nvgFillColor(vg, ui::rule());
-        nvgFill(vg);
+        if (!last) {
+            nvgBeginPath(vg);
+            nvgRect(vg, x, y + height - 1.5f, width, 1.5f);
+            nvgFillColor(vg, ui::rule());
+            nvgFill(vg);
+        }
         brls::Box::draw(vg, x, y, width, height, style, ctx);
     }
 };
@@ -86,6 +89,7 @@ brls::View* PopupMenu::createContentView()
 
     for (size_t i = 0; i < items.size(); i++) {
         auto* row = new PopupRow();
+        row->last = i + 1 == items.size();
         row->label->setText(items[i].text());
         const Item it = items[i];
         row->registerClickAction([it, row](brls::View*) {

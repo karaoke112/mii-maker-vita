@@ -35,7 +35,9 @@ int floorDiv(int a, int b) { return (int)std::floor((double)a / (double)b); }
 
 void setName(mii_charinfo_t* m, const char* utf8) { mii_name_set_utf8(m, utf8); }
 
-// kidomatic(mii, hairGroupIndex) for the child flow (a hairstyle group given)
+// MiiJS's kidomatic(mii, hairGroupIndex): with a hairstyle group (the child
+// flow), or -1 to grow up a Mii that exists (its group found from its hair,
+// and its grown-up stage keeping its own hair, beard, glasses...)
 std::array<mii_charinfo_t, kStages> kidomatic(const mii_charinfo_t& mii, int hairGroup)
 {
     // the grown-up stage's placement, and offsets back through the younger stages
@@ -57,22 +59,51 @@ std::array<mii_charinfo_t, kStages> kidomatic(const mii_charinfo_t& mii, int hai
             s.faceline_type = 9;
             s.eyebrow_color = 7;
         }
-        // (the child flow always gives a hairstyle group: every stage)
-        s.beard_type = 0;
-        s.mustache_type = 0;
-        s.faceline_wrinkle = 0;
-        s.faceline_make = 0;
-        s.glass_type = 0;
-        s.hair_flip = 0;
+        if (i < 5 || hairGroup != -1) {
+            s.beard_type = 0;
+            s.mustache_type = 0;
+            s.faceline_wrinkle = 0;
+            s.faceline_make = 0;
+            s.glass_type = 0;
+            s.hair_flip = 0;
+        }
         s.height = (uint8_t)std::floor(s.height / 5.0 * i);
         st[i] = s;
     }
 
+    // A Mii that exists: the group (and the oldest age group) its hairstyle
+    // is in, from the oldest age group down, or else the usual mapping
+    int foundAgeGroup = -1;
+    if (hairGroup < 0 || hairGroup > 9) {
+        std::vector<int> groups, ages;
+        const bool boy = mii.gender == 0;
+        for (int age = 3; age >= 1 && groups.empty(); age--) {
+            for (int g = boy ? 0 : 4; g <= (boy ? 3 : 9); g++) {
+                const HairList& list = kHairGroups[g][age];
+                if (std::find(list.types, list.types + list.count, mii.hair_type) != list.types + list.count) {
+                    groups.push_back(g);
+                    ages.push_back(age);
+                }
+            }
+        }
+        if (!groups.empty()) {
+            const int pick = below((int)groups.size());
+            hairGroup = groups[pick];
+            foundAgeGroup = ages[pick];
+        } else {
+            hairGroup = kHairGroupFor[mii.hair_type % 132][mii.gender & 1];
+            foundAgeGroup = -2;
+        }
+    }
+
     // Hairstyles: from the group's youngest age group up; at each later
     // stage a chance (1 in 3 for boys, 1 in 4 for girls) of staying in the
-    // same age group, never the newborn's
+    // same age group, never the newborn's. A Mii that exists keeps its own
+    // hair when grown up.
     int ageGroup = 0;
     for (int h = 0; h < 4; h++) {
+        if (h == 3 && foundAgeGroup != -1)
+            break;
         const HairList& list = kHairGroups[hairGroup][ageGroup];
         const uint8_t type = list.types[below(list.count)];
         switch (h) {
@@ -82,9 +113,18 @@ std::array<mii_charinfo_t, kStages> kidomatic(const mii_charinfo_t& mii, int hai
         case 3: st[5].hair_type = type; break;
         }
         if (h == 0 || below(st[0].gender == 0 ? 3 : 4) != 0)
-            ageGroup = std::min(ageGroup + 1, 3);
+            ageGroup = std::min(ageGroup + 1, foundAgeGroup < 0 ? 3 : foundAgeGroup);
     }
     return st;
+}
+
+void keepInRange(std::array<mii_charinfo_t, kStages>& stages, const std::array<mii_create_id_t, kStages>& ids)
+{
+    for (int i = 0; i < kStages; i++) {
+        stages[i].create_id = ids[i];
+        for (int f = 0; f < MII_FIELD_COUNT; f++)
+            mii_field_set(&stages[i], (mii_field_t)f, mii_field_get(&stages[i], (mii_field_t)f));
+    }
 }
 
 } // namespace
@@ -153,13 +193,14 @@ std::array<mii_charinfo_t, kStages> generate(const mii_charinfo_t& parentA, cons
     c.favorite_color = gender == 0 ? kBoyColors[below(4)] : kGirlColors[below(4)];
 
     std::array<mii_charinfo_t, kStages> stages = kidomatic(c, hairGroup);
-    for (int i = 0; i < kStages; i++) {
-        stages[i].create_id = ids[i];
-        // keep every field in its range (the stages' arithmetic stays inside,
-        // but the parents may be odd)
-        for (int f = 0; f < MII_FIELD_COUNT; f++)
-            mii_field_set(&stages[i], (mii_field_t)f, mii_field_get(&stages[i], (mii_field_t)f));
-    }
+    keepInRange(stages, ids);
+    return stages;
+}
+
+std::array<mii_charinfo_t, kStages> growUp(const mii_charinfo_t& mii, const std::array<mii_create_id_t, kStages>& ids)
+{
+    std::array<mii_charinfo_t, kStages> stages = kidomatic(mii, -1);
+    keepInRange(stages, ids);
     return stages;
 }
 

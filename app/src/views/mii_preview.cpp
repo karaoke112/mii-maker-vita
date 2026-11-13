@@ -151,7 +151,7 @@ void MiiPreview::stageTarget(float* pivot, float* zoom) const
 {
     if (compact) {
         *pivot = framing == Framing::BUST ? 104.0f : 90.0f;
-        *zoom = framing == Framing::BUST ? 1.8f : 1.25f;
+        *zoom = framing == Framing::BUST ? 1.8f : 1.0f; // (whole Miis: head to shoes in the tile)
     } else if (framing == Framing::BUST) {
         const float heightScale = mii->height * 0.006015625f + 0.5f;
         *pivot = 10.7766f * 8.715f * heightScale + 26.0f;
@@ -308,8 +308,10 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
             const float ix0 = cx;
             if (stage && compact) {
                 const bool bust = framing == Framing::BUST;
-                side = bust ? std::fmin(width * 1.12f, height) : std::fmin(width, height) * 0.95f;
-                iy = bust ? y + height - side : y + (height - side) / 2 - 12;
+                // the whole Mii: as tall as the tile (the sides, mostly
+                // empty, are cut by the tile), so nothing of the Mii is
+                side = bust ? std::fmin(width * 1.12f, height) : height * 0.98f;
+                iy = bust ? y + height - side : y + (height - side) / 2;
                 nvgSave(vg);
                 nvgIntersectScissor(vg, x, y, width, height);
             } else if (stage && HeadRenderer::instance().hasBody()) {
