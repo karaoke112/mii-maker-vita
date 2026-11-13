@@ -75,8 +75,8 @@ a decompilation) can map that NAND folder to `ux0:data/mii/wii/`:
 | 0x00004 | 100 × 0x4A | RFLCharData slots (big-endian bit-fields, most significant first); an empty slot is all zero |
 | 0x01CEC | 4 | flags (isolation, bit 31) |
 | 0x01D00 | 0x1D4E0 | the hidden database's header: `"RNHD"`, head and tail -1, 10000 empty entries |
-| 0x3B1DE | 2 | RFL's CRC-16 over 0x00000–0x3B1DF with this field zero, big-endian (the whole header then checks to 0) |
-| 0x3B1E0 | 10000 × 0x4A | room for hidden Miis (zero) |
+| 0x1F1DE | 2 | RFL's CRC-16 over 0x00000–0x1F1DF with this field zero, big-endian (the whole header then checks to 0) |
+| 0x1F1E0 | 10000 × 0x40 | room for hidden Miis (RFLiHiddenCharData, zero) |
 
 RFL's structures are big-endian; a little-endian port converts them after
 reading (and checks the CRC on the bytes as read). The Mii IDs are stable
