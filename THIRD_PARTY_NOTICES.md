@@ -7,8 +7,11 @@
 <https://github.com/Stewared/MiiJS>. Used for the Switch → Ver3 palette and
 glasses tables (`libmii/src/mii_ver3_tables.inc`), the Switch editor grid
 orders (`libmii/src/mii_editor.c`, three duplicated color-grid entries
-corrected), and to generate the reference test vectors in
-`libmii/tests/vectors/`. MiiJS declares the ISC license in its
+corrected), to generate the reference test vectors in
+`libmii/tests/vectors/`, and for the Child Generator (InfiniMii's): its
+algorithm, ported from `miiBabies.js` (`makeMiiChild`, `kidomatic`) to
+`app/src/child_generator.cpp`, and its tables and name lists
+(`childGenTables` in `data.js`) in `app/src/child_generator_tables.inc`. MiiJS declares the ISC license in its
 `package.json`:
 
 > Copyright (c) Stewared and the MiiJS contributors
