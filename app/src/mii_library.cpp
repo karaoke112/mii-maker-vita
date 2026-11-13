@@ -289,7 +289,7 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
     for (const std::string& name : names) {
         const std::string ext = lowerExtension(name);
         const bool image = ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp";
-        if (ext != "charinfo" && ext != "nfsd" && ext != "ffsd" && !image)
+        if (ext != "charinfo" && ext != "nfsd" && ext != "ffsd" && ext != "cfsd" && !image)
             continue;
         std::vector<uint8_t> data;
         mii_charinfo_t ci;

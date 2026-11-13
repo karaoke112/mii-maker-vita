@@ -41,7 +41,7 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   Generator** makes the child of two Miis at those six stages; each stage
   can be edited and saved. "Receive Mii" scans a **Mii QR code** with the
   back camera (3DS, Wii U, Switch 2 and Tomodachi Life codes), imports
-  `.charinfo` / `.nfsd` / `.ffsd` files and QR code pictures from
+  `.charinfo` / `.nfsd` / `.ffsd` / `.cfsd` files and QR code pictures from
   `ux0:data/mii/import/`, or receives from another Vita; "Send Mii"
   exports Miis to `ux0:data/mii/export/` (several in a row) or makes a QR code (Switch 2
   format, which keeps Switch-only colors; 3DS and Wii U read it too), shown
