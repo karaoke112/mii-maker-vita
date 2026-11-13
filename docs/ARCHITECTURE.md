@@ -160,7 +160,7 @@ For Switch-era or new homebrew: read CharInfo directly; no conversion.
 | 2 | 3D renderer from the user's own resource (Wii U or Miitomo), Switch lighting | done (heads) |
 | 2b | Rendered style icons in every part grid | done |
 | 2c | Body from `FFLBodyRes.dat` (when provided) | done |
-| 2d | Cache rendered icons on the memory card (`ux0:data/mii-maker-vita/cache/`) | done |
+| 2d | Cache rendered icons on the memory card, in one file (`ux0:data/mii-maker-vita/icons.cache`) | done |
 | 3 | Import `.charinfo`/`.ffsd`/`.nfsd` files from `ux0:data/mii/import/` | done |
 | 3b | **QR codes**: scan Mii QR codes with the Vita camera and create them (see above) | done |
 | 4 | Ad-hoc trading (`trade.cpp`, `TradeActivity`) | first version (needs testing on two Vitas) |

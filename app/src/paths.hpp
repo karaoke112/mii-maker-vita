@@ -12,7 +12,8 @@
 //       qr/                        QR code pictures made by "Create QR Code"
 //   ux0:data/mii-maker-vita/       this app's own files
 //       author_id.bin              this console's Mii author id
-//       cache/                     rendered grid icons (safe to delete)
+//       icons.cache                drawn icons and thumbnails, in one file
+//                                  (safe to delete)
 //       dat/                       the user's resource files: AFLResHigh_2_3.dat,
 //                                  FFLResHigh.dat, FFLResMiddle.dat, FFLBodyRes.dat
 namespace paths {
@@ -20,7 +21,7 @@ namespace paths {
 const std::string& miiDir();
 const std::string& appDir();
 const std::string& datDir();
-const std::string& cacheDir(); // rendered icons; safe to delete
+const std::string& iconCache(); // drawn icons, one file; safe to delete
 
 // Creates the folders above, and moves files an older version kept in
 // ux0:data/mii/ (author_id.bin, *.dat) to their new places.
