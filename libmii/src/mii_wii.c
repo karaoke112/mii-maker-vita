@@ -277,7 +277,7 @@ mii_result_t mii_wii_decode(mii_charinfo_t *ci, mii_wii_info_t *info, const uint
 #define DB_HIDDEN_TABLE  (DB_HIDDEN + 0x08)
 #define DB_HIDDEN_ENTRY  0x0C
 #define DB_HIDDEN_COUNT  10000
-#define DB_HEADER_SIZE   0x3B1E0 /* sizeof(RFLiDatabase), the CRC's span */
+#define DB_HEADER_SIZE   0x1F1E0 /* sizeof(RFLiDatabase), the CRC's span */
 
 uint16_t mii_wii_crc(const uint8_t *p, size_t len)
 {

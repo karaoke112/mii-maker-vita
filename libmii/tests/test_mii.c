@@ -351,7 +351,7 @@ static void test_wii(void)
     CHECK(mii_wii_db_valid(db, sizeof(db)));
     CHECK(memcmp(db, "RNOD", 4) == 0);
     CHECK(memcmp(db + 0x1D00, "RNHD", 4) == 0);
-    CHECK_EQ(mii_wii_crc(db, 0x3B1E0), 0);
+    CHECK_EQ(mii_wii_crc(db, 0x1F1E0), 0);
     CHECK(mii_wii_db_get(db, sizeof(db), 1, got) && memcmp(got, miis[1], sizeof(got)) == 0);
     CHECK(!mii_wii_db_get(db, sizeof(db), 3, got));
     db[0x100] ^= 1;

@@ -316,7 +316,7 @@ uint8_t mii_glass_type_to_ver3(uint8_t switch_type);
 
 #define MII_WII_DATA_SIZE 0x4A
 #define MII_WII_DB_MAX    100
-#define MII_WII_DB_SIZE   0xEFC20 /* RFL_DB.dat as the Wii formats it */
+#define MII_WII_DB_SIZE   0xBB5E0 /* RFL_DB.dat as the Wii formats it */
 
 /* What a Wii Mii carries besides the face. */
 typedef struct mii_wii_info {
