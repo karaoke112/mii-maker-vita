@@ -1,5 +1,9 @@
 #include "paths.hpp"
 
+#include <dirent.h>
+#include <unistd.h>
+#include <vector>
+
 #include <borealis/core/logger.hpp>
 
 #include <cerrno>
@@ -33,10 +37,10 @@ const std::string& datDir()
     return d;
 }
 
-const std::string& cacheDir()
+const std::string& iconCache()
 {
-    static const std::string d = appDir() + "/cache";
-    return d;
+    static const std::string f = appDir() + "/icons.cache";
+    return f;
 }
 
 static void makeDir(const std::string& path)
@@ -72,9 +76,21 @@ void prepare()
     makeDir(miiDir() + "/qr");
     makeDir(appDir());
     makeDir(datDir());
-    makeDir(cacheDir());
     makeDir(appDir() + "/music");
 
+    // older versions kept the icons as one file each in cache/
+    const std::string oldCache = appDir() + "/cache";
+    if (DIR* d = opendir(oldCache.c_str())) {
+        std::vector<std::string> names;
+        while (struct dirent* e = readdir(d))
+            if (std::strcmp(e->d_name, ".") != 0 && std::strcmp(e->d_name, ".."))
+                names.push_back(e->d_name);
+        closedir(d);
+        for (const std::string& name : names)
+            std::remove((oldCache + "/" + name).c_str());
+        rmdir(oldCache.c_str());
+        brls::Logger::info("Removed the old icon folder ({} files)", names.size());
+    }
     moveIfPresent(miiDir() + "/author_id.bin", appDir() + "/author_id.bin");
     for (const char* name : { "AFLResHigh_2_3.dat", "AFLResHigh.dat", "FFLResHigh.dat", "FFLResMiddle.dat",
              "FFLResHighLG.dat", "FFLResMiddleLG.dat", "FFLBodyRes.dat" })

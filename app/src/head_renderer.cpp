@@ -96,12 +96,12 @@ HeadRenderer::~HeadRenderer()
     mii3d_res_close(bodyRes);
 }
 
-void HeadRenderer::init(const std::string& dataDir, const std::string& iconCacheDir, const std::string& gpuLog,
+void HeadRenderer::init(const std::string& dataDir, const std::string& iconCacheFile, const std::string& gpuLog,
     bool useGpu)
 {
     if (res)
         return;
-    cacheDir = iconCacheDir;
+    cacheDir = iconCacheFile;
     statusText = "To see your Miis, copy AFLResHigh_2_3.dat (Miitomo) or FFLResHigh.dat (Wii U), and FFLBodyRes.dat, to " +
         dataDir + "/";
     for (const char* name : { "AFLResHigh_2_3.dat", "FFLResHigh.dat", "FFLResMiddle.dat" }) {
@@ -263,27 +263,13 @@ void HeadRenderer::forget(const void* owner)
 
 void HeadRenderer::clearCache()
 {
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        cache.clear();
-        cacheBytes = 0;
-        saves.clear();
-    }
-    if (cacheDir.empty())
-        return;
-    DIR* d = opendir(cacheDir.c_str());
-    if (!d)
-        return;
-    std::vector<std::string> names;
-    while (struct dirent* e = readdir(d)) {
-        const std::string name = e->d_name;
-        if (name != "." && name != "..")
-            names.push_back(name);
-    }
-    closedir(d);
-    for (const std::string& name : names)
-        std::remove((cacheDir + "/" + name).c_str());
-    brls::Logger::info("icon cache: cleared {} files", names.size());
+    std::lock_guard<std::mutex> lock(mutex);
+    cache.clear();
+    cacheBytes = 0;
+    saves.clear();
+    // the disk thread empties the file (it is the only one using it)
+    clearPending = true;
+    wake.notify_all();
 }
 
 // Icons (heads, flat parts, thumbnails) go to the GPU when it is on.
@@ -416,62 +402,137 @@ void HeadRenderer::pumpGpuIcons()
     }
 }
 
-// Icons on the memory card: zlib-compressed RGBA, named
-// <cache version>-<key>.z; the version covers the renderer and the
-// resource files, so files from other versions are outdated.
-std::string HeadRenderer::iconPath(uint64_t key) const
+// The cache file: a header (magic, format, the renderer/resource salt),
+// then records of { magic, length, key } and zlib-compressed RGBA. Records
+// are only appended; the newest one of a key counts. A record cut short
+// (the app was closed mid-write) ends the file.
+static constexpr uint32_t kPackMagic = 0x4356494Du;   // "MIVC"
+static constexpr uint32_t kRecordMagic = 0x4E434349u; // "ICCN"
+static constexpr uint32_t kPackFormat = 1;
+static constexpr uint64_t kPackLimit = 24u << 20; // rewritten when bigger
+static constexpr size_t kHeaderBytes = 16, kRecordHeaderBytes = 16;
+
+static void put32(uint8_t* p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i)); }
+static void put64(uint8_t* p, uint64_t v) { for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i)); }
+static uint32_t get32(const uint8_t* p) { uint32_t v = 0; for (int i = 3; i >= 0; i--) v = v << 8 | p[i]; return v; }
+static uint64_t get64(const uint8_t* p) { uint64_t v = 0; for (int i = 7; i >= 0; i--) v = v << 8 | p[i]; return v; }
+
+void HeadRenderer::resetPack()
 {
-    char name[48];
-    std::snprintf(name, sizeof(name), "/%08x-%016llx.z", (unsigned)(resourceSalt & 0xFFFFFFFFu), (unsigned long long)key);
-    return cacheDir + name;
+    if (pack)
+        std::fclose(pack);
+    packIndex.clear();
+    pack = std::fopen(cacheDir.c_str(), "w+b");
+    if (!pack) {
+        brls::Logger::warning("icon cache: cannot create {}", cacheDir);
+        packEnd = 0;
+        return;
+    }
+    uint8_t h[kHeaderBytes];
+    put32(h, kPackMagic);
+    put32(h + 4, kPackFormat);
+    put64(h + 8, resourceSalt);
+    std::fwrite(h, 1, sizeof(h), pack);
+    std::fflush(pack);
+    packEnd = kHeaderBytes;
 }
 
-void HeadRenderer::pruneDiskCache()
+void HeadRenderer::openPack()
 {
-    char prefix[16];
-    std::snprintf(prefix, sizeof(prefix), "%08x-", (unsigned)(resourceSalt & 0xFFFFFFFFu));
-    DIR* d = opendir(cacheDir.c_str());
-    if (!d)
+    if (cacheDir.empty())
         return;
-    std::vector<std::string> old;
-    std::vector<std::pair<time_t, std::string>> current;
-    while (struct dirent* e = readdir(d)) {
-        const std::string name = e->d_name;
-        if (name == "." || name == "..")
+    pack = std::fopen(cacheDir.c_str(), "r+b");
+    uint8_t h[kHeaderBytes];
+    if (!pack || std::fread(h, 1, sizeof(h), pack) != sizeof(h) || get32(h) != kPackMagic ||
+        get32(h + 4) != kPackFormat || get64(h + 8) != resourceSalt) {
+        // missing, or from another version or other resource files
+        resetPack();
+        return;
+    }
+    std::fseek(pack, 0, SEEK_END);
+    const uint64_t size = (uint64_t)std::ftell(pack);
+    uint64_t pos = kHeaderBytes;
+    while (pos + kRecordHeaderBytes <= size) {
+        uint8_t r[kRecordHeaderBytes];
+        std::fseek(pack, (long)pos, SEEK_SET);
+        if (std::fread(r, 1, sizeof(r), pack) != sizeof(r) || get32(r) != kRecordMagic)
+            break;
+        const uint32_t length = get32(r + 4);
+        if (pos + kRecordHeaderBytes + length > size)
+            break; // cut short
+        packIndex[get64(r + 8)] = PackEntry { pos + kRecordHeaderBytes, length };
+        pos += kRecordHeaderBytes + length;
+    }
+    packEnd = pos; // anything after a broken record is written over
+    brls::Logger::info("icon cache: {} icons, {} KB", packIndex.size(), packEnd / 1024);
+    if (packEnd > kPackLimit)
+        compactPack();
+}
+
+// Rewrites the file with the newest records only, keeping the most recently
+// drawn half of the size limit.
+void HeadRenderer::compactPack()
+{
+    std::vector<std::pair<uint64_t, PackEntry>> live(packIndex.begin(), packIndex.end());
+    std::sort(live.begin(), live.end(), [](const auto& a, const auto& b) { return a.second.offset > b.second.offset; });
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> keep;
+    uint64_t total = 0;
+    for (const auto& kv : live) {
+        if (total + kv.second.length + kRecordHeaderBytes > kPackLimit / 2)
+            break;
+        std::vector<uint8_t> data(kv.second.length);
+        std::fseek(pack, (long)kv.second.offset, SEEK_SET);
+        if (std::fread(data.data(), 1, data.size(), pack) != data.size())
             continue;
-        if (name.compare(0, 9, prefix) != 0 || name.size() < 2 || name.compare(name.size() - 2, 2, ".z") != 0) {
-            old.push_back(name);
-        } else {
-            struct stat st;
-            current.push_back({ stat((cacheDir + "/" + name).c_str(), &st) == 0 ? st.st_mtime : 0, name });
-        }
+        total += kv.second.length + kRecordHeaderBytes;
+        keep.emplace_back(kv.first, std::move(data));
     }
-    closedir(d);
-    // keep the newest few thousand (a few MB): thumbnails of Miis since
-    // edited or deleted, and look-alikes, are not needed for ever
-    const size_t kKeep = 4000;
-    if (current.size() > kKeep) {
-        std::sort(current.begin(), current.end());
-        for (size_t i = 0; i + kKeep < current.size(); i++)
-            old.push_back(current[i].second);
+    resetPack();
+    if (!pack)
+        return;
+    // oldest first, so the order (and what goes next time) stays the same
+    for (auto it = keep.rbegin(); it != keep.rend(); ++it) {
+        uint8_t r[kRecordHeaderBytes];
+        put32(r, kRecordMagic);
+        put32(r + 4, (uint32_t)it->second.size());
+        put64(r + 8, it->first);
+        std::fwrite(r, 1, sizeof(r), pack);
+        std::fwrite(it->second.data(), 1, it->second.size(), pack);
+        packIndex[it->first] = PackEntry { packEnd + kRecordHeaderBytes, (uint32_t)it->second.size() };
+        packEnd += kRecordHeaderBytes + it->second.size();
     }
-    for (const std::string& name : old)
-        std::remove((cacheDir + "/" + name).c_str());
-    if (!old.empty())
-        brls::Logger::info("icon cache: removed {} outdated files", old.size());
+    std::fflush(pack);
+    brls::Logger::info("icon cache: compacted to {} icons, {} KB", packIndex.size(), packEnd / 1024);
 }
 
 void HeadRenderer::diskWorker()
 {
-    pruneDiskCache();
+    openPack();
     for (;;) {
         Job job;
         std::pair<uint64_t, Image> save;
+        bool clear = false;
         {
             std::unique_lock<std::mutex> lock(mutex);
-            wake.wait(lock, [this] { return stopping || !disk.empty() || !saves.empty(); });
-            if (stopping)
+            wake.wait(lock, [this] { return stopping || !disk.empty() || !saves.empty() || clearPending; });
+            if (stopping) {
+                if (pack)
+                    std::fclose(pack);
+                pack = nullptr;
                 return;
+            }
+            clear = clearPending;
+            clearPending = false;
+        }
+        if (clear) {
+            resetPack();
+            brls::Logger::info("icon cache: cleared");
+            continue;
+        }
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            if (disk.empty() && saves.empty())
+                continue;
             // loading what is on screen comes before saving
             if (disk.empty()) {
                 save = std::move(saves.front());
@@ -517,10 +578,14 @@ void HeadRenderer::diskWorker()
 
 bool HeadRenderer::loadIcon(uint64_t key, int size, std::vector<uint8_t>* out)
 {
-    if (cacheDir.empty())
+    if (!pack)
         return false;
-    std::vector<uint8_t> packed;
-    if (!readFile(iconPath(key), &packed))
+    auto it = packIndex.find(key);
+    if (it == packIndex.end())
+        return false;
+    std::vector<uint8_t> packed(it->second.length);
+    std::fseek(pack, (long)it->second.offset, SEEK_SET);
+    if (std::fread(packed.data(), 1, packed.size(), pack) != packed.size())
         return false;
     out->resize((size_t)size * size * 4);
     uLongf n = (uLongf)out->size();
@@ -529,21 +594,28 @@ bool HeadRenderer::loadIcon(uint64_t key, int size, std::vector<uint8_t>* out)
 
 void HeadRenderer::saveIcon(uint64_t key, const std::vector<uint8_t>& pixels)
 {
-    if (cacheDir.empty())
+    if (!pack)
         return;
     std::vector<uint8_t> packed(compressBound((uLong)pixels.size()));
     uLongf n = (uLongf)packed.size();
     if (compress2(packed.data(), &n, pixels.data(), (uLong)pixels.size(), 1) != Z_OK)
         return;
-    const std::string path = iconPath(key), tmp = path + ".tmp";
-    FILE* f = std::fopen(tmp.c_str(), "wb");
-    if (!f)
-        return;
-    const bool ok = std::fwrite(packed.data(), 1, n, f) == n;
-    if (std::fclose(f) == 0 && ok)
-        std::rename(tmp.c_str(), path.c_str());
-    else
-        std::remove(tmp.c_str());
+    if (packEnd + kRecordHeaderBytes + n > kPackLimit) {
+        compactPack();
+        if (!pack)
+            return;
+    }
+    uint8_t r[kRecordHeaderBytes];
+    put32(r, kRecordMagic);
+    put32(r + 4, (uint32_t)n);
+    put64(r + 8, key);
+    std::fseek(pack, (long)packEnd, SEEK_SET);
+    const bool ok = std::fwrite(r, 1, sizeof(r), pack) == sizeof(r) && std::fwrite(packed.data(), 1, n, pack) == n;
+    std::fflush(pack);
+    if (!ok)
+        return; // the card is full: the record is not indexed (and is written over next time)
+    packIndex[key] = PackEntry { packEnd + kRecordHeaderBytes, (uint32_t)n };
+    packEnd += kRecordHeaderBytes + n;
 }
 
 void HeadRenderer::worker(mii3d_renderer* renderer)
@@ -590,8 +662,12 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
             }
             ok = r == MII3D_OK;
             lastUs[icon ? 2 : (job.pass == PASS_HALF ? 0 : 1)] = (int)(brls::getCPUTimeUsec() - started);
-            if (ok && icon)
-                saveIcon(fileKey, *pixels);
+            if (ok && icon) {
+                // written by the disk thread, the only one using the file
+                std::lock_guard<std::mutex> lock(mutex);
+                saves.emplace_back(fileKey, pixels);
+                wake.notify_all();
+            }
         }
         if (!ok)
             continue;

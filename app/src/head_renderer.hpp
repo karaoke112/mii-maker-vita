@@ -28,6 +28,10 @@ struct mii3d_renderer;
 //
 // plus, optionally, FFLBodyRes.dat for whole-Mii views.
 //
+// Drawn icons and thumbnails are kept in one file (icons.cache): records
+// appended as they are drawn, indexed in memory, rewritten without the
+// old ones when it grows too big.
+//
 // Without a face resource, available() is false and previews show where to
 // put it.
 class HeadRenderer
@@ -71,8 +75,8 @@ class HeadRenderer
     bool mouthShowsColor(int type) const { return type < 0 || type >= (int)mouthColor.size() || mouthColor[type]; }
 
     // Looks for the resource files in `datDir` and starts the workers;
-    // rendered icons are kept in `cacheDir`.
-    void init(const std::string& datDir, const std::string& cacheDir, const std::string& gpuLog, bool useGpu);
+    // drawn icons are kept in the file `cacheFile`.
+    void init(const std::string& datDir, const std::string& cacheFile, const std::string& gpuLog, bool useGpu);
     // Main thread, between frames: draws pending GPU previews.
     void pumpGpu();
     bool available() const { return res != nullptr; }
@@ -101,8 +105,10 @@ class HeadRenderer
     ~HeadRenderer();
     void worker(mii3d_renderer* renderer);
     void diskWorker();
-    void pruneDiskCache();
-    std::string iconPath(uint64_t key) const;
+    // the cache file: only the disk thread touches it
+    void openPack();
+    void compactPack();
+    void resetPack();
     void loadBody(const std::string& datDir);
     bool loadIcon(uint64_t key, int size, std::vector<uint8_t>* out);
     void saveIcon(uint64_t key, const std::vector<uint8_t>& pixels);
@@ -121,7 +127,15 @@ class HeadRenderer
     mii3d_res* bodyRes = nullptr;
     std::vector<mii3d_renderer*> renderers; // one per worker
     std::string statusText;
-    std::string cacheDir;
+    std::string cacheDir; // the cache file's path (empty: no cache file)
+    struct PackEntry {
+        uint64_t offset; // of the data, after the record header
+        uint32_t length;
+    };
+    FILE* pack = nullptr;
+    uint64_t packEnd = 0;
+    std::map<uint64_t, PackEntry> packIndex;
+    bool clearPending = false; // guarded by `mutex`
     uint64_t resourceSalt = 0; // which resource files the disk cache belongs to
 
     std::mutex mutex;
