@@ -1,8 +1,11 @@
 name: build
 
+# Only when commits are pushed to a branch (not for tags, pull request
+# events or anything else that happens in the repository).
 on:
   push:
-  pull_request:
+    branches:
+      - '**'
 
 jobs:
   libmii:
