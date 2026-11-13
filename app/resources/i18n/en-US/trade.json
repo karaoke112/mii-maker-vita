@@ -4,7 +4,7 @@
   "no_socket": "Could not open the connection.",
   "waiting": "Waiting for a Mii. Other Vitas see this one as",
   "looking": "Looking for a Vita that is receiving...",
-  "choose": "Choose who to send the Mii to:",
+  "choose": "Choose who to send the Miis to:",
   "offering": "Waiting for an answer from",
   "accepted": "received the Mii!",
   "declined": "declined the Mii.",
@@ -14,5 +14,8 @@
   "decline": "Decline",
   "received": "Received",
   "receive_note": "On the other Vita, choose Send Mii, then Send to Another Vita. Wireless must be on.",
-  "send_note": "On the other Vita, choose Add Mii, then Receive from Another Vita. Wireless must be on."
+  "send_note": "On the other Vita, choose Receive Mii, then Receive from Another Vita. Wireless must be on.",
+  "of": "Mii {} of {}",
+  "count": "{} Miis",
+  "accepted_n": "{} took {} of the {} Miis."
 }

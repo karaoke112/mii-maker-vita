@@ -35,7 +35,13 @@ class LibraryActivity : public brls::Activity
     void showReceiveMenu();
     void showSettings(int focus = 0);
     void rebuildForTheme();
-    enum class Pick { NONE, EXPORT, QR, SEND, KID, PARENT1, PARENT2 };
+    enum class Pick { NONE, EXPORT, QR, SEND, DELETE, KID, PARENT1, PARENT2 };
+    // Sending and deleting choose several Miis; START goes on with them
+    bool choosingSeveral() const { return pick == Pick::SEND || pick == Pick::DELETE; }
+    std::vector<bool> chosen;
+    void toggleChosen(int index);
+    int chosenCount() const;
+    void finishChoosing();
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
     void openView(int index);

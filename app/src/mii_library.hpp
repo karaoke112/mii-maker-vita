@@ -69,6 +69,18 @@ class MiiLibrary
     // database, then moves the file to <data>/import/imported/. A Mii that is
     // already in the database (same create id) is updated, not duplicated.
     ImportResult importFolder();
+    // The import screen: what importFolder would add, without adding it
+    struct Pending {
+        std::string file; // name in importDir()
+        mii_charinfo_t mii;
+        bool hasInfo = false;
+        mii_ver3_info_t info {};
+    };
+    std::vector<Pending> scanImports(int* unreadable);
+    // Adds these (their files move to import/imported/)
+    ImportResult importPending(const std::vector<Pending>& chosen);
+    // Deletes a file from the import folder
+    bool deleteImport(const std::string& file);
     std::string importDir() const { return dir + "/import"; }
 
     void newCreateId(mii_create_id_t* id) const;

@@ -2,6 +2,7 @@
 
 #include "activities/child_activity.hpp"
 #include "activities/editor_activity.hpp"
+#include "activities/import_activity.hpp"
 #include "activities/mii_view_activity.hpp"
 #include "activities/qr_activity.hpp"
 #include "activities/trade_activity.hpp"
@@ -33,6 +34,7 @@ class MiiCard : public brls::Box
     }
     std::function<void(NVGcontext*, float, float, float, float, brls::Style, brls::FrameContext*)> overlay;
     bool empty = false;
+    bool checked = false; // chosen, while choosing several
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override
     {
@@ -42,6 +44,28 @@ class MiiCard : public brls::Box
             nvgRoundedRect(vg, x + 3, y + 3, width - 6, height - 6, 16);
             nvgStrokeColor(vg, ui::rule());
             nvgStrokeWidth(vg, 3);
+            nvgStroke(vg);
+        }
+        if (checked) {
+            // an accent outline and a ticked circle at the top right
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, x + 2, y + 2, width - 4, height - 4, 17);
+            nvgStrokeColor(vg, ui::accent());
+            nvgStrokeWidth(vg, 4);
+            nvgStroke(vg);
+            const float cx = x + width - 26, cy = y + 26;
+            nvgBeginPath(vg);
+            nvgCircle(vg, cx, cy, 16);
+            nvgFillColor(vg, ui::accent());
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, cx - 8, cy);
+            nvgLineTo(vg, cx - 2, cy + 6);
+            nvgLineTo(vg, cx + 8, cy - 6);
+            nvgStrokeColor(vg, nvgRGB(255, 255, 255));
+            nvgStrokeWidth(vg, 3.5f);
+            nvgLineCap(vg, NVG_ROUND);
+            nvgLineJoin(vg, NVG_ROUND);
             nvgStroke(vg);
         }
         if (overlay)
@@ -114,6 +138,7 @@ brls::View* LibraryActivity::createContentView()
     auto* cog = new brls::Button();
     cog->setText("");
     cog->setDimensions(64, 64);
+    cog->setMarginRight(6); // (room for its shadow)
     cog->setPadding(0, 0, 0, 0);
     cog->setJustifyContent(brls::JustifyContent::CENTER);
     cog->setAlignItems(brls::AlignItems::CENTER);
@@ -251,6 +276,71 @@ void LibraryActivity::openView(int index)
 
 // Up from the first row: the Add Mii button, except while choosing a Mii
 // or holding one (the cursor stays in the list then).
+// Choosing several (deleting, sending): Cross ticks a Mii or unticks it.
+void LibraryActivity::toggleChosen(int index)
+{
+    if (index < 0 || index >= (int)cards.size())
+        return;
+    if (chosen.size() != cards.size())
+        chosen.assign(cards.size(), false);
+    chosen[index] = !chosen[index];
+    static_cast<MiiCard*>(cards[index])->checked = chosen[index];
+    allCardActions(); // the count on START, Select / Unselect
+}
+
+int LibraryActivity::chosenCount() const
+{
+    int n = 0;
+    for (bool c : chosen)
+        n += c ? 1 : 0;
+    return n;
+}
+
+// START while choosing several: delete them (after asking) or send them.
+void LibraryActivity::finishChoosing()
+{
+    std::vector<int> picked;
+    for (size_t i = 0; i < chosen.size(); i++)
+        if (chosen[i])
+            picked.push_back((int)i);
+    if (picked.empty()) {
+        brls::Application::notify("library/choose_first"_i18n);
+        return;
+    }
+    if (pick == Pick::SEND) {
+        std::vector<mii_charinfo_t> out;
+        for (int i : picked)
+            out.push_back(miis[i]);
+        setPick(Pick::NONE);
+        brls::Application::pushActivity(new TradeActivity(out), brls::TransitionAnimation::NONE);
+        return;
+    }
+    auto* dialog = new brls::Dialog(picked.size() == 1 ? "library/delete_confirm"_i18n
+                                                       : brls::getStr("library/delete_confirm_n", std::to_string(picked.size())));
+    dialog->addButton("hints/cancel"_i18n, [] {});
+    dialog->addButton("library/delete"_i18n, [this, picked] {
+        MiiLibrary& lib = MiiLibrary::instance();
+        bool ok = true;
+        for (auto it = picked.rbegin(); it != picked.rend(); ++it) // from the end: indices stay right
+            ok = lib.remove(*it) && ok;
+        if (!ok)
+            brls::Application::notify("library/delete_failed"_i18n);
+        // after the dialog has closed and released focus; the cursor on
+        // the Mii now where the first deleted one was
+        const int at = picked.front();
+        brls::sync([this, at] {
+            pick = Pick::NONE;
+            pickLabel->setVisibility(brls::Visibility::GONE);
+            settingsButton->setVisibility(brls::Visibility::VISIBLE);
+            chosen.clear();
+            rebuild();
+            if (!cards.empty())
+                brls::Application::giveFocus(cards[std::min(at, (int)cards.size() - 1)]);
+        });
+    });
+    dialog->open();
+}
+
 void LibraryActivity::upRoutes()
 {
     const bool toButtons = !busy();
@@ -262,7 +352,10 @@ void LibraryActivity::rebuild()
 {
     MiiLibrary& lib = MiiLibrary::instance();
 
-    // The cards are about to be freed; never leave focus on one of them.
+    // The cards are about to be freed; never leave focus on one of them
+    // (Add Mii takes it for now, even while it is off limits in a mode;
+    // the mode puts the cursor back on a Mii below).
+    createButton->setFocusable(true);
     brls::Application::giveFocus(createButton);
     grid->clearViews();
     cards.clear();
@@ -310,10 +403,8 @@ void LibraryActivity::rebuild()
                 endHold(true);
             } else if (pick == Pick::EXPORT) {
                 exportMii(index); // stays in this mode: Circle ends it
-            } else if (pick == Pick::SEND) {
-                const mii_charinfo_t mii = miis[index];
-                setPick(Pick::NONE);
-                brls::Application::pushActivity(new TradeActivity(mii), brls::TransitionAnimation::NONE);
+            } else if (choosingSeveral()) {
+                toggleChosen(index);
             } else if (pick == Pick::KID) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
@@ -363,6 +454,8 @@ void LibraryActivity::rebuild()
     buttonRoutes();
     allCardActions();
     thumbPriorities(0);
+    if (pick != Pick::NONE && !cards.empty())
+        brls::Application::giveFocus(cards[0]);
 }
 
 // Every card's buttons, then one hints update (one per card made picking a
@@ -417,9 +510,10 @@ void LibraryActivity::cardActions(int index)
             return true;
         }));
     } else {
+        const bool isChosen = index < (int)chosen.size() && chosen[index];
         card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
                 : pick == Pick::QR                                      ? "library/qr"_i18n
-                : pick == Pick::SEND                                    ? "library/send_this"_i18n
+                : choosingSeveral()                                     ? (isChosen ? "library/unselect"_i18n : "library/select"_i18n)
                 : pick == Pick::PARENT1 || pick == Pick::PARENT2 || pick == Pick::KID ? "library/child_choose"_i18n
                                                                         : "library/view"_i18n);
         if (pick != Pick::NONE) {
@@ -431,20 +525,26 @@ void LibraryActivity::cardActions(int index)
                     brls::sync([this] { setPick(Pick::NONE); });
                     return true;
                 }));
+            if (choosingSeveral()) {
+                // START: on with the chosen Miis
+                const int n = chosenCount();
+                ids.push_back(card->registerAction(
+                    brls::getStr(pick == Pick::DELETE ? "library/delete_n" : "library/send_n", std::to_string(n)),
+                    brls::BUTTON_START, [this](brls::View*) {
+                        brls::sync([this] { finishChoosing(); });
+                        return true;
+                    }));
+            }
             if (!batchingHints)
                 brls::Application::getGlobalHintsUpdateEvent()->fire();
             return;
         }
+        // Square: choose Miis to delete, starting with this one
         ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
-            auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
-            dialog->addButton("hints/cancel"_i18n, [] {});
-            dialog->addButton("library/delete"_i18n, [this, index] {
-                if (!MiiLibrary::instance().remove(index))
-                    brls::Application::notify("library/delete_failed"_i18n);
-                // Rebuild after the dialog has closed and released focus.
-                brls::sync([this] { rebuild(); });
+            brls::sync([this, index] {
+                setPick(Pick::DELETE);
+                toggleChosen(index);
             });
-            dialog->open();
             return true;
         }));
         if (pick == Pick::NONE)
@@ -559,23 +659,23 @@ void LibraryActivity::swapHeld(int index)
     showHeldAt(index);
 }
 
+// Import from SD Card: the Miis found there on a screen of their own, to
+// choose which join the list.
 void LibraryActivity::importMiis()
 {
     MiiLibrary& lib = MiiLibrary::instance();
-    const MiiLibrary::ImportResult r = lib.importFolder();
-    std::string msg;
-    if (r.imported == 0 && r.failed == 0 && !r.full)
-        msg = "library/import_none"_i18n + " " + lib.importDir() + "/";
-    else {
-        msg = std::to_string(r.imported) + " " + "library/import_done"_i18n;
-        if (r.failed)
-            msg += ", " + std::to_string(r.failed) + " " + "library/import_failed"_i18n;
-        if (r.full)
-            msg += ". " + "library/import_full"_i18n;
+    int unreadable = 0;
+    std::vector<MiiLibrary::Pending> found = lib.scanImports(&unreadable);
+    if (found.empty()) {
+        brls::Application::notify(unreadable ? std::to_string(unreadable) + " " + "library/import_failed"_i18n
+                                             : "library/import_none"_i18n + " " + lib.importDir() + "/");
+        return;
     }
-    brls::Application::notify(msg);
-    if (r.imported)
-        brls::sync([this] { rebuild(); });
+    brls::Application::pushActivity(new ImportActivity(std::move(found), unreadable, [this](int imported) {
+        if (imported)
+            rebuild();
+    }),
+        brls::TransitionAnimation::NONE);
 }
 
 void LibraryActivity::exportMii(int index)
@@ -618,7 +718,12 @@ void LibraryActivity::setPick(Pick mode)
 {
     const bool wasChoosing = pick != Pick::NONE;
     pick = mode;
+    // choosing several: none chosen yet
+    chosen.assign(cards.size(), false);
+    for (brls::View* c : cards)
+        static_cast<MiiCard*>(c)->checked = false;
     pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
+            : mode == Pick::DELETE          ? "library/pick_delete"_i18n
             : mode == Pick::QR              ? "library/pick_qr"_i18n
             : mode == Pick::SEND            ? "library/pick_send"_i18n
             : mode == Pick::KID             ? "library/pick_kid"_i18n
@@ -638,7 +743,10 @@ void LibraryActivity::setPick(Pick mode)
     updateSettingsAction();
     allCardActions();
     // choosing a Mii starts on the first one
-    if (mode != Pick::NONE && !wasChoosing && !cards.empty())
+    // (unless the cursor is on a Mii already: Square starts on that one)
+    brls::View* focus = brls::Application::getCurrentFocus();
+    const bool onCard = std::find(cards.begin(), cards.end(), focus) != cards.end();
+    if (mode != Pick::NONE && !wasChoosing && !onCard && !cards.empty())
         brls::Application::giveFocus(cards[0]);
 }
 

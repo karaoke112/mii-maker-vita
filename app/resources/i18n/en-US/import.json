@@ -1,0 +1,15 @@
+{
+  "title": "Import from SD Card",
+  "found": "{} Miis found in ux0:data/mii/import/.",
+  "unreadable": "(Files that could not be read: {}.)",
+  "leave": "Leave Out",
+  "include": "Include",
+  "delete": "Delete",
+  "keep": "Keep",
+  "left_out": "Left Out",
+  "will_delete": "Delete",
+  "go": "Import ({})",
+  "go_delete": "Import ({}), Delete ({})",
+  "delete_confirm": "Delete {} file(s) from the SD card? This cannot be undone.",
+  "deleted_n": "{} file(s) deleted"
+}

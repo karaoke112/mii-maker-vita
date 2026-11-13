@@ -13,7 +13,7 @@
   "place": "Place",
   "swap": "Swap",
   "move_failed": "Could not save the new order.",
-  "import_none": "No Mii files (.charinfo, .nfsd, .ffsd) or QR code pictures found in",
+  "import_none": "No Mii files (.charinfo, .nfsd, .ffsd, .cfsd) or QR code pictures found in",
   "import_done": "Mii(s) imported",
   "import_failed": "file(s) could not be read",
   "import_full": "The Mii list is full (200 Miis)",
@@ -41,7 +41,13 @@
   "pick_export": "Choose Miis to export",
   "pick_qr": "Choose a Mii for its QR code",
   "qr": "QR Code",
-  "pick_send": "Choose a Mii to send",
-  "send_this": "Send",
-  "coming_soon": "Coming soon!"
+  "pick_send": "Choose Miis to send",
+  "coming_soon": "Coming soon!",
+  "pick_delete": "Choose Miis to delete",
+  "select": "Select",
+  "unselect": "Unselect",
+  "delete_n": "Delete ({})",
+  "send_n": "Send ({})",
+  "delete_confirm_n": "Delete these {} Miis? This cannot be undone.",
+  "choose_first": "Choose at least one Mii first."
 }

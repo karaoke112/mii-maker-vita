@@ -16,10 +16,12 @@ namespace {
 class TradeView : public brls::View
 {
   public:
-    TradeView(bool receiving, const mii_charinfo_t* mii, brls::Label* status, brls::Box* list,
-        std::function<void()> onSaved)
+    TradeView(bool receiving, const std::vector<mii_charinfo_t>* miis, mii_charinfo_t* offered, brls::Label* count,
+        brls::Label* status, brls::Box* list, std::function<void()> onSaved)
         : receiving(receiving)
-        , mii(mii)
+        , miis(miis)
+        , offeredMii(offered)
+        , count(count)
         , status(status)
         , list(list)
         , onSaved(std::move(onSaved))
@@ -76,6 +78,10 @@ class TradeView : public brls::View
             status->setText(receiving ? "trade/waiting"_i18n + " " + trade::userName() : "trade/looking"_i18n);
         }
         session->update(now);
+        if (offerPending && !session->sending()) {
+            offerPending = false;
+            offerNext();
+        }
         if (!receiving)
             showReceivers();
     }
@@ -101,11 +107,12 @@ class TradeView : public brls::View
             const uint32_t id = p.first;
             const std::string name = p.second;
             b->registerClickAction([this, id, name](brls::View*) {
-                if (session->sending())
+                if (session->sending() || next > 0)
                     return true;
                 target = name;
-                session->send(id, *mii);
-                status->setText("trade/offering"_i18n + " " + name + "...");
+                targetId = id;
+                accepted = 0;
+                offerNext();
                 return true;
             });
             list->addView(b);
@@ -116,14 +123,42 @@ class TradeView : public brls::View
             status->setText(now.empty() ? "trade/looking"_i18n : "trade/choose"_i18n);
     }
 
-    void answered(bool accepted, bool timedOut)
+    // the chosen Miis go one at a time; the receiver is asked about each
+    void offerNext()
     {
-        if (accepted) {
-            brls::Application::notify(target + " " + "trade/accepted"_i18n);
-            brls::sync([] { brls::Application::popActivity(brls::TransitionAnimation::NONE); });
+        const int n = (int)miis->size();
+        *offeredMii = (*miis)[next];
+        if (count)
+            count->setText(n > 1 ? brls::getStr("trade/of", std::to_string(next + 1), std::to_string(n)) : "");
+        session->send(targetId, (*miis)[next]);
+        status->setText("trade/offering"_i18n + " " + target + "...");
+        next++;
+    }
+
+    void answered(bool ok, bool timedOut)
+    {
+        const int n = (int)miis->size();
+        if (ok)
+            accepted++;
+        if (timedOut && !ok) {
+            // no answer: stop here (the others are not offered)
+            status->setText("trade/no_answer"_i18n);
+            next = 0;
             return;
         }
-        status->setText(timedOut ? "trade/no_answer"_i18n : target + " " + "trade/declined"_i18n);
+        if (next < n) {
+            offerPending = true; // from tick(), outside the session's callback
+            return;
+        }
+        // all offered: say how many were taken
+        next = 0;
+        if (n == 1 && !ok) {
+            status->setText(target + " " + "trade/declined"_i18n);
+            return;
+        }
+        brls::Application::notify(n == 1 ? target + " " + "trade/accepted"_i18n
+                                         : brls::getStr("trade/accepted_n", target, std::to_string(accepted), std::to_string(n)));
+        brls::sync([] { brls::Application::popActivity(brls::TransitionAnimation::NONE); });
     }
 
     // ---- receiving ----
@@ -177,7 +212,9 @@ class TradeView : public brls::View
     }
 
     bool receiving;
-    const mii_charinfo_t* mii;
+    const std::vector<mii_charinfo_t>* miis;
+    mii_charinfo_t* offeredMii; // the preview shows it
+    brls::Label* count;
     brls::Label* status;
     brls::Box* list;
     std::function<void()> onSaved;
@@ -187,6 +224,10 @@ class TradeView : public brls::View
     bool started = false, reportedFailure = false;
     std::vector<std::pair<uint32_t, std::string>> shown;
     std::string target;
+    uint32_t targetId = 0;
+    int next = 0;     // the next Mii to offer (0: not sending)
+    int accepted = 0; // taken so far
+    bool offerPending = false;
     bool asking = false;
     mii_charinfo_t incoming {};
 };
@@ -199,10 +240,12 @@ TradeActivity::TradeActivity(std::function<void()> onSaved)
 {
 }
 
-TradeActivity::TradeActivity(const mii_charinfo_t& mii)
+TradeActivity::TradeActivity(std::vector<mii_charinfo_t> miis)
     : receiving(false)
-    , mii(mii)
+    , miis(std::move(miis))
 {
+    if (!this->miis.empty())
+        shown = this->miis[0];
 }
 
 brls::View* TradeActivity::createContentView()
@@ -213,10 +256,18 @@ brls::View* TradeActivity::createContentView()
     root->setGrow(1);
 
     if (!receiving) {
-        auto* preview = new MiiPreview(&mii, 256);
+        auto* col = new brls::Box(brls::Axis::COLUMN);
+        col->setAlignItems(brls::AlignItems::CENTER);
+        col->setMarginRight(60);
+        auto* preview = new MiiPreview(&shown, 256);
         preview->setDimensions(260, 330);
-        preview->setMarginRight(60);
-        root->addView(preview);
+        col->addView(preview);
+        count = new brls::Label();
+        count->setFontSize(20);
+        count->setTextColor(ui::textDim());
+        count->setText(miis.size() > 1 ? brls::getStr("trade/count", std::to_string(miis.size())) : "");
+        col->addView(count);
+        root->addView(col);
     }
 
     auto* right = new brls::Box(brls::Axis::COLUMN);
@@ -235,7 +286,7 @@ brls::View* TradeActivity::createContentView()
     right->addView(note);
     root->addView(right);
 
-    auto* ticker = new TradeView(receiving, &mii, status, list, onSaved);
+    auto* ticker = new TradeView(receiving, &miis, &shown, count, status, list, onSaved);
     ticker->setDimensions(1, 1);
     root->addView(ticker);
 

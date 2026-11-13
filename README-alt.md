@@ -57,14 +57,18 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   can be edited and saved. "Receive Mii" scans a **Mii QR code** with the
   back camera (3DS, Wii U, Switch 2 and Tomodachi Life codes), imports
   `.charinfo` / `.nfsd` / `.ffsd` / `.cfsd` files and QR code pictures from
-  `ux0:data/mii/import/`, or receives from another Vita; "Send Mii"
+  `ux0:data/mii/import/` (a screen shows the Miis found: Cross leaves one
+  out, its file staying there; Square deletes its file; START imports the
+  rest), or receives from another Vita; "Send Mii"
   exports Miis to `ux0:data/mii/export/` (several in a row) or makes a QR code (Switch 2
   format, which keeps Switch-only colors; 3DS and Wii U read it too), shown
   on screen and saved to `ux0:data/mii/qr/`. QR codes need your own copy of
   the Mii QR key (not included) in `ux0:data/mii-maker-vita/dat/qrkey.txt`:
   32 hex digits, optionally followed by the Switch 2 key on the next line.
-  **Send to / Receive from Another Vita** trades Miis over ad-hoc wireless
-  (the receiver is asked before each Mii is saved).
+  **Send to / Receive from Another Vita** trades Miis over ad-hoc wireless:
+  choose several (Cross ticks them, START sends), offered one after another;
+  the receiver is asked before each Mii is saved. Square in the list
+  chooses Miis to delete the same way (START deletes them, after asking).
   In the list, Triangle picks a Mii up to move it (Cross places it,
   Triangle swaps it with the Mii under the cursor, Circle puts it back).
   Settings (START): default skin tone, theme, curated look-alikes, QR code

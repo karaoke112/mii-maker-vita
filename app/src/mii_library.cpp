@@ -481,61 +481,73 @@ static std::string lowerExtension(const std::string& name)
     return ext;
 }
 
-MiiLibrary::ImportResult MiiLibrary::importFolder()
+std::vector<MiiLibrary::Pending> MiiLibrary::scanImports(int* unreadable)
 {
-    ImportResult result;
-    const std::string in = importDir(), done = in + "/imported";
-    mkdir(done.c_str(), 0777);
+    std::vector<Pending> out;
+    if (unreadable)
+        *unreadable = 0;
+    const std::string in = importDir();
     DIR* d = opendir(in.c_str());
     if (!d)
-        return result;
+        return out;
     std::vector<std::string> names;
     while (struct dirent* e = readdir(d))
         names.push_back(e->d_name);
     closedir(d);
     std::sort(names.begin(), names.end());
 
-    bool changed = false;
     for (const std::string& name : names) {
         const std::string ext = lowerExtension(name);
         const bool image = ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp";
         if (ext != "charinfo" && ext != "nfsd" && ext != "ffsd" && ext != "cfsd" && !image)
             continue;
         std::vector<uint8_t> data;
-        mii_charinfo_t ci;
-        mii_ver3_info_t info;
-        bool hasInfo = false;
+        Pending p;
+        p.file = name;
         mii_result_t r = MII_ERR_SIZE;
         if (image) {
             // a picture of a Mii QR code (3DS, Wii U, Switch 2, this app)
-            if (qr::scanImageFile(in + "/" + name, &ci))
+            if (qr::scanImageFile(in + "/" + name, &p.mii))
                 r = MII_OK;
         } else if (readFile(in + "/" + name, &data)) {
             if (ext == "charinfo")
-                r = mii_charinfo_decode(&ci, data.data(), data.size());
+                r = mii_charinfo_decode(&p.mii, data.data(), data.size());
             else if (ext == "nfsd")
-                r = mii_storedata_decode(&ci, data.data(), data.size(), nullptr);
+                r = mii_storedata_decode(&p.mii, data.data(), data.size(), nullptr);
             else {
-                r = mii_ver3_decode(&ci, &info, data.data(), data.size(), nullptr);
-                hasInfo = r == MII_OK;
+                r = mii_ver3_decode(&p.mii, &p.info, data.data(), data.size(), nullptr);
+                p.hasInfo = r == MII_OK;
             }
         }
-        if (r != MII_OK || mii_verify(&ci, 0) != MII_FIELD_COUNT) {
+        if (r != MII_OK || mii_verify(&p.mii, 0) != MII_FIELD_COUNT) {
             brls::Logger::warning("import {}: not a valid Mii file", name);
-            result.failed++;
+            if (unreadable)
+                (*unreadable)++;
             continue;
         }
-        if (!mii_create_id_is_valid(&ci.create_id))
-            newCreateId(&ci.create_id); // Ver3 files carry no create id
-        if (putEntry(ci) < 0) {
+        if (!mii_create_id_is_valid(&p.mii.create_id))
+            newCreateId(&p.mii.create_id); // Ver3 files carry no create id
+        out.push_back(p);
+    }
+    return out;
+}
+
+MiiLibrary::ImportResult MiiLibrary::importPending(const std::vector<Pending>& chosen)
+{
+    ImportResult result;
+    const std::string in = importDir(), done = in + "/imported";
+    mkdir(done.c_str(), 0777);
+    bool changed = false;
+    for (const Pending& p : chosen) {
+        if (putEntry(p.mii) < 0) {
             result.full = true;
             break;
         }
-        if (hasInfo) // its favorite, birthday, creator...
-            detailsFromVer3(ci.create_id, info);
+        if (p.hasInfo) // its favorite, birthday, creator...
+            detailsFromVer3(p.mii.create_id, p.info);
         changed = true;
         result.imported++;
-        const std::string from = in + "/" + name, to = done + "/" + name;
+        const std::string from = in + "/" + p.file, to = done + "/" + p.file;
         std::remove(to.c_str());
         std::rename(from.c_str(), to.c_str());
     }
@@ -544,4 +556,19 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
     if (changed && !save())
         brls::Logger::error("import: could not save the database");
     return result;
+}
+
+bool MiiLibrary::deleteImport(const std::string& file)
+{
+    if (file.find('/') != std::string::npos || file.find("..") != std::string::npos)
+        return false;
+    return std::remove((importDir() + "/" + file).c_str()) == 0;
+}
+
+MiiLibrary::ImportResult MiiLibrary::importFolder()
+{
+    int unreadable = 0;
+    ImportResult r = importPending(scanImports(&unreadable));
+    r.failed = unreadable;
+    return r;
 }
