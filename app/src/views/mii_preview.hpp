@@ -39,6 +39,8 @@ class MiiPreview : public brls::View
     void setFrontSource(bool* source) { frontSource = source; }
     // The expression to draw the Mii with (the editor's L menu); 0: normal.
     void setExpressionSource(const int* source) { expressionSource = source; }
+    // The pose (whole-Mii framing; see HeadRenderer::poseCount); 0: standing.
+    void setPoseSource(const int* source) { poseSource = source; }
     // Previews with the same share key (the editor's screens) use one
     // render: a new screen shows the latest picture at once instead of
     // nothing, and a screen shown again redraws if another one rendered.
@@ -106,6 +108,9 @@ class MiiPreview : public brls::View
     const int* expressionSource = nullptr;
     int expression() const { return expressionSource ? *expressionSource : 0; }
     int requestedExpression = 0;
+    const int* poseSource = nullptr;
+    int pose() const { return poseSource ? *poseSource : 0; }
+    int requestedPose = 0;
     bool stage = false;
     bool compact = false;
     bool interactive = true;

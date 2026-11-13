@@ -11,7 +11,9 @@
 #include <mii3d/mii3d.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
 
 using namespace brls::literals;
 
@@ -32,7 +34,7 @@ static NVGcolor rgb(uint32_t c)
 // L: a list of the expressions (FFL's; the textures come from the face
 // resource: 19 in an FFLRes, 70 in Miitomo's AFLRes), the one shown
 // ticked. Only the preview shows it: Miis have no expression of their own.
-static void showExpressions(EditorSession* s)
+void showExpressionMenu(int* expression)
 {
     // the expressions FFL has twice (the same face) are listed once
     static const int kSkip[] = { 34, 42, 44, 46, 48, 50, 52, 54, 61, 62 };
@@ -43,15 +45,91 @@ static void showExpressions(EditorSession* s)
     for (int e = 0; e < count; e++) {
         if (std::find(std::begin(kSkip), std::end(kSkip), e) != std::end(kSkip))
             continue;
-        if (e == s->expression)
+        if (e == *expression)
             selected = (int)ids.size();
         ids.push_back(e);
         names.push_back(brls::getStr("expressions/names/" + std::to_string(e)));
     }
-    auto* dropdown = new brls::Dropdown("expressions/title"_i18n, names, [s, ids](int i) {
+    auto* dropdown = new brls::Dropdown("expressions/title"_i18n, names, [expression, ids](int i) {
         if (i >= 0 && i < (int)ids.size())
-            s->expression = ids[i]; // the preview notices and redraws
+            *expression = ids[i]; // the preview notices and redraws
     }, selected);
+    brls::Application::pushActivity(new brls::Activity(dropdown));
+}
+
+// R: the poses, from Mario Kart 8's MiiBodyMiddle.bfres (the player's own
+// copy). Its animation names are like "Wait01_oe": a name in CamelCase, a
+// number, and a variant (_l looping, _o once, _oe once more); shown as
+// "Wait 2 C", with the number or letter only where there are several.
+std::string poseDisplayName(int pose)
+{
+    if (pose <= 0)
+        return "poses/standing"_i18n;
+    HeadRenderer& hr = HeadRenderer::instance();
+    auto parse = [](const std::string& raw, std::string* base, int* number, std::string* variant) {
+        const size_t us = raw.rfind('_');
+        std::string stem = raw.substr(0, us);
+        *variant = us == std::string::npos ? "" : raw.substr(us + 1);
+        size_t d = stem.size();
+        while (d > 0 && std::isdigit((unsigned char)stem[d - 1]))
+            d--;
+        *number = d < stem.size() ? std::atoi(stem.c_str() + d) : -1;
+        *base = stem.substr(0, d);
+    };
+    std::string base, variant;
+    int number;
+    parse(hr.poseName(pose - 1), &base, &number, &variant);
+    // how many share the base, and the number; this one's variant among them
+    bool otherNumbers = false;
+    int variants = 0, mine = 0;
+    for (int i = 0; i < hr.poseCount(); i++) {
+        std::string b, v;
+        int n;
+        parse(hr.poseName(i), &b, &n, &v);
+        if (b != base)
+            continue;
+        if (n != number)
+            otherNumbers = true;
+        else {
+            if (i == pose - 1)
+                mine = variants;
+            variants++;
+        }
+    }
+    std::string words;
+    for (size_t i = 0; i < base.size(); i++) {
+        const char c = base[i];
+        if (i > 0 && std::isupper((unsigned char)c) && !std::isupper((unsigned char)base[i - 1]))
+            words += ' ';
+        words += c;
+    }
+    const std::string key = "poses/names/" + base;
+    const std::string nice = brls::getStr(key);
+    if (nice != key)
+        words = nice; // a better name for some ("Rps": Rock-Paper-Scissors)
+    if (otherNumbers && number >= 0)
+        words += " " + std::to_string(number + 1);
+    if (variants > 1)
+        words += std::string(" ") + (char)('A' + mine);
+    return words;
+}
+
+void showPoseMenu(int* pose)
+{
+    HeadRenderer& hr = HeadRenderer::instance();
+    if (hr.poseCount() == 0) {
+        auto* dialog = new brls::Dialog(hr.hasBody() ? "poses/need_file"_i18n : "poses/need_body"_i18n);
+        dialog->addButton("hints/ok"_i18n, [] {});
+        dialog->open();
+        return;
+    }
+    std::vector<std::string> names;
+    for (int p = 0; p <= hr.poseCount(); p++)
+        names.push_back(poseDisplayName(p));
+    auto* dropdown = new brls::Dropdown("poses/title"_i18n, names, [pose](int i) {
+        if (i >= 0)
+            *pose = i; // the preview notices and redraws
+    }, *pose);
     brls::Application::pushActivity(new brls::Activity(dropdown));
 }
 
@@ -71,6 +149,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     preview->setPitchSource(&s.pitch);
     preview->setFrontSource(&s.facingFront);
     preview->setExpressionSource(&s.expression);
+    preview->setPoseSource(&s.pose);
     preview->setShareKey(&s); // all of this Mii's editor screens share one picture
     preview->setWidth(520);
     preview->setGrow(0);
@@ -92,13 +171,21 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     // pages with tabs take L back for the tabs (CategoryActivity)
     if (HeadRenderer::instance().expressionCount() > 1)
         frame->registerAction("expressions/hint"_i18n, brls::BUTTON_LB, [sp](brls::View*) {
-            showExpressions(sp);
+            showExpressionMenu(&sp->expression);
             return true;
         });
+    frame->registerAction("poses/hint"_i18n, brls::BUTTON_RB, [sp](brls::View*) {
+        showPoseMenu(&sp->pose);
+        return true;
+    });
+    frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_R), [sp](brls::View*) {
+        showPoseMenu(&sp->pose);
+        return true;
+    });
     // desktop builds: the L key
     if (HeadRenderer::instance().expressionCount() > 1)
         frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_L), [sp](brls::View*) {
-            showExpressions(sp);
+            showExpressionMenu(&sp->expression);
             return true;
         });
     if (previewOut)
