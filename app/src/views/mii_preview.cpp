@@ -150,7 +150,11 @@ int MiiPreview::gpuSize() const
 void MiiPreview::stageTarget(float* pivot, float* zoom) const
 {
     if (compact) {
-        *pivot = framing == Framing::BUST ? 104.0f : 90.0f;
+        // the close-up follows the head's height (the neck is at 93.9 x the
+        // height scale, as for the editor's bust), so any Mii's head sits in
+        // the middle of the tile; a Mii of middle height (64) keeps 104
+        const float heightScale = mii->height * 0.006015625f + 0.5f;
+        *pivot = framing == Framing::BUST ? 104.0f + 10.7766f * 8.715f * (heightScale - (64 * 0.006015625f + 0.5f)) : 90.0f;
         *zoom = framing == Framing::BUST ? 1.8f : 1.0f; // (whole Miis: head to shoes in the tile)
     } else if (framing == Framing::BUST) {
         const float heightScale = mii->height * 0.006015625f + 0.5f;
