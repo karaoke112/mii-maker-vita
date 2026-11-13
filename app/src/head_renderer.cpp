@@ -51,11 +51,13 @@ static uint64_t hashKey(const HeadRenderer::Spec& spec, int pass)
         mix(bytes, sizeof(bytes));
     else
         mix(&spec.mii, sizeof(spec.mii));
-    const int v[9] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
-                       spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0 };
+    const int v[10] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
+                        spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0, spec.expression };
     mix(v, sizeof(v));
     return h;
 }
+
+int HeadRenderer::expressionCount() const { return res ? mii3d_expression_count(res) : 1; }
 
 static bool readFile(const std::string& path, std::vector<uint8_t>* out)
 {
@@ -314,7 +316,7 @@ void HeadRenderer::pumpGpuPreviews()
         const Spec& sp = job.spec;
         const brls::Time started = brls::getCPUTimeUsec();
         const int image = gpu.render(job.owner, sp.mii, sp.size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes,
-            sp.background & 0xFFFFFFu);
+            sp.background & 0xFFFFFFu, sp.expression);
         lastUs[1] = (int)(brls::getCPUTimeUsec() - started);
         if (image > 0) {
             job.cb(nullptr, (sp.size + 7) & ~7, image);
@@ -654,6 +656,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 view.zoom = sp.zoom;
                 view.center_y = sp.centerY;
                 view.full_body = sp.fullBody && bodyRes;
+                view.expression = sp.expression;
                 // thumbnails are drawn once (then cached): smooth them
                 view.supersample = job.pass == PASS_SMOOTH || sp.smooth ? 2 : 1;
                 // small images do not need a detailed face texture

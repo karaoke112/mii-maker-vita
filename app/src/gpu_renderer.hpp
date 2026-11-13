@@ -33,7 +33,7 @@ class GpuRenderer
     // `background` (0xRRGGBB). Returns a NanoVG image id (owned here), or -1
     // on failure. Main thread, outside a frame.
     int render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
-        bool fullBody, uint32_t background);
+        bool fullBody, uint32_t background, int expression = 0);
     // Draws a transparent icon (square, any `size`) and reads it back into
     // `rgba` (size*size*4, not premultiplied), with the GPU's 4x MSAA for
     // smooth edges. Main thread, outside a frame.

@@ -126,9 +126,15 @@ typedef struct mii3d_view {
     float zoom;            /* 1 = whole head; 0 means 1 */
     float center_y;        /* move the framing up (+) or down, in model units */
     int full_body;         /* draw the whole Mii (needs mii3d_renderer_set_body) */
+    int expression;        /* FFL's expressions: 0 = normal, below mii3d_expression_count() */
 } mii3d_view_t;
 
 void mii3d_view_init_default(mii3d_view_t *view);
+
+/* How many expressions the resource has the textures for: 19 (FFL's
+ * standard set, any FFLRes), 70 with Miitomo's AFLRes (80 eye textures),
+ * else 1 (only the normal face). */
+int mii3d_expression_count(const mii3d_res_t *res);
 
 /* Draws the head into `rgba` (width * height * 4 bytes, row 0 at top,
  * non-premultiplied). */

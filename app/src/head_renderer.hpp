@@ -62,6 +62,8 @@ class HeadRenderer
         // 0xFFRRGGBB: an opaque backdrop, which lets the GPU draw it (stage
         // previews); 0: transparent, CPU only
         uint32_t background = 0;
+        // FFL's expressions (0: the normal face); see expressionCount()
+        int expression = 0;
     };
 
     static HeadRenderer& instance();
@@ -81,6 +83,9 @@ class HeadRenderer
     void pumpGpu();
     bool available() const { return res != nullptr; }
     bool hasBody() const { return bodyRes != nullptr; }
+    // How many expressions the installed face resource has: 70 with
+    // Miitomo's AFLRes, 19 with an FFLRes, 1 without one.
+    int expressionCount() const;
     const std::string& status() const { return statusText; }
     // How long the latest renders took, in ms (quick preview pass, full
     // preview pass, icon), for the SELECT timing readout.

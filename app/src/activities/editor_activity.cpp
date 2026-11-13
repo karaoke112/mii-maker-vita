@@ -10,6 +10,7 @@
 #include <mii/mii_editor.h>
 #include <mii3d/mii3d.h>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace brls::literals;
@@ -24,6 +25,34 @@ static std::vector<uint8_t> gridItems(mii_grid_kind_t kind, int* columns)
 static NVGcolor rgb(uint32_t c)
 {
     return nvgRGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+}
+
+// ---- expressions -------------------------------------------------------
+
+// L: a list of the expressions (FFL's; the textures come from the face
+// resource: 19 in an FFLRes, 70 in Miitomo's AFLRes), the one shown
+// ticked. Only the preview shows it: Miis have no expression of their own.
+static void showExpressions(EditorSession* s)
+{
+    // the expressions FFL has twice (the same face) are listed once
+    static const int kSkip[] = { 34, 42, 44, 46, 48, 50, 52, 54, 61, 62 };
+    const int count = HeadRenderer::instance().expressionCount();
+    std::vector<int> ids;
+    std::vector<std::string> names;
+    int selected = 0;
+    for (int e = 0; e < count; e++) {
+        if (std::find(std::begin(kSkip), std::end(kSkip), e) != std::end(kSkip))
+            continue;
+        if (e == s->expression)
+            selected = (int)ids.size();
+        ids.push_back(e);
+        names.push_back(brls::getStr("expressions/names/" + std::to_string(e)));
+    }
+    auto* dropdown = new brls::Dropdown("expressions/title"_i18n, names, [s, ids](int i) {
+        if (i >= 0 && i < (int)ids.size())
+            s->expression = ids[i]; // the preview notices and redraws
+    }, selected);
+    brls::Application::pushActivity(new brls::Activity(dropdown));
 }
 
 // ---- shared layout -----------------------------------------------------
@@ -41,6 +70,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     preview->setYawSource(&s.yaw);
     preview->setPitchSource(&s.pitch);
     preview->setFrontSource(&s.facingFront);
+    preview->setExpressionSource(&s.expression);
     preview->setShareKey(&s); // all of this Mii's editor screens share one picture
     preview->setWidth(520);
     preview->setGrow(0);
@@ -59,6 +89,18 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
         sp->facingFront = true; // the preview turns it round
         return true;
     });
+    // pages with tabs take L back for the tabs (CategoryActivity)
+    if (HeadRenderer::instance().expressionCount() > 1)
+        frame->registerAction("expressions/hint"_i18n, brls::BUTTON_LB, [sp](brls::View*) {
+            showExpressions(sp);
+            return true;
+        });
+    // desktop builds: the L key
+    if (HeadRenderer::instance().expressionCount() > 1)
+        frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_L), [sp](brls::View*) {
+            showExpressions(sp);
+            return true;
+        });
     if (previewOut)
         *previewOut = preview;
     return frame;

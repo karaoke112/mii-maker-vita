@@ -17,6 +17,7 @@ struct EditorSession {
     float yaw = 0.0f;
     float pitch = 0.0f; // a small tilt, right stick up / down
     bool facingFront = false; // Triangle: turning back to the front
+    int expression = 0;       // L: the expression the preview shows (not saved)
     bool dirty = false;
 };
 

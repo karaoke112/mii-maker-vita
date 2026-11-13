@@ -76,8 +76,9 @@ void MiiPreview::request3D()
     const int size = stage && hr.gpuActive() ? gpuSize() : renderSize;
     if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch && requestedSize == size &&
         (!stage || !hr.hasBody() || (requestedPivot == pivot && requestedZoom == zoom)) &&
-        std::memcmp(&requested, mii, sizeof(requested)) == 0)
+        requestedExpression == expression() && std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
+    requestedExpression = expression();
     requestedPivot = pivot;
     requestedZoom = zoom;
     requestedSize = size;
@@ -89,6 +90,7 @@ void MiiPreview::request3D()
     hasRequested = true;
     HeadRenderer::Spec spec;
     spec.mii = *mii;
+    spec.expression = requestedExpression;
     // the GPU draws stages at about the size they are shown (sharp, and
     // its multisampling smooths the edges); the CPU keeps to renderSize
     spec.size = stage && hr.gpuActive() ? gpuSize() : renderSize;
