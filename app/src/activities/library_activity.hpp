@@ -34,7 +34,7 @@ class LibraryActivity : public brls::Activity
     void showSendMenu();
     void showSettings(int focus = 0);
     void rebuildForTheme();
-    enum class Pick { NONE, EXPORT, QR, SEND };
+    enum class Pick { NONE, EXPORT, QR, SEND, PARENT1, PARENT2 };
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
 
@@ -62,6 +62,10 @@ class LibraryActivity : public brls::Activity
     brls::Label* empty = nullptr;
     brls::Label* pickLabel = nullptr;
     Pick pick = Pick::NONE;
+    // Child Generator: the first parent chosen
+    mii_charinfo_t parentA{};
+    int parentAIndex = -1;
+    std::string parent2Prompt() const;
     bool stale = false;
     std::vector<brls::View*> cards;
     std::vector<brls::View*> thumbs; // the cards' previews
