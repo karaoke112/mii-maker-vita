@@ -1,0 +1,14 @@
+{
+  "title": "Child Generator",
+  "prompt": "{} and {}'s child, growing up",
+  "stage0": "Newborn",
+  "stage1": "Toddler",
+  "stage2": "Child",
+  "stage3": "Preteen",
+  "stage4": "Teen",
+  "stage5": "Adult",
+  "saved": "Saved",
+  "again": "New Child",
+  "leave": "Are you sure? Stages you haven't saved won't be kept.",
+  "leave_yes": "Leave"
+}

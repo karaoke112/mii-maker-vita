@@ -1,5 +1,6 @@
 #include "activities/library_activity.hpp"
 
+#include "activities/child_activity.hpp"
 #include "activities/editor_activity.hpp"
 #include "activities/qr_activity.hpp"
 #include "activities/trade_activity.hpp"
@@ -180,7 +181,8 @@ void LibraryActivity::rebuildForTheme()
 void LibraryActivity::openEditor(const mii_charinfo_t& start)
 {
     // no cross-fade: the old screen should not linger behind the new one
-    brls::Application::pushActivity(new EditorActivity(start, [this] { rebuild(); }), brls::TransitionAnimation::NONE);
+    brls::Application::pushActivity(new EditorActivity(start, [this](const mii_charinfo_t&) { rebuild(); }),
+        brls::TransitionAnimation::NONE);
 }
 
 void LibraryActivity::rebuild()
@@ -235,6 +237,18 @@ void LibraryActivity::rebuild()
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
                 brls::Application::pushActivity(new TradeActivity(mii), brls::TransitionAnimation::NONE);
+            } else if (pick == Pick::PARENT1) {
+                parentA = miis[index];
+                parentAIndex = index;
+                setPick(Pick::PARENT2);
+            } else if (pick == Pick::PARENT2) {
+                if (index == parentAIndex) {
+                    brls::Application::notify("library/child_same"_i18n);
+                    return true;
+                }
+                const mii_charinfo_t a = parentA, b = miis[index];
+                setPick(Pick::NONE);
+                brls::Application::pushActivity(new ChildActivity(a, b, [this] { rebuild(); }), brls::TransitionAnimation::NONE);
             } else if (pick == Pick::QR) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
@@ -299,6 +313,7 @@ void LibraryActivity::cardActions(int index)
         card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
                 : pick == Pick::QR                                      ? "library/qr"_i18n
                 : pick == Pick::SEND                                    ? "library/send_this"_i18n
+                : pick == Pick::PARENT1 || pick == Pick::PARENT2         ? "library/child_choose"_i18n
                                                                         : "library/edit"_i18n);
         ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
             auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
@@ -475,6 +490,14 @@ void LibraryActivity::addScanned(const mii_charinfo_t& scanned)
     brls::sync([this] { rebuild(); });
 }
 
+// The second parent's prompt names the first.
+std::string LibraryActivity::parent2Prompt() const
+{
+    char name[64];
+    mii_name_get_utf8(&parentA, name, sizeof(name));
+    return brls::getStr("library/pick_parent2", std::string(name));
+}
+
 // "Choose a Mii" mode: the next card pressed is exported instead of edited.
 void LibraryActivity::setPick(Pick mode)
 {
@@ -482,6 +505,8 @@ void LibraryActivity::setPick(Pick mode)
     pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
             : mode == Pick::QR              ? "library/pick_qr"_i18n
             : mode == Pick::SEND            ? "library/pick_send"_i18n
+            : mode == Pick::PARENT1         ? "library/pick_parent1"_i18n
+            : mode == Pick::PARENT2         ? parent2Prompt()
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     brls::View* focus = brls::Application::getCurrentFocus();
@@ -512,6 +537,14 @@ void LibraryActivity::showAddMenu()
         PopupMenu::item("library/add_lookalike"_i18n, [this] {
             brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, true),
                 brls::TransitionAnimation::NONE);
+        }),
+        PopupMenu::item("library/add_child"_i18n, [this] {
+            if (miis.size() < 2) {
+                brls::Application::notify("library/child_need_two"_i18n);
+                return;
+            }
+            parentAIndex = -1;
+            setPick(Pick::PARENT1);
         }),
         PopupMenu::item("library/add_import"_i18n, [this] { importMiis(); }),
         PopupMenu::item("library/add_qr"_i18n, [this] {

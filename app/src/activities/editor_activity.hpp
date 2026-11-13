@@ -45,7 +45,8 @@ enum class Category {
 class EditorActivity : public brls::Activity
 {
   public:
-    using OnSaved = std::function<void()>;
+    // after Done: the Mii as saved
+    using OnSaved = std::function<void(const mii_charinfo_t& saved)>;
 
     EditorActivity(const mii_charinfo_t& start, OnSaved onSaved);
 
