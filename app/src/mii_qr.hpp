@@ -35,6 +35,9 @@ bool make(const mii_charinfo_t& mii, Code* out);
 // modules.
 bool savePng(const Code& code, const std::string& path, int scale = 8, int border = 4);
 
+// Any RGBA picture as a PNG (Photo Studio uses it; stb_image_write lives here).
+bool saveRgbaPng(const std::string& path, int width, int height, const uint8_t* rgba);
+
 // Looks for Mii QR codes in an 8-bit grayscale picture; fills `mii` from the
 // first one that reads as a Mii. Not thread-safe across calls on the same
 // Scanner; use one per thread.

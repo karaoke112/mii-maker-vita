@@ -51,8 +51,8 @@ static uint64_t hashKey(const HeadRenderer::Spec& spec, int pass)
         mix(bytes, sizeof(bytes));
     else
         mix(&spec.mii, sizeof(spec.mii));
-    const int v[11] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
-                        spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0, spec.expression, spec.pose };
+    const int v[12] = { spec.size, (int)(spec.yaw * 10.0f), (int)(spec.pitch * 10.0f), (int)(spec.zoom * 100.0f), (int)(spec.centerY * 10.0f),
+                        spec.icon, pass, spec.fullBody ? 1 : 0, spec.smooth ? 1 : 0, spec.expression, spec.pose, spec.pants };
     mix(v, sizeof(v));
     return h;
 }
@@ -213,6 +213,36 @@ float HeadRenderer::poseNeck(int gender, int pose) const
     return v;
 }
 
+bool HeadRenderer::renderPhoto(const Spec& sp, int width, int height, uint32_t background, std::vector<uint8_t>* rgba) const
+{
+    if (!res)
+        return false;
+    mii3d_renderer* r = nullptr;
+    if (mii3d_renderer_create(&r, res) != MII3D_OK)
+        return false;
+    if (bodyRes)
+        mii3d_renderer_set_body(r, bodyRes);
+    if (poses)
+        mii3d_renderer_set_poses(r, poses);
+    mii3d_view_t view;
+    mii3d_view_init_default(&view);
+    view.yaw_deg = sp.yaw;
+    view.pitch_deg = sp.pitch;
+    view.zoom = sp.zoom;
+    view.center_y = sp.centerY;
+    view.full_body = sp.fullBody && bodyRes;
+    view.expression = sp.expression;
+    view.pose = sp.pose;
+    view.pants = sp.pants;
+    view.background = background;
+    view.supersample = 2;
+    view.face_texture_size = 512;
+    rgba->assign((size_t)width * height * 4, 0);
+    const bool ok = mii3d_render_head(r, &sp.mii, &view, rgba->data(), width, height) == MII3D_OK;
+    mii3d_renderer_destroy(r);
+    return ok;
+}
+
 int HeadRenderer::poseCount() const { return poses ? mii3d_poses_count(poses) : 0; }
 
 std::string HeadRenderer::poseName(int index) const { return poses ? mii3d_poses_name(poses, index) : ""; }
@@ -360,7 +390,7 @@ void HeadRenderer::pumpGpuPreviews()
         const Spec& sp = job.spec;
         const brls::Time started = brls::getCPUTimeUsec();
         const int image = gpu.render(job.owner, sp.mii, sp.size, sp.yaw, sp.pitch, sp.zoom, sp.centerY, sp.fullBody && bodyRes,
-            sp.background & 0xFFFFFFu, sp.expression, sp.pose);
+            sp.background & 0xFFFFFFu, sp.expression, sp.pose, sp.pants);
         lastUs[1] = (int)(brls::getCPUTimeUsec() - started);
         if (image > 0) {
             job.cb(nullptr, (sp.size + 7) & ~7, image);
@@ -702,6 +732,7 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
                 view.full_body = sp.fullBody && bodyRes;
                 view.expression = sp.expression;
                 view.pose = sp.pose;
+                view.pants = sp.pants;
                 // thumbnails are drawn once (then cached): smooth them
                 view.supersample = job.pass == PASS_SMOOTH || sp.smooth ? 2 : 1;
                 // small images do not need a detailed face texture

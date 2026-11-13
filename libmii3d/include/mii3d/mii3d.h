@@ -150,7 +150,12 @@ typedef struct mii3d_view {
      * animation n - 1 of the file given to mii3d_renderer_set_poses */
     int pose;
     float pose_frame;      /* the frame of that animation; < 0: its middle */
+    /* the pants, as nn::mii colors them: MII3D_PANTS_GRAY (normal),
+     * _BLUE (a gift), _RED (a favorite), _GOLD (special) */
+    int pants;
 } mii3d_view_t;
+
+enum { MII3D_PANTS_GRAY = 0, MII3D_PANTS_BLUE = 1, MII3D_PANTS_RED = 2, MII3D_PANTS_GOLD = 3 };
 
 void mii3d_view_init_default(mii3d_view_t *view);
 

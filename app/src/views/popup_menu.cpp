@@ -33,6 +33,7 @@ class PopupRow : public brls::Box
             swatch = new brls::Rectangle(nvgRGB(0, 0, 0));
             swatch->setDimensions(34, 34);
             swatch->setCornerRadius(6);
+            swatch->setMarginLeft(item.value ? 12 : 0);
             this->addView(swatch);
         }
         refresh();

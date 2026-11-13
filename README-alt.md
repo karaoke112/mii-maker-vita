@@ -41,7 +41,15 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   tabs). Cross on a Mii in the list opens it on its own screen: the whole
   Mii to turn, and Edit, Change Expression, Change Pose, View QR Code, Use
   Kid-o-matic and Delete; L / R show the Mii before / after it. The list
-  holds 200 Miis. "Add Mii" starts from scratch, offers ten look-alikes
+  holds 200 Miis. **Photo Studio** (on that screen) poses a Mii with an
+  expression on a background of your choice, whole or close up, and saves
+  a 960 x 544 PNG to `ux0:picture/MIIMAKER/` for the Photos app (Clear
+  gives a see-through background). Each Mii has a **Profile** in the editor
+  (beside Nickname): favorite (red pants, as on the Wii U and Switch),
+  birthday, creator and mingle, kept in `ux0:data/mii/details.txt` and
+  carried into .ffsd / .cfsd files, QR codes and the Wii database. A cog
+  button beside Receive Mii opens the settings, as START does.
+  "Add Mii" starts from scratch, offers ten look-alikes
   (curated, or any combination at all), and has two generators from
   InfiniMii (ported from MiiJS and checked against it): **Kid-o-matic**
   shows a Mii at six stages of life, newborn to adult, and the **Child

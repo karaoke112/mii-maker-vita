@@ -14,7 +14,7 @@ bool GpuRenderer::init(const mii3d_res*, const mii3d_res*, const std::string&)
     why = "GPU rendering is only available on the Vita";
     return false;
 }
-int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, float, bool, uint32_t, int, int) { return -1; }
+int GpuRenderer::render(const void*, const mii_charinfo_t&, int, float, float, float, float, bool, uint32_t, int, int, int) { return -1; }
 void GpuRenderer::setPoses(const mii3d_poses*) { }
 bool GpuRenderer::renderIcon(const mii_charinfo_t&, int, float, float, float, float, bool, uint8_t*) { return false; }
 bool GpuRenderer::renderPartIcon(const mii_charinfo_t&, int, int, uint8_t*) { return false; }
@@ -1046,7 +1046,7 @@ void GpuRenderer::setPoses(const mii3d_poses* poses)
 }
 
 int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
-    bool fullBody, uint32_t background, int expression, int pose)
+    bool fullBody, uint32_t background, int expression, int pose, int pants)
 {
     if (!ok)
         return -1;
@@ -1070,6 +1070,7 @@ int GpuRenderer::render(const void* owner, const mii_charinfo_t& mii, int size, 
     view.full_body = fullBody;
     view.expression = expression;
     view.pose = pose;
+    view.pants = pants;
 
     mii3d_result_t r = MII3D_OK;
     g.clearAlpha = 0.0f;

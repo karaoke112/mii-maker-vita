@@ -21,6 +21,7 @@ images (`app/sce_sys/livearea/contents/`), with text set in M PLUS Rounded 1c.
 | glasses.png | eyeglasses (outline) | Material Symbols, Google | Apache-2.0 |
 | star.png | star | Material Symbols, Google | Apache-2.0 |
 | star_outline.png | star (outline) | Material Symbols, Google | Apache-2.0 |
+| settings.png | settings (outline) | Material Symbols, Google | Apache-2.0 |
 | man.png | man | Material Symbols, Google | Apache-2.0 |
 | woman.png | woman | Material Symbols, Google | Apache-2.0 |
 | shorter.png | unfold_less | Material Symbols, Google | Apache-2.0 |

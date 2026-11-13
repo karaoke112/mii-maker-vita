@@ -41,6 +41,8 @@ class MiiPreview : public brls::View
     void setExpressionSource(const int* source) { expressionSource = source; }
     // The pose (whole-Mii framing; see HeadRenderer::poseCount); 0: standing.
     void setPoseSource(const int* source) { poseSource = source; }
+    // Whether the Mii is a favorite (red pants in whole-Mii views).
+    void setFavoriteSource(const bool* source) { favoriteSource = source; }
     // Previews with the same share key (the editor's screens) use one
     // render: a new screen shows the latest picture at once instead of
     // nothing, and a screen shown again redraws if another one rendered.
@@ -68,6 +70,10 @@ class MiiPreview : public brls::View
         backdrop = c;
         hasBackdrop = true;
     }
+
+    // The framing a render of this stage uses now (HeadRenderer::Spec's
+    // fullBody, zoom and centerY), for a picture drawn the same way.
+    void currentFraming(bool* fullBody, float* zoom, float* centerY);
 
     // Extra magnification on top of the framing (1 = none).
     void setZoom(float z) { extraZoom = z; }
@@ -111,6 +117,9 @@ class MiiPreview : public brls::View
     const int* poseSource = nullptr;
     int pose() const { return poseSource ? *poseSource : 0; }
     int requestedPose = 0;
+    const bool* favoriteSource = nullptr;
+    bool favorite() const { return favoriteSource && *favoriteSource; }
+    bool requestedFavorite = false;
     bool stage = false;
     bool compact = false;
     bool interactive = true;

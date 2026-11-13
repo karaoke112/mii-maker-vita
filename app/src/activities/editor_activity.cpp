@@ -6,6 +6,7 @@
 #include "views/controls.hpp"
 #include "views/icon.hpp"
 #include "views/mii_preview.hpp"
+#include "views/popup_menu.hpp"
 
 #include <mii/mii_editor.h>
 #include <mii3d/mii3d.h>
@@ -150,6 +151,7 @@ static brls::AppletFrame* editorFrame(EditorSession& s, brls::View* right, MiiPr
     preview->setFrontSource(&s.facingFront);
     preview->setExpressionSource(&s.expression);
     preview->setPoseSource(&s.pose);
+    preview->setFavoriteSource(&s.details.favorite);
     preview->setShareKey(&s); // all of this Mii's editor screens share one picture
     preview->setWidth(520);
     preview->setGrow(0);
@@ -279,6 +281,92 @@ EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved)
     , onSaved(std::move(onSaved))
 {
     session->mii = start;
+    if (mii_create_id_is_valid(&start.create_id))
+        session->details = MiiLibrary::instance().details(start.create_id);
+}
+
+// Profile: what a Mii carries besides its face (the 3DS / Wii U and Wii
+// keep it; see MiiDetails), as a menu of settings over the editor.
+static std::string birthdayText(const MiiDetails& d)
+{
+    if (!d.birthMonth || !d.birthDay)
+        return "profile/not_set"_i18n;
+    return brls::getStr("profile/month" + std::to_string(d.birthMonth)) + " " + std::to_string(d.birthDay);
+}
+
+static void showProfile(std::shared_ptr<EditorSession> s, int focus = 0)
+{
+    PopupMenu::Item fav = PopupMenu::item("profile/favorite"_i18n, [s] {
+        s->details.favorite = !s->details.favorite; // red pants at once
+        s->dirty = true;
+    });
+    fav.keepOpen = true;
+    fav.value = [s] { return s->details.favorite ? "settings/on"_i18n : "settings/off"_i18n; };
+    fav.off = [s] { return !s->details.favorite; };
+
+    PopupMenu::Item birthday = PopupMenu::item("profile/birthday"_i18n, nullptr);
+    birthday.keepOpen = true;
+    birthday.value = [s] { return birthdayText(s->details); };
+    birthday.action = [s] {
+        // the month (or none), then the day
+        std::vector<std::string> months { "profile/not_set"_i18n };
+        for (int m = 1; m <= 12; m++)
+            months.push_back(brls::getStr("profile/month" + std::to_string(m)));
+        auto month = std::make_shared<int>(-1);
+        auto* dropdown = new brls::Dropdown("profile/birthday"_i18n, months, [month](int i) { *month = i; },
+            s->details.birthMonth, [s, month](int) {
+                if (*month < 0)
+                    return;
+                if (*month == 0) {
+                    s->details.birthMonth = s->details.birthDay = 0;
+                    s->dirty = true;
+                    return;
+                }
+                static const int kDays[12] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+                const int m = *month;
+                std::vector<std::string> days;
+                for (int d = 1; d <= kDays[m - 1]; d++)
+                    days.push_back(std::to_string(d));
+                const int cur = s->details.birthMonth == m && s->details.birthDay ? s->details.birthDay - 1 : 0;
+                brls::sync([s, m, days, cur] {
+                    auto* dd = new brls::Dropdown(brls::getStr("profile/month" + std::to_string(m)), days,
+                        [s, m](int i) {
+                            if (i < 0)
+                                return;
+                            s->details.birthMonth = (uint8_t)m;
+                            s->details.birthDay = (uint8_t)(i + 1);
+                            s->dirty = true;
+                        },
+                        cur);
+                    brls::Application::pushActivity(new brls::Activity(dd));
+                });
+            });
+        brls::Application::pushActivity(new brls::Activity(dropdown));
+    };
+
+    PopupMenu::Item creator = PopupMenu::item("profile/creator"_i18n, nullptr);
+    creator.keepOpen = true;
+    creator.value = [s] { return s->details.creator.empty() ? "profile/not_set"_i18n : s->details.creator; };
+    creator.off = [s] { return s->details.creator.empty(); };
+    creator.action = [s] {
+        brls::Application::getImeManager()->openForText(
+            [s](std::string text) {
+                s->details.creator = text;
+                s->dirty = true;
+            },
+            "profile/creator"_i18n, "", MII_NAME_LENGTH, s->details.creator);
+    };
+
+    PopupMenu::Item mingle = PopupMenu::item("profile/mingle"_i18n, [s] {
+        s->details.mingle = !s->details.mingle;
+        s->dirty = true;
+    });
+    mingle.keepOpen = true;
+    mingle.value = [s] { return s->details.mingle ? "settings/on"_i18n : "settings/off"_i18n; };
+    mingle.off = [s] { return !s->details.mingle; };
+
+    brls::Application::pushActivity(new PopupMenu("profile/title"_i18n, { fav, birthday, creator, mingle }, focus),
+        brls::TransitionAnimation::NONE);
 }
 
 brls::View* EditorActivity::createContentView()
@@ -350,7 +438,30 @@ brls::View* EditorActivity::createContentView()
             "editor/nickname"_i18n, "", MII_NAME_LENGTH, cur);
         return true;
     });
-    menu->addView(nameRow);
+    // Nickname and Profile side by side, under the categories
+    auto* nameLine = new brls::Box(brls::Axis::ROW);
+    nameRow->setGrow(1);
+    nameRow->setWidthPercentage(50);
+    nameLine->addView(nameRow);
+    auto* profileRow = new MenuRow(nullptr, "profile/title"_i18n, false);
+    profileRow->setGrow(1);
+    profileRow->setWidthPercentage(50);
+    profileRow->setMarginLeft(28);
+    brls::Label* favValue = profileRow->addValue();
+    favValue->setText("profile/favorite"_i18n);
+    // (hidden, not emptied: an empty label squeezes the name)
+    auto showFav = [s, favValue] {
+        favValue->setVisibility(s->details.favorite ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    };
+    showFav();
+    profileRow->registerClickAction([s](brls::View*) {
+        showProfile(s);
+        return true;
+    });
+    // (the value follows the profile when the menu closes)
+    profileRow->getFocusEvent()->subscribe([showFav](brls::View*) { showFav(); });
+    nameLine->addView(profileRow);
+    menu->addView(nameLine);
     // Up / down stay in the same column (borealis would otherwise return
     // to whichever column of a line was focused last).
     for (size_t k = 0; k < rows.size(); k++) {
@@ -358,7 +469,9 @@ brls::View* EditorActivity::createContentView()
             rows[k]->setCustomNavigationRoute(brls::FocusDirection::UP, rows[k - 2]);
         rows[k]->setCustomNavigationRoute(brls::FocusDirection::DOWN, k + 2 < rows.size() ? rows[k + 2] : nameRow);
     }
+    rows[rows.size() - 1]->setCustomNavigationRoute(brls::FocusDirection::DOWN, profileRow);
     nameRow->setCustomNavigationRoute(brls::FocusDirection::UP, rows[rows.size() - 2]);
+    profileRow->setCustomNavigationRoute(brls::FocusDirection::UP, rows[rows.size() - 1]);
 
     auto* doneLine = new brls::Box(brls::Axis::ROW);
     doneLine->setJustifyContent(brls::JustifyContent::CENTER);
@@ -405,6 +518,7 @@ bool EditorActivity::save()
         brls::Application::notify("editor/save_failed"_i18n);
         return true;
     }
+    MiiLibrary::instance().setDetails(mii.create_id, session->details); // (put gave it its create id)
     session->dirty = false;
     auto cb = onSaved;
     const mii_charinfo_t saved = mii;

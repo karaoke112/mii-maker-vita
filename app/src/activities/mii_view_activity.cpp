@@ -2,6 +2,7 @@
 
 #include "activities/child_activity.hpp"
 #include "activities/editor_activity.hpp"
+#include "activities/photo_activity.hpp"
 #include "activities/qr_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
@@ -33,6 +34,7 @@ brls::View* MiiViewActivity::createContentView()
     preview->setFrontSource(&facingFront);
     preview->setExpressionSource(&expression);
     preview->setPoseSource(&pose);
+    preview->setFavoriteSource(&favorite);
     preview->setWidth(560);
     preview->setGrow(0);
     root->addView(preview);
@@ -58,6 +60,10 @@ brls::View* MiiViewActivity::createContentView()
     PopupMenu::Item poseItem = PopupMenu::item("view/pose"_i18n, [this] { showPoseMenu(&pose); });
     poseItem.value = [this] { return poseDisplayName(pose); };
     items.push_back(poseItem);
+    items.push_back(PopupMenu::item("view/photo"_i18n, [this] {
+        brls::Application::pushActivity(new PhotoActivity(current, favorite, &expression, &pose),
+            brls::TransitionAnimation::NONE);
+    }));
     items.push_back(PopupMenu::item("view/qr"_i18n, [this] {
         if (!qr::available()) {
             auto* dialog = new brls::Dialog("qr/need_key"_i18n + "\n\n" + qr::keyPath());
@@ -113,6 +119,7 @@ void MiiViewActivity::show(int i)
 {
     index = i;
     current = miis[i]; // the preview notices and redraws
+    favorite = MiiLibrary::instance().details(current.create_id).favorite;
     char text[64];
     mii_name_get_utf8(&current, text, sizeof(text));
     name->setText(text);

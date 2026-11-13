@@ -1,0 +1,20 @@
+{
+  "title": "Photo Studio",
+  "background": "Background",
+  "framing": "Framing",
+  "whole": "Whole Mii",
+  "close_up": "Close-Up",
+  "take": "Take Photo",
+  "taking": "Taking a photo...",
+  "saved": "Photo saved:",
+  "failed": "Could not save the photo.",
+  "bg_white": "White",
+  "bg_gray": "Gray",
+  "bg_sky": "Sky",
+  "bg_mint": "Mint",
+  "bg_yellow": "Lemon",
+  "bg_pink": "Pink",
+  "bg_lavender": "Lavender",
+  "bg_night": "Night",
+  "bg_clear": "Clear (see-through)"
+}

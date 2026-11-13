@@ -1,6 +1,7 @@
 #include "views/mii_preview.hpp"
 
 #include "gpu_renderer.hpp"
+#include <mii3d/mii3d.h>
 #include "ui_theme.hpp"
 
 #include <cmath>
@@ -76,11 +77,12 @@ void MiiPreview::request3D()
     const int size = stage && hr.gpuActive() ? gpuSize() : renderSize;
     if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch && requestedSize == size &&
         (!stage || !hr.hasBody() || (requestedPivot == pivot && requestedZoom == zoom)) &&
-        requestedExpression == expression() && requestedPose == pose() &&
+        requestedExpression == expression() && requestedPose == pose() && requestedFavorite == favorite() &&
         std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
     requestedExpression = expression();
     requestedPose = pose();
+    requestedFavorite = favorite();
     requestedPivot = pivot;
     requestedZoom = zoom;
     requestedSize = size;
@@ -94,6 +96,7 @@ void MiiPreview::request3D()
     spec.mii = *mii;
     spec.expression = requestedExpression;
     spec.pose = requestedPose;
+    spec.pants = requestedFavorite ? MII3D_PANTS_RED : MII3D_PANTS_GRAY;
     // the GPU draws stages at about the size they are shown (sharp, and
     // its multisampling smooths the edges); the CPU keeps to renderSize
     spec.size = stage && hr.gpuActive() ? gpuSize() : renderSize;
@@ -170,6 +173,22 @@ void MiiPreview::stageTarget(float* pivot, float* zoom) const
     } else {
         *pivot = 90.0f;
         *zoom = 1.1f;
+    }
+}
+
+void MiiPreview::currentFraming(bool* fullBody, float* zoom, float* centerY)
+{
+    HeadRenderer& hr = HeadRenderer::instance();
+    if (stage && hr.hasBody()) {
+        float pivot, z;
+        stageTarget(&pivot, &z); // where the framing settles
+        *fullBody = true;
+        *zoom = z * extraZoom;
+        *centerY = pivot - 92.0f;
+    } else {
+        *fullBody = false;
+        *zoom = 0.8f * extraZoom;
+        *centerY = -4.0f;
     }
 }
 

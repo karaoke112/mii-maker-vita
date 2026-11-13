@@ -34,7 +34,7 @@ class GpuRenderer
     // `background` (0xRRGGBB). Returns a NanoVG image id (owned here), or -1
     // on failure. Main thread, outside a frame.
     int render(const void* owner, const mii_charinfo_t& mii, int size, float yaw, float pitch, float zoom, float centerY,
-        bool fullBody, uint32_t background, int expression = 0, int pose = 0);
+        bool fullBody, uint32_t background, int expression = 0, int pose = 0, int pants = 0);
     // MiiBodyMiddle.bfres's poses (or none), after init.
     void setPoses(const mii3d_poses* poses);
     // Draws a transparent icon (square, any `size`) and reads it back into

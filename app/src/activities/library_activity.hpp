@@ -60,7 +60,8 @@ class LibraryActivity : public brls::Activity
 
     brls::Box* grid = nullptr;
     brls::View* createButton = nullptr;
-    std::vector<brls::View*> topButtons; // Add, Send, Receive
+    std::vector<brls::View*> topButtons; // Add, Send, Receive, Settings
+    brls::View* settingsButton = nullptr;
     bool batchingHints = false;           // cardActions for every card: one hints update
     brls::View* rootFrame = nullptr; // holds the START (settings) action
     brls::Label* countLabel = nullptr;

@@ -81,6 +81,11 @@ bool savePng(const Code& code, const std::string& path, int scale, int border)
     return stbi_write_png(path.c_str(), side, side, 1, px.data(), side) != 0;
 }
 
+bool saveRgbaPng(const std::string& path, int width, int height, const uint8_t* rgba)
+{
+    return stbi_write_png(path.c_str(), width, height, 4, rgba, width * 4) != 0;
+}
+
 Scanner::Scanner()
     : q(quirc_new())
 {

@@ -10,6 +10,7 @@ ux0:data/mii/
 ├── database.nfdb       the first 100 Miis (Switch NFDB format, 6808 bytes)
 ├── database.nfdb.bak   previous version, written before each save
 ├── database2.nfdb      Miis 101-200, in the same format (only while there are more than 100; + .bak)
+├── details.txt         what the Switch format has no room for: favorite, birthday, mingle, creator (see below)
 ├── wii/
 │   ├── RFL_DB.dat      the same Miis as the Wii's Mii database, for ports of Wii games
 │   └── RFL_Res.dat     the Wii's Mii face resource, if the player provides it (not made here)
@@ -103,3 +104,21 @@ file and is not included: players copy it from their own Wii's NAND
 - **Tolerate a missing or invalid file**: fall back to `.bak`, then to your
   own default Mii.
 - The Vita runs one app at a time, so no locking is needed.
+
+## details.txt
+
+A Mii's favorite mark, birthday, mingle setting and creator name, which
+the 3DS / Wii U and Wii formats have but the Switch's does not. One line
+per Mii (Miis with nothing set have none), UTF-8, fields separated by tabs:
+
+| Field | Content |
+| --- | --- |
+| 1 | the create id, 32 lowercase hex digits (StoreData bytes 0x30-0x3F) |
+| 2 | favorite: `1` or `0` (a favorite wears red pants) |
+| 3 | birth month, `0` (not set) to `12` |
+| 4 | birth day, `0` (not set) to `31` |
+| 5 | mingle: `1` (may travel to other consoles) or `0` |
+| 6 | the creator's name (empty: not set) |
+
+The Wii database and exported `.ffsd` files carry these too.
+

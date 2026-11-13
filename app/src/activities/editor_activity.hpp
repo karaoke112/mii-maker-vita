@@ -3,6 +3,8 @@
 #include <borealis.hpp>
 #include <mii/mii.h>
 
+#include "mii_library.hpp"
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -19,6 +21,7 @@ struct EditorSession {
     bool facingFront = false; // Triangle: turning back to the front
     int expression = 0;       // L: the expression the preview shows (not saved)
     int pose = 0;             // R: the pose (not saved)
+    MiiDetails details;       // Profile: favorite, birthday... (saved with the Mii)
     bool dirty = false;
 };
 

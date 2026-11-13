@@ -28,6 +28,8 @@ const std::string& datDir();
 // they also look here for the Wii's face resource (RFL_Res.dat)
 const std::string& wiiDir();
 const std::string& iconCache(); // drawn icons, one file; safe to delete
+// Photo Studio's pictures: ux0:picture/MIIMAKER (the Photos app's folder)
+const std::string& photoDir();
 
 // Creates the folders above, and moves files an older version kept in
 // ux0:data/mii/ (author_id.bin, *.dat) to their new places.

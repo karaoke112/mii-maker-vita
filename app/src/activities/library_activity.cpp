@@ -15,6 +15,7 @@
 #include "views/popup_menu.hpp"
 #include <mii/mii_editor.h>
 #include "views/controls.hpp"
+#include "views/icon.hpp"
 #include "views/mii_preview.hpp"
 
 using namespace brls::literals;
@@ -106,6 +107,26 @@ brls::View* LibraryActivity::createContentView()
     pickLabel->setMarginLeft(30);
     pickLabel->setVisibility(brls::Visibility::GONE);
     actions->addView(pickLabel);
+    // Settings (as START): a cog at the right end
+    auto* spacer = new brls::Box();
+    spacer->setGrow(1);
+    actions->addView(spacer);
+    auto* cog = new brls::Button();
+    cog->setText("");
+    cog->setDimensions(64, 64);
+    cog->setPadding(0, 0, 0, 0);
+    cog->setJustifyContent(brls::JustifyContent::CENTER);
+    cog->setAlignItems(brls::AlignItems::CENTER);
+    cog->addView(new IconView("settings", 40, ui::text()));
+    cog->registerClickAction([this](brls::View*) {
+        if (busy())
+            return true;
+        showSettings();
+        return true;
+    });
+    actions->addView(cog);
+    topButtons.push_back(cog);
+    settingsButton = cog;
     content->addView(actions);
 
     // Tell the user where the 3D face resource goes (or that it's in use).
@@ -605,6 +626,8 @@ void LibraryActivity::setPick(Pick mode)
             : mode == Pick::PARENT2         ? parent2Prompt()
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    // (no settings while choosing a Mii; the prompt takes its place)
+    settingsButton->setVisibility(mode == Pick::NONE ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     // The cards stay as they are (this often runs from a card's own action,
     // which must not delete that card): only their buttons, the top
     // buttons and the routes change.

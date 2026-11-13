@@ -49,6 +49,8 @@ ICONS = {
     "glasses": ("ms:eyeglasses-outline", 128),
     "star": ("ms:star", 128),
     "star_outline": ("ms:star-outline", 128),
+    # the Mii list's settings button
+    "settings": ("ms:settings-outline", 128),
     # Style page
     "man": ("ms:man", 192),
     "woman": ("ms:woman", 192),

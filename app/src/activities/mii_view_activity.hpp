@@ -34,6 +34,7 @@ class MiiViewActivity : public brls::Activity
     float yaw = 0.0f, pitch = 0.0f;
     bool facingFront = false;
     int expression = 0, pose = 0; // kept from one Mii to the next
+    bool favorite = false;        // the Mii shown: red pants
     brls::Label* name = nullptr;
     brls::Label* position = nullptr;
 };

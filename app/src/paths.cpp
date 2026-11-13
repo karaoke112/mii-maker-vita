@@ -43,6 +43,16 @@ const std::string& wiiDir()
     return d;
 }
 
+const std::string& photoDir()
+{
+#ifdef __PSV__
+    static const std::string d = "ux0:picture/MIIMAKER";
+#else
+    static const std::string d = std::string(kRoot) + "/picture";
+#endif
+    return d;
+}
+
 const std::string& iconCache()
 {
     static const std::string f = appDir() + "/icons.cache";

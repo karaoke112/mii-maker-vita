@@ -3,6 +3,7 @@
 #include <mii/mii.h>
 
 #include <array>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,18 @@
 //
 // See docs/SHARED_DATABASE.md for the contract other apps and game ports
 // can rely on.
+// What a Mii carries besides its face that the Switch's format has no room
+// for (the 3DS / Wii U and Wii formats do): kept beside the database, by
+// create id, in <data>/details.txt, and written into .ffsd / .cfsd files,
+// QR codes and the Wii database.
+struct MiiDetails {
+    bool favorite = false; // red pants
+    uint8_t birthMonth = 0, birthDay = 0; // 0: not set
+    std::string creator;   // "": not set (the console's user name is used)
+    bool mingle = true;    // may travel to other consoles (Wii: "Mingle")
+    bool isDefault() const { return !favorite && !birthMonth && !birthDay && creator.empty() && mingle; }
+};
+
 class MiiLibrary
 {
   public:
@@ -59,6 +72,9 @@ class MiiLibrary
     std::string importDir() const { return dir + "/import"; }
 
     void newCreateId(mii_create_id_t* id) const;
+    MiiDetails details(const mii_create_id_t& id) const;
+    // Saved at once (details.txt is small)
+    void setDetails(const mii_create_id_t& id, const MiiDetails& d);
     // The 3DS / Wii U header for a Mii leaving this console (QR codes,
     // .ffsd files): a normal, valid Mii made on a "3DS-compatible" device
     // (as the Switch 2 writes it; a 3DS refuses origin 4), with an id that
@@ -77,6 +93,11 @@ class MiiLibrary
 
     std::string dir;
     std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>> entries; // StoreData, in order
+    std::map<std::string, MiiDetails> detailMap; // by create id (hex)
+    void loadDetails();
+    void saveDetails() const;
+    static std::string idKey(const mii_create_id_t& id);
+    void detailsFromVer3(const mii_create_id_t& id, const mii_ver3_info_t& info);
     uint8_t authorId[16];
 };
 

@@ -83,6 +83,7 @@ bool MiiLibrary::load()
         writeFile(authorPath, authorId, sizeof(authorId));
     }
 
+    loadDetails();
     entries.clear();
     std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>> second;
     const bool ok = loadPart(0, &entries);
@@ -164,6 +165,113 @@ bool MiiLibrary::savePart(int part)
     return true;
 }
 
+// ---- details ---------------------------------------------------------------
+// details.txt: one Mii a line, tab-separated: the create id in hex,
+// favorite (0/1), birth month, birth day, mingle (0/1), the creator's name
+// (UTF-8). Miis with nothing set have no line.
+
+std::string MiiLibrary::idKey(const mii_create_id_t& id)
+{
+    static const char* hex = "0123456789abcdef";
+    std::string s;
+    for (uint8_t b : id.bytes) {
+        s += hex[b >> 4];
+        s += hex[b & 15];
+    }
+    return s;
+}
+
+void MiiLibrary::loadDetails()
+{
+    detailMap.clear();
+    std::vector<uint8_t> data;
+    if (!readFile(dir + "/details.txt", &data))
+        return;
+    std::string text(data.begin(), data.end());
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find('\n', pos);
+        if (end == std::string::npos)
+            end = text.size();
+        const std::string line = text.substr(pos, end - pos);
+        pos = end + 1;
+        std::vector<std::string> f;
+        size_t a = 0;
+        for (;;) {
+            const size_t t = line.find('\t', a);
+            f.push_back(line.substr(a, t == std::string::npos ? std::string::npos : t - a));
+            if (t == std::string::npos)
+                break;
+            a = t + 1;
+        }
+        if (f.size() < 5 || f[0].size() != 32)
+            continue;
+        MiiDetails d;
+        d.favorite = f[1] == "1";
+        d.birthMonth = (uint8_t)std::min(12, std::max(0, std::atoi(f[2].c_str())));
+        d.birthDay = (uint8_t)std::min(31, std::max(0, std::atoi(f[3].c_str())));
+        d.mingle = f[4] != "0";
+        if (f.size() > 5)
+            d.creator = f[5].substr(0, 40);
+        detailMap[f[0]] = d;
+    }
+}
+
+void MiiLibrary::saveDetails() const
+{
+    std::string text;
+    for (const auto& kv : detailMap) {
+        const MiiDetails& d = kv.second;
+        text += kv.first + "\t" + (d.favorite ? "1" : "0") + "\t" + std::to_string(d.birthMonth) + "\t" +
+            std::to_string(d.birthDay) + "\t" + (d.mingle ? "1" : "0") + "\t" + d.creator + "\n";
+    }
+    const std::string path = dir + "/details.txt", tmp = path + ".tmp";
+    if (writeFile(tmp, (const uint8_t*)text.data(), text.size())) {
+        std::remove(path.c_str());
+        std::rename(tmp.c_str(), path.c_str());
+    }
+}
+
+MiiDetails MiiLibrary::details(const mii_create_id_t& id) const
+{
+    auto it = detailMap.find(idKey(id));
+    return it == detailMap.end() ? MiiDetails() : it->second;
+}
+
+void MiiLibrary::setDetails(const mii_create_id_t& id, const MiiDetails& d)
+{
+    MiiDetails clean = d;
+    for (char& c : clean.creator)
+        if (c == '\t' || c == '\n' || c == '\r')
+            c = ' ';
+    if (clean.isDefault())
+        detailMap.erase(idKey(id));
+    else
+        detailMap[idKey(id)] = clean;
+    saveDetails();
+    exportWii(); // the Wii database carries them
+}
+
+// from a 3DS / Wii U file or QR code
+void MiiLibrary::detailsFromVer3(const mii_create_id_t& id, const mii_ver3_info_t& info)
+{
+    MiiDetails d;
+    d.favorite = info.favorite != 0;
+    d.birthMonth = info.birth_month <= 12 ? info.birth_month : 0;
+    d.birthDay = info.birth_day <= 31 ? info.birth_day : 0;
+    d.mingle = info.local_only == 0;
+    mii_charinfo_t tmp;
+    mii_charinfo_init_default(&tmp, 0);
+    std::memcpy(tmp.name, info.creator_name, sizeof(tmp.name));
+    char name[64];
+    mii_name_get_utf8(&tmp, name, sizeof(name));
+    d.creator = name;
+    if (d.isDefault())
+        detailMap.erase(idKey(id));
+    else
+        detailMap[idKey(id)] = d;
+}
+
 int MiiLibrary::find(const mii_create_id_t& id) const
 {
     for (int i = 0; i < count(); i++)
@@ -201,7 +309,22 @@ bool MiiLibrary::exportWii() const
     int n = 0;
     for (int i = 0; i < count() && n < MII_WII_DB_MAX; i++) {
         mii_charinfo_t ci;
-        if (get(i, &ci) && mii_wii_encode(&ci, &info, miis[n]) == MII_OK)
+        if (!get(i, &ci))
+            continue;
+        // the details the Wii keeps: favorite, birthday, mingle, creator
+        const MiiDetails d = details(ci.create_id);
+        info.favorite = d.favorite;
+        info.birth_month = d.birthMonth;
+        info.birth_day = d.birthDay;
+        info.local_only = !d.mingle;
+        std::memset(info.creator_name, 0, sizeof(info.creator_name));
+        if (!d.creator.empty()) {
+            mii_charinfo_t tmp;
+            mii_charinfo_init_default(&tmp, 0);
+            mii_name_set_utf8(&tmp, d.creator.c_str());
+            std::memcpy(info.creator_name, tmp.name, sizeof(info.creator_name));
+        }
+        if (mii_wii_encode(&ci, &info, miis[n]) == MII_OK)
             n++;
     }
     auto data = std::make_shared<std::vector<uint8_t>>(MII_WII_DB_SIZE);
@@ -256,6 +379,9 @@ bool MiiLibrary::remove(int index)
 {
     if (index < 0 || index >= count())
         return false;
+    mii_charinfo_t ci;
+    if (get(index, &ci) && detailMap.erase(idKey(ci.create_id)))
+        saveDetails();
     entries.erase(entries.begin() + index);
     return save();
 }
@@ -296,10 +422,16 @@ void MiiLibrary::ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const
     std::memcpy(out->author_id, authorId, 8);
     std::memcpy(out->creator_mac, authorId + 8, 6);
     out->creator_mac[0] &= 0xFE; // an ordinary (unicast) address
-    // the creator, as a 3DS shows it: this console's user name
+    // the details: favorite, birthday, mingle, and the creator (else, as a
+    // 3DS shows it, this console's user name)
+    const MiiDetails d = details(mii.create_id);
+    out->favorite = d.favorite;
+    out->birth_month = d.birthMonth;
+    out->birth_day = d.birthDay;
+    out->local_only = !d.mingle;
     mii_charinfo_t tmp;
     mii_charinfo_init_default(&tmp, 0);
-    mii_name_set_utf8(&tmp, trade::userName().c_str());
+    mii_name_set_utf8(&tmp, d.creator.empty() ? trade::userName().c_str() : d.creator.c_str());
     std::memcpy(out->creator_name, tmp.name, sizeof(out->creator_name));
 }
 
@@ -371,6 +503,8 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
             continue;
         std::vector<uint8_t> data;
         mii_charinfo_t ci;
+        mii_ver3_info_t info;
+        bool hasInfo = false;
         mii_result_t r = MII_ERR_SIZE;
         if (image) {
             // a picture of a Mii QR code (3DS, Wii U, Switch 2, this app)
@@ -381,8 +515,10 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
                 r = mii_charinfo_decode(&ci, data.data(), data.size());
             else if (ext == "nfsd")
                 r = mii_storedata_decode(&ci, data.data(), data.size(), nullptr);
-            else
-                r = mii_ver3_decode(&ci, nullptr, data.data(), data.size(), nullptr);
+            else {
+                r = mii_ver3_decode(&ci, &info, data.data(), data.size(), nullptr);
+                hasInfo = r == MII_OK;
+            }
         }
         if (r != MII_OK || mii_verify(&ci, 0) != MII_FIELD_COUNT) {
             brls::Logger::warning("import {}: not a valid Mii file", name);
@@ -395,12 +531,16 @@ MiiLibrary::ImportResult MiiLibrary::importFolder()
             result.full = true;
             break;
         }
+        if (hasInfo) // its favorite, birthday, creator...
+            detailsFromVer3(ci.create_id, info);
         changed = true;
         result.imported++;
         const std::string from = in + "/" + name, to = done + "/" + name;
         std::remove(to.c_str());
         std::rename(from.c_str(), to.c_str());
     }
+    if (changed)
+        saveDetails();
     if (changed && !save())
         brls::Logger::error("import: could not save the database");
     return result;

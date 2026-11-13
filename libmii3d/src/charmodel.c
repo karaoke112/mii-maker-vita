@@ -856,8 +856,11 @@ static void body_scale(const mii_charinfo_t *ci, float out[3])
 /* The neck in body space (FFLBodyRes head height x the body-to-head scale
  * used for these meshes, per FFL-Testing's body table). */
 #define BODY_HEAD_Y (10.7766f * 8.715f)
-/* nn::mii's normal ("own Mii") pants color */
-#define PANTS_RGB 0x40464Eu
+/* nn::mii's pants colors (FFL): gray for a normal Mii, blue for one
+ * received as a gift, red for a favorite, gold for a special Mii */
+static const uint32_t k_pants_rgb[4] = { 0x40464Eu, 0x28407Au, 0x702015u, 0xC0A030u };
+static uint32_t pants_rgb(const mii3d_view_t *view) { return k_pants_rgb[view->pants & 3]; }
+static const m3_shading *pants_mat(const mii3d_view_t *view) { return &k_mat_pants[(view->pants & 3) == 3 ? 1 : 0]; }
 
 /* A pose's body (MiiBodyMiddle's, posed), and the head on its head bone. */
 static int draw_posed_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_charinfo_t *ci,
@@ -880,8 +883,8 @@ static int draw_posed_body(mii3d_renderer_t *r, m3_target *t, camera *c, const m
         m.depth_test = m.depth_write = 1;
         transform_mesh(c, body, &pl, &k_mat_body[ci->favorite_color % 12], v);
         submit(r, t, v, body->vertex_count, body->indices, shirt, &m);
-        m3_rgb(m.base, PANTS_RGB, 1.0f);
-        transform_mesh(c, body, &pl, &k_mat_pants[0], v);
+        m3_rgb(m.base, pants_rgb(view), 1.0f);
+        transform_mesh(c, body, &pl, pants_mat(view), v);
         submit(r, t, v, body->vertex_count, body->indices + shirt, body->index_count - shirt, &m);
     }
     /* the head: turned with the head bone, on its (scaled) place */
@@ -918,8 +921,8 @@ static void draw_body(mii3d_renderer_t *r, m3_target *t, camera *c, const mii_ch
             m.depth_test = m.depth_write = 1;
             transform_mesh(c, body, &pl, &k_mat_body[ci->favorite_color % 12], v);
             submit(r, t, v, body->vertex_count, r->body_idx[g], r->body_shirt_count[g], &m);
-            m3_rgb(m.base, PANTS_RGB, 1.0f);
-            transform_mesh(c, body, &pl, &k_mat_pants[0], v);
+            m3_rgb(m.base, pants_rgb(view), 1.0f);
+            transform_mesh(c, body, &pl, pants_mat(view), v);
             submit(r, t, v, body->vertex_count, r->body_idx[g] + r->body_shirt_count[g], r->body_pants_count[g], &m);
         }
     }

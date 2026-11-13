@@ -67,6 +67,8 @@ class HeadRenderer
         int expression = 0;
         // whole-Mii views: 0 standing, n the pose of animation n - 1 (see poseCount)
         int pose = 0;
+        // the pants (MII3D_PANTS_*): gray, or red for a favorite
+        int pants = 0;
     };
 
     static HeadRenderer& instance();
@@ -95,6 +97,10 @@ class HeadRenderer
     std::string poseName(int index) const;
     // How high the neck is in a pose, a fraction of standing (1 for pose 0)
     float poseNeck(int gender, int pose) const;
+    // Photo Studio: draws `spec` into a width x height picture (RGBA, on
+    // `background`, 0xAARRGGBB; alpha 0 for a clear one), smoothed, with a
+    // renderer of its own: any thread, takes a moment.
+    bool renderPhoto(const Spec& spec, int width, int height, uint32_t background, std::vector<uint8_t>* rgba) const;
     const std::string& status() const { return statusText; }
     // How long the latest renders took, in ms (quick preview pass, full
     // preview pass, icon), for the SELECT timing readout.
