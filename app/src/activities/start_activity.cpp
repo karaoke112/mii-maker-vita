@@ -8,6 +8,8 @@
 
 #include <mii/mii_editor.h>
 
+#include <cstring>
+
 using namespace brls::literals;
 
 StartActivity::StartActivity(OnPicked onPicked, bool lookalike)
@@ -26,11 +28,31 @@ StartActivity::StartActivity(OnPicked onPicked, bool lookalike)
     }
 }
 
+// Settings > Curated Look-Alikes, off: any combination of values a Mii can
+// have (parts, colors, placement, height and build), still a normal Mii,
+// with no name yet
+static void anyMii(mii_charinfo_t* m, uint32_t* seed)
+{
+    mii_charinfo_init_default(m, 0);
+    for (int f = 0; f < MII_FIELD_COUNT; f++) {
+        const mii_field_t field = (mii_field_t)f;
+        if (field == MII_FIELD_FONT_REGION || field == MII_FIELD_TYPE || field == MII_FIELD_REGION_MOVE)
+            continue;
+        const int lo = mii_field_min(field), hi = mii_field_max(field);
+        *seed = *seed * 1664525u + 1013904223u; // LCG, as the curated ones
+        mii_field_set(m, field, lo + (int)((*seed >> 8) % (uint32_t)(hi - lo + 1)));
+    }
+    std::memset(m->name, 0, sizeof(m->name));
+}
+
 void StartActivity::shuffle()
 {
-    // five of each style
-    for (size_t i = 0; i < choices.size(); i++)
-        mii_charinfo_init_random(&choices[i], (int)(i % 2), &seed);
+    for (size_t i = 0; i < choices.size(); i++) {
+        if (Settings::get().curatedLookalikes)
+            mii_charinfo_init_random(&choices[i], (int)(i % 2), &seed); // five of each style
+        else
+            anyMii(&choices[i], &seed);
+    }
 }
 
 brls::View* StartActivity::createContentView()
