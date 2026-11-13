@@ -169,7 +169,7 @@ brls::View* LibraryActivity::createContentView()
     });
     frame->registerAction("", brls::BUTTON_B, [this](brls::View*) {
         if (pick != Pick::NONE)
-            setPick(Pick::NONE);
+            brls::sync([this] { setPick(Pick::NONE); });
         return true;
     }, true);
     return frame;
@@ -339,14 +339,7 @@ void LibraryActivity::rebuild()
     // up from the first row: the Add Mii button; down from the buttons: the
     // first Mii
     upRoutes();
-    for (brls::View* b : topButtons) {
-        if (!b->isFocusable())
-            continue; // (borealis refuses routes on those)
-        if (n > 0)
-            b->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards[0]);
-        else
-            b->setCustomNavigationRoute(brls::FocusDirection::DOWN, nullptr);
-    }
+    buttonRoutes();
     allCardActions();
     thumbPriorities(0);
 }
@@ -413,7 +406,8 @@ void LibraryActivity::cardActions(int index)
             // no deleting or picking up meanwhile
             ids.push_back(card->registerAction(pick == Pick::EXPORT ? "library/pick_done"_i18n : "hints/cancel"_i18n,
                 brls::BUTTON_B, [this](brls::View*) {
-                    setPick(Pick::NONE);
+                    // after this action: leaving the mode replaces it
+                    brls::sync([this] { setPick(Pick::NONE); });
                     return true;
                 }));
             if (!batchingHints)
@@ -601,6 +595,7 @@ std::string LibraryActivity::parent2Prompt() const
 // "Choose a Mii" mode: the next card pressed is exported instead of edited.
 void LibraryActivity::setPick(Pick mode)
 {
+    const bool wasChoosing = pick != Pick::NONE;
     pick = mode;
     pickLabel->setText(mode == Pick::EXPORT ? "library/pick_export"_i18n
             : mode == Pick::QR              ? "library/pick_qr"_i18n
@@ -610,10 +605,28 @@ void LibraryActivity::setPick(Pick mode)
             : mode == Pick::PARENT2         ? parent2Prompt()
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
-    rebuild();
+    // The cards stay as they are (this often runs from a card's own action,
+    // which must not delete that card): only their buttons, the top
+    // buttons and the routes change.
+    for (brls::View* b : topButtons)
+        b->setFocusable(mode == Pick::NONE);
+    buttonRoutes();
+    upRoutes();
+    updateSettingsAction();
+    allCardActions();
     // choosing a Mii starts on the first one
-    if (mode != Pick::NONE && !cards.empty())
+    if (mode != Pick::NONE && !wasChoosing && !cards.empty())
         brls::Application::giveFocus(cards[0]);
+}
+
+// Down from the top buttons: the first Mii.
+void LibraryActivity::buttonRoutes()
+{
+    for (brls::View* b : topButtons) {
+        if (!b->isFocusable())
+            continue; // (borealis refuses routes on those)
+        b->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards.empty() ? nullptr : cards[0]);
+    }
 }
 
 // Mii QR codes need the user's own copy of the key (like the .dat files).

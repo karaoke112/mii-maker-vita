@@ -40,6 +40,7 @@ class LibraryActivity : public brls::Activity
     void openEditor(const mii_charinfo_t& start);
     void openView(int index);
     void upRoutes();
+    void buttonRoutes();
     bool busy() const { return pick != Pick::NONE || held >= 0; }
 
     // Moving Miis: Triangle picks the Mii up; it travels with the cursor;
