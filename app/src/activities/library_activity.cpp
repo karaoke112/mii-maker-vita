@@ -58,7 +58,7 @@ brls::View* LibraryActivity::createContentView()
     auto* add = new brls::Button();
     add->setText("library/add"_i18n);
     add->setStyle(&brls::BUTTONSTYLE_PRIMARY);
-    add->setWidth(260);
+    add->setWidth(320);
     add->setHeight(64);
     add->setFontSize(24);
     add->setMarginRight(20);
@@ -670,56 +670,103 @@ class SkinTonePicker : public brls::Activity
     mii_charinfo_t mii;
 };
 
+// A choice from a list (with the current one ticked), as the Switch's
+// settings ask: `done` runs after the list has closed.
+static void choose(const std::string& title, std::vector<std::string> names, int current, std::function<void(int)> picked,
+    std::function<void(int)> done = nullptr)
+{
+    auto* dropdown = new brls::Dropdown(title, std::move(names), [picked](int i) {
+        if (picked)
+            picked(i);
+    }, current, [done](int i) {
+        if (done)
+            done(i);
+    });
+    brls::Application::pushActivity(new brls::Activity(dropdown));
+}
+
 void LibraryActivity::showSettings(int focus)
 {
-    PopupMenu::Item theme;
-    theme.text = [] {
-        return "settings/theme"_i18n + ": " +
-            (Settings::get().theme == ui::Theme::DARK        ? "settings/dark"_i18n
-                    : Settings::get().theme == ui::Theme::DARK_BLUE ? "settings/dark2"_i18n
-                                                                    : "settings/light"_i18n);
+    static const char* const kThemes[] = { "settings/light", "settings/dark", "settings/dark2" };
+    static const char* const kTracks[] = { "settings/music_none", "settings/music_wii", "settings/music_3ds",
+                                           "settings/music_wiiu" };
+    auto themeIndex = [] {
+        const ui::Theme t = Settings::get().theme;
+        return t == ui::Theme::DARK ? 1 : t == ui::Theme::DARK_BLUE ? 2 : 0;
     };
-    // Picking it closes the menu; the screen is then rebuilt in the new
-    // theme and the menu opens again, so everything switches at once.
-    theme.action = [this] {
-        Settings& s = Settings::get();
-        // light, dark 1, dark 2, light...
-        s.theme = s.theme == ui::Theme::LIGHT ? ui::Theme::DARK
-            : s.theme == ui::Theme::DARK      ? ui::Theme::DARK_BLUE
-                                              : ui::Theme::LIGHT;
-        s.save();
-        ui::applyTheme(s.theme);
-        ui::applyVariant();
-        rebuildForTheme();
-        showSettings(1); // back on the theme row
-    };
-    PopupMenu::Item qrFormat;
-    qrFormat.text = [] {
-        return "settings/qr"_i18n + ": " + (Settings::get().qrSwitch2 ? "settings/qr_switch2"_i18n : "settings/qr_3ds"_i18n);
-    };
-    qrFormat.action = [] {
-        Settings& s = Settings::get();
-        s.qrSwitch2 = !s.qrSwitch2;
-        s.save();
-    };
-    qrFormat.keepOpen = true;
-    PopupMenu::Item musicItem;
-    musicItem.text = [] {
-        static const char* names[] = { "settings/music_none", "settings/music_wii", "settings/music_3ds", "settings/music_wiiu" };
-        return "settings/music"_i18n + ": " + brls::getStr(names[Settings::get().music]);
-    };
-    musicItem.action = [] {
-        Settings& s = Settings::get();
-        s.music = (s.music + 1) % (int)music::Track::COUNT;
-        s.save();
-        std::string missing;
-        if (!music::Player::instance().play((music::Track)s.music, &missing))
-            brls::Application::notify("settings/music_missing"_i18n + " " + missing);
-    };
-    musicItem.keepOpen = true;
+
     PopupMenu::Item skin = PopupMenu::item("settings/skin"_i18n, [] {
         brls::Application::pushActivity(new SkinTonePicker(), brls::TransitionAnimation::NONE);
     });
+    skin.keepOpen = true;
+    skin.swatch = [] { return mii_faceline_color_rgb(Settings::get().skinTone); };
+
+    PopupMenu::Item theme = PopupMenu::item("settings/theme"_i18n, nullptr);
+    theme.keepOpen = true;
+    theme.value = [themeIndex] { return brls::getStr(kThemes[themeIndex()]); };
+    theme.action = [this, themeIndex] {
+        auto chosen = std::make_shared<int>(-1);
+        choose("settings/theme"_i18n, { "settings/light"_i18n, "settings/dark"_i18n, "settings/dark2"_i18n }, themeIndex(),
+            [chosen](int i) { *chosen = i; },
+            [this, chosen, themeIndex](int) {
+                if (*chosen < 0 || *chosen == themeIndex())
+                    return;
+                // the whole screen, and this menu, in the new theme
+                Settings& s = Settings::get();
+                s.theme = *chosen == 1 ? ui::Theme::DARK : *chosen == 2 ? ui::Theme::DARK_BLUE : ui::Theme::LIGHT;
+                s.save();
+                brls::Application::popActivity(brls::TransitionAnimation::NONE, [this] {
+                    ui::applyTheme(Settings::get().theme);
+                    ui::applyVariant();
+                    rebuildForTheme();
+                    showSettings(1);
+                });
+            });
+    };
+
+    PopupMenu::Item musicItem = PopupMenu::item("settings/music"_i18n, nullptr);
+    musicItem.keepOpen = true;
+    musicItem.value = [] { return brls::getStr(kTracks[Settings::get().music]); };
+    musicItem.action = [] {
+        std::vector<std::string> names;
+        for (const char* k : kTracks)
+            names.push_back(brls::getStr(k));
+        choose("settings/music"_i18n, names, Settings::get().music, [](int i) {
+            Settings& s = Settings::get();
+            if (i < 0 || i >= (int)music::Track::COUNT || i == s.music)
+                return;
+            s.music = i;
+            s.save();
+            std::string missing;
+            if (!music::Player::instance().play((music::Track)s.music, &missing))
+                brls::Application::notify("settings/music_missing"_i18n + " " + missing);
+        });
+    };
+
+    PopupMenu::Item qrFormat = PopupMenu::item("settings/qr"_i18n, nullptr);
+    qrFormat.keepOpen = true;
+    qrFormat.value = [] { return Settings::get().qrSwitch2 ? "settings/qr_switch2"_i18n : "settings/qr_3ds"_i18n; };
+    qrFormat.action = [] {
+        choose("settings/qr"_i18n, { "settings/qr_switch2"_i18n, "settings/qr_3ds"_i18n }, Settings::get().qrSwitch2 ? 0 : 1,
+            [](int i) {
+                if (i < 0)
+                    return;
+                Settings& s = Settings::get();
+                s.qrSwitch2 = i == 0;
+                s.save();
+            });
+    };
+
+    // a toggle: no list, pressing it switches it
+    PopupMenu::Item curated = PopupMenu::item("settings/curated"_i18n, [] {
+        Settings& s = Settings::get();
+        s.curatedLookalikes = !s.curatedLookalikes;
+        s.save();
+    });
+    curated.keepOpen = true;
+    curated.value = [] { return Settings::get().curatedLookalikes ? "settings/on"_i18n : "settings/off"_i18n; };
+    curated.off = [] { return !Settings::get().curatedLookalikes; };
+
     // Reset Cache: deletes the drawn icons and thumbnails (on the memory card
     // too); they are drawn again as they are shown
     PopupMenu::Item resetCache = PopupMenu::item("settings/reset_cache"_i18n, [this] {
@@ -737,6 +784,6 @@ void LibraryActivity::showSettings(int focus)
         });
     });
     brls::Application::pushActivity(
-        new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, qrFormat, resetCache }, focus),
+        new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, qrFormat, curated, resetCache }, focus),
         brls::TransitionAnimation::NONE);
 }

@@ -15,6 +15,9 @@ struct Settings {
     uint8_t skinTone = 0;
     // background music: music::Track (0 none)
     int music = 0;
+    // look-alikes from the editor's random Miis (natural-looking); off: any
+    // combination of parts, colors, height and build at all
+    bool curatedLookalikes = true;
 
     static Settings& get();
     void load();
