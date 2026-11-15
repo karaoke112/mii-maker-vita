@@ -345,6 +345,25 @@ int mii_wii_db_valid(const uint8_t *db, size_t size);
 int mii_wii_db_get(const uint8_t *db, size_t size, int index, uint8_t out[MII_WII_DATA_SIZE]);
 uint16_t mii_wii_crc(const uint8_t *p, size_t len);
 
+/* ------------------------------------------------------------------------- */
+/* CFL_DB.dat: the 3DS's Mii database (and an emulator's, e.g. Azahar)       */
+/* ------------------------------------------------------------------------- */
+
+/* Mii Maker's 100 slots, each a Ver3StoreData without its last 4 bytes
+ * (decode them with mii_ver3_decode, size MII_CFLDB_ENTRY_SIZE); an empty
+ * slot is all zero; slot 0 holds the personal Mii. Where a Mii shows in
+ * Mii Maker is its own page / slot (mii_ver3_info_t), not its slot here.
+ * Change only the slots, then mii_cfldb_fix_checksum: the rest of the file
+ * (StreetPass, invitations) must stay as it is. */
+#define MII_CFLDB_MAX_MIIS   100
+#define MII_CFLDB_ENTRY_SIZE 0x5C
+/* MII_OK: the CFOG and CFHE sections are there and the checksum is right. */
+mii_result_t mii_cfldb_check(const uint8_t *db, size_t size);
+uint16_t     mii_cfldb_checksum(const uint8_t *db);
+void         mii_cfldb_fix_checksum(uint8_t *db);
+uint8_t     *mii_cfldb_slot(uint8_t *db, int slot);
+int          mii_cfldb_slot_used(const uint8_t *db, int slot);
+
 typedef struct mii_nfdb {
     uint8_t  count;
     uint8_t  version;

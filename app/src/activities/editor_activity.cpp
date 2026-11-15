@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 
@@ -276,13 +277,56 @@ static const MenuEntry kMenu[] = {
     { Category::FAVORITE_COLOR, "star", "editor/menu/favorite_color" },
 };
 
-EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved)
+// The 3DS editor: what a value becomes stored as a 3DS Mii; it is
+// available when it comes back unchanged.
+static bool ver3Holds(mii_field_t field, uint8_t value)
+{
+    static int8_t known[MII_FIELD_COUNT][256];
+    static bool ready = false;
+    if (!ready) {
+        std::memset(known, -1, sizeof(known));
+        ready = true;
+    }
+    if ((unsigned)field >= MII_FIELD_COUNT)
+        return true;
+    int8_t& k = known[field][value];
+    if (k < 0) {
+        mii_charinfo_t ci, back;
+        mii_charinfo_init_default(&ci, 0);
+        mii_field_set(&ci, field, value);
+        uint8_t v3[MII_VER3_STOREDATA_SIZE];
+        k = mii_field_get(&ci, field) == value && mii_ver3_encode(&ci, nullptr, v3) == MII_OK &&
+                mii_ver3_decode(&back, nullptr, v3, sizeof(v3), nullptr) == MII_OK &&
+                mii_field_get(&back, field) == value
+            ? 1
+            : 0;
+    }
+    return k == 1;
+}
+
+EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved, MiiStore* store)
     : session(std::make_shared<EditorSession>())
     , onSaved(std::move(onSaved))
+    , store(store ? store : &MiiLibrary::instance())
 {
     session->mii = start;
+    if (this->store->threeDs()) {
+        // as the 3DS will keep it: its colors and glasses are the 3DS's
+        mii_charinfo_t back;
+        uint8_t v3[MII_VER3_STOREDATA_SIZE];
+        if (mii_ver3_encode(&start, nullptr, v3) == MII_OK &&
+            mii_ver3_decode(&back, nullptr, v3, sizeof(v3), &start.create_id) == MII_OK)
+            session->mii = back;
+        OptionGrid::availability = ver3Holds;
+    }
     if (mii_create_id_is_valid(&start.create_id))
-        session->details = MiiLibrary::instance().details(start.create_id);
+        session->details = this->store->details(start.create_id);
+}
+
+EditorActivity::~EditorActivity()
+{
+    if (store->threeDs())
+        OptionGrid::availability = nullptr;
 }
 
 // Profile: what a Mii carries besides its face (the 3DS / Wii U and Wii
@@ -514,11 +558,11 @@ bool EditorActivity::save()
         brls::Application::notify("editor/invalid"_i18n);
         return true;
     }
-    if (MiiLibrary::instance().put(&mii) < 0) {
+    if (store->put(&mii) < 0) {
         brls::Application::notify("editor/save_failed"_i18n);
         return true;
     }
-    MiiLibrary::instance().setDetails(mii.create_id, session->details); // (put gave it its create id)
+    store->setDetails(mii.create_id, session->details); // (put gave it its create id)
     session->dirty = false;
     auto cb = onSaved;
     const mii_charinfo_t saved = mii;
@@ -811,6 +855,8 @@ static brls::View* colorPage(std::shared_ptr<EditorSession> session, mii_field_t
         o.gap = 10;
         o.colorOf = [](uint8_t v) { return mii_common_color_rgb(v); };
         box->addView(new OptionGrid(&s->mii, field, items, o, [s] { s->dirty = true; }));
+        if (OptionGrid::availability)
+            return; // the 3DS has only these colors
         auto* more = new ShowMoreButton();
         more->registerClickAction([session, field](brls::View*) {
             brls::Application::pushActivity(new PaletteActivity(session, field), brls::TransitionAnimation::NONE);

@@ -8,6 +8,7 @@ add_library(mii STATIC
     src/mii_wii.c
     src/mii_qr.c
     src/mii_nfdb.c
+    src/mii_cfldb.c
     src/mii_editor.c
 )
 target_include_directories(mii PUBLIC include)

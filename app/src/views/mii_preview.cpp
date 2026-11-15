@@ -77,12 +77,12 @@ void MiiPreview::request3D()
     const int size = stage && hr.gpuActive() ? gpuSize() : renderSize;
     if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch && requestedSize == size &&
         (!stage || !hr.hasBody() || (requestedPivot == pivot && requestedZoom == zoom)) &&
-        requestedExpression == expression() && requestedPose == pose() && requestedFavorite == favorite() &&
+        requestedExpression == expression() && requestedPose == pose() && requestedPants == pants() &&
         std::memcmp(&requested, mii, sizeof(requested)) == 0)
         return;
     requestedExpression = expression();
     requestedPose = pose();
-    requestedFavorite = favorite();
+    requestedPants = pants();
     requestedPivot = pivot;
     requestedZoom = zoom;
     requestedSize = size;
@@ -96,7 +96,7 @@ void MiiPreview::request3D()
     spec.mii = *mii;
     spec.expression = requestedExpression;
     spec.pose = requestedPose;
-    spec.pants = requestedFavorite ? MII3D_PANTS_RED : MII3D_PANTS_GRAY;
+    spec.pants = requestedPants;
     // the GPU draws stages at about the size they are shown (sharp, and
     // its multisampling smooths the edges); the CPU keeps to renderSize
     spec.size = stage && hr.gpuActive() ? gpuSize() : renderSize;

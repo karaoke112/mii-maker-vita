@@ -2,6 +2,8 @@
 
 #include <mii/mii.h>
 
+#include "mii_store.hpp"
+
 #include <array>
 #include <map>
 #include <string>
@@ -29,7 +31,7 @@ struct MiiDetails {
     bool isDefault() const { return !favorite && !birthMonth && !birthDay && creator.empty() && mingle; }
 };
 
-class MiiLibrary
+class MiiLibrary : public MiiStore
 {
   public:
     static constexpr int kMax = 200;
@@ -38,19 +40,22 @@ class MiiLibrary
     bool load();
     bool save();
 
-    int count() const { return (int)entries.size(); }
-    bool get(int index, mii_charinfo_t* out) const;
+    int count() const override { return (int)entries.size(); }
+    int capacity() const override { return kMax; }
+    bool get(int index, mii_charinfo_t* out) const override;
     // Writes the Miis as the Wii's Mii database for Wii game ports (done
     // by save(), and at start-up when there is none).
     bool exportWii() const;
     // Inserts or replaces (matched by create id). Assigns a create id first
     // if the Mii has none. Saves to disk. Returns the index or -1.
-    int put(mii_charinfo_t* ci);
-    bool remove(int index);
+    int put(mii_charinfo_t* ci) override;
+    bool remove(int index) override;
     // Reordering (saved): `move` takes a Mii out and puts it back at `to`;
     // `swap` exchanges two.
-    bool move(int from, int to);
-    bool swap(int a, int b);
+    bool canMove() const override { return true; }
+    bool move(int from, int to) override;
+    bool swap(int a, int b) override;
+    int pants(const mii_charinfo_t& mii) const override;
     // Writes .charinfo, .nfsd and .ffsd copies to <data>/export/, named
     // <nickname>_<first 4 bytes of the create id in hex>.
     bool exportMii(int index, std::string* outPath);
@@ -84,9 +89,9 @@ class MiiLibrary
     std::string importDir() const { return dir + "/import"; }
 
     void newCreateId(mii_create_id_t* id) const;
-    MiiDetails details(const mii_create_id_t& id) const;
+    MiiDetails details(const mii_create_id_t& id) const override;
     // Saved at once (details.txt is small)
-    void setDetails(const mii_create_id_t& id, const MiiDetails& d);
+    void setDetails(const mii_create_id_t& id, const MiiDetails& d) override;
     // The 3DS / Wii U header for a Mii leaving this console (QR codes,
     // .ffsd files): a normal, valid Mii made on a "3DS-compatible" device
     // (as the Switch 2 writes it; a 3DS refuses origin 4), with an id that

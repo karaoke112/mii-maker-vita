@@ -41,7 +41,15 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   tabs). Cross on a Mii in the list opens it on its own screen: the whole
   Mii to turn, and Edit, Change Expression, Change Pose, View QR Code, Use
   Kid-o-matic and Delete; L / R show the Mii before / after it. The list
-  holds 200 Miis. **Photo Studio** (on that screen) poses a Mii with an
+  holds 200 Miis. **R** shows the **3DS's Miis** instead, read from
+  Azahar's Mii database (`ux0:data/azahar/nand/extdata/00048000/F000000B/user/CFL_DB.dat`,
+  100 Miis) and **L** goes back: they can be viewed, edited, added and
+  deleted there (the personal Mii always stays). Only Mii Maker's part of
+  that file and its checksum are changed; a Mii saved unchanged comes back
+  byte for byte; the file is backed up (`CFL_DB.dat.bak` before each save,
+  `CFL_DB.dat.orig` as it first was); a file that does not check out is not
+  touched. Editing a 3DS Mii, the parts and colors the 3DS lacks (Switch
+  colors, the newer glasses) are greyed out. **Photo Studio** (on that screen) poses a Mii with an
   expression on a background of your choice, whole or close up, and saves
   a 960 x 544 PNG to `ux0:picture/MIIMAKER/` for the Photos app (Clear
   gives a see-through background). Each Mii has a **Profile** in the editor

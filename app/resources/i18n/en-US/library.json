@@ -21,7 +21,7 @@
   "send": "Send Mii",
   "receive": "Receive Mii",
   "view": "View",
-  "count": "{} / 200",
+  "count": "{} / {}",
   "add_scratch": "Start from Scratch",
   "add_lookalike": "Choose a Look-Alike",
   "add_kid": "Kid-o-matic",
@@ -49,5 +49,11 @@
   "delete_n": "Delete ({})",
   "send_n": "Send ({})",
   "delete_confirm_n": "Delete these {} Miis? This cannot be undone.",
-  "choose_first": "Choose at least one Mii first."
+  "choose_first": "Choose at least one Mii first.",
+  "title_3ds": "3DS Miis (Azahar)",
+  "tab_3ds": "3DS Miis",
+  "tab_vita": "Your Miis",
+  "no_3ds": "No 3DS Mii database found. Start Mii Maker in Azahar once, then look in ux0:data/azahar/nand/extdata/00048000/F000000B/user/ for CFL_DB.dat.",
+  "bad_3ds": "Azahar's Mii database (CFL_DB.dat) is not one this app can change safely, so it is left as it is.",
+  "personal_kept": "The personal Mii stays: the 3DS needs it."
 }

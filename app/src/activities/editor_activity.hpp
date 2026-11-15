@@ -61,7 +61,10 @@ class EditorActivity : public brls::Activity
     // after Done: the Mii as saved
     using OnSaved = std::function<void(const mii_charinfo_t& saved)>;
 
-    EditorActivity(const mii_charinfo_t& start, OnSaved onSaved);
+    // `store`: where Done saves it (the app's list unless given; the 3DS's
+    // keeps only what a 3DS Mii can have, and the editor greys out the rest)
+    EditorActivity(const mii_charinfo_t& start, OnSaved onSaved, MiiStore* store = nullptr);
+    ~EditorActivity() override;
 
     brls::View* createContentView() override;
     void onResume() override;
@@ -72,6 +75,7 @@ class EditorActivity : public brls::Activity
 
     std::shared_ptr<EditorSession> session;
     OnSaved onSaved;
+    MiiStore* store;
     IconView* favoriteStar = nullptr;
 };
 

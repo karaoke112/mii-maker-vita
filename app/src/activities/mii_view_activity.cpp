@@ -13,10 +13,12 @@
 
 using namespace brls::literals;
 
-MiiViewActivity::MiiViewActivity(std::vector<mii_charinfo_t> miis, int index, std::function<void(int, bool)> onClosed)
+MiiViewActivity::MiiViewActivity(std::vector<mii_charinfo_t> miis, int index, MiiStore* store,
+    std::function<void(int, bool)> onClosed)
     : miis(std::move(miis))
     , index(index)
     , onClosed(std::move(onClosed))
+    , store(store)
 {
     current = this->miis[index];
 }
@@ -34,7 +36,7 @@ brls::View* MiiViewActivity::createContentView()
     preview->setFrontSource(&facingFront);
     preview->setExpressionSource(&expression);
     preview->setPoseSource(&pose);
-    preview->setFavoriteSource(&favorite);
+    preview->setPantsSource(&pants);
     preview->setWidth(560);
     preview->setGrow(0);
     root->addView(preview);
@@ -61,7 +63,7 @@ brls::View* MiiViewActivity::createContentView()
     poseItem.value = [this] { return poseDisplayName(pose); };
     items.push_back(poseItem);
     items.push_back(PopupMenu::item("view/photo"_i18n, [this] {
-        brls::Application::pushActivity(new PhotoActivity(current, favorite, &expression, &pose),
+        brls::Application::pushActivity(new PhotoActivity(current, pants, &expression, &pose),
             brls::TransitionAnimation::NONE);
     }));
     items.push_back(PopupMenu::item("view/qr"_i18n, [this] {
@@ -73,10 +75,11 @@ brls::View* MiiViewActivity::createContentView()
         }
         brls::Application::pushActivity(new QrShowActivity(current), brls::TransitionAnimation::NONE);
     }));
-    items.push_back(PopupMenu::item("view/kid"_i18n, [this] {
-        brls::Application::pushActivity(new ChildActivity(current, [this] { changed = true; }),
-            brls::TransitionAnimation::NONE);
-    }));
+    if (!store->threeDs()) // (Kid-o-matic saves to the app's list)
+        items.push_back(PopupMenu::item("view/kid"_i18n, [this] {
+            brls::Application::pushActivity(new ChildActivity(current, [this] { changed = true; }),
+                brls::TransitionAnimation::NONE);
+        }));
     items.push_back(PopupMenu::item("view/delete"_i18n, [this] { remove(); }));
     for (size_t i = 0; i < items.size(); i++)
         right->addView(PopupMenu::row(items[i], i == 0));
@@ -119,7 +122,7 @@ void MiiViewActivity::show(int i)
 {
     index = i;
     current = miis[i]; // the preview notices and redraws
-    favorite = MiiLibrary::instance().details(current.create_id).favorite;
+    pants = store->pants(current);
     char text[64];
     mii_name_get_utf8(&current, text, sizeof(text));
     name->setText(text);
@@ -140,16 +143,21 @@ void MiiViewActivity::edit()
         miis[index] = saved;
         changed = true;
         show(index);
-    }),
+    },
+                                                       store),
         brls::TransitionAnimation::NONE);
 }
 
 void MiiViewActivity::remove()
 {
+    if (!store->canRemove(index)) { // the 3DS's personal Mii
+        brls::Application::notify("library/personal_kept"_i18n);
+        return;
+    }
     auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
     dialog->addButton("hints/cancel"_i18n, [] {});
     dialog->addButton("library/delete"_i18n, [this] {
-        if (!MiiLibrary::instance().remove(index)) {
+        if (!store->remove(index)) {
             brls::Application::notify("library/delete_failed"_i18n);
             return;
         }

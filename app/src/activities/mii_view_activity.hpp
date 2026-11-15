@@ -3,6 +3,8 @@
 #include <borealis.hpp>
 #include <mii/mii.h>
 
+#include "mii_store.hpp"
+
 #include <functional>
 #include <vector>
 
@@ -15,7 +17,8 @@ class MiiViewActivity : public brls::Activity
   public:
     // `onClosed(index, changed)`: the Mii shown last, and whether any Mii
     // was edited, deleted or added (Kid-o-matic) meanwhile.
-    MiiViewActivity(std::vector<mii_charinfo_t> miis, int index, std::function<void(int, bool)> onClosed);
+    // `store`: where the Miis are (the app's list or the 3DS's)
+    MiiViewActivity(std::vector<mii_charinfo_t> miis, int index, MiiStore* store, std::function<void(int, bool)> onClosed);
 
     brls::View* createContentView() override;
 
@@ -34,7 +37,8 @@ class MiiViewActivity : public brls::Activity
     float yaw = 0.0f, pitch = 0.0f;
     bool facingFront = false;
     int expression = 0, pose = 0; // kept from one Mii to the next
-    bool favorite = false;        // the Mii shown: red pants
+    int pants = 0;                // the Mii shown: its pants (red for a favorite...)
+    MiiStore* store;
     brls::Label* name = nullptr;
     brls::Label* position = nullptr;
 };

@@ -43,6 +43,8 @@ class MiiPreview : public brls::View
     void setPoseSource(const int* source) { poseSource = source; }
     // Whether the Mii is a favorite (red pants in whole-Mii views).
     void setFavoriteSource(const bool* source) { favoriteSource = source; }
+    // Or the pants' color itself (MII3D_PANTS_*: a 3DS Mii's blue or gold)
+    void setPantsSource(const int* source) { pantsSource = source; }
     // Previews with the same share key (the editor's screens) use one
     // render: a new screen shows the latest picture at once instead of
     // nothing, and a screen shown again redraws if another one rendered.
@@ -118,8 +120,9 @@ class MiiPreview : public brls::View
     int pose() const { return poseSource ? *poseSource : 0; }
     int requestedPose = 0;
     const bool* favoriteSource = nullptr;
-    bool favorite() const { return favoriteSource && *favoriteSource; }
-    bool requestedFavorite = false;
+    const int* pantsSource = nullptr;
+    int pants() const { return pantsSource ? *pantsSource : (favoriteSource && *favoriteSource) ? 2 : 0; }
+    int requestedPants = 0;
     bool stage = false;
     bool compact = false;
     bool interactive = true;

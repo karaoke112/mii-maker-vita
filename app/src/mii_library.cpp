@@ -232,6 +232,11 @@ void MiiLibrary::saveDetails() const
     }
 }
 
+int MiiLibrary::pants(const mii_charinfo_t& mii) const
+{
+    return details(mii.create_id).favorite ? 2 /* MII3D_PANTS_RED */ : 0;
+}
+
 MiiDetails MiiLibrary::details(const mii_create_id_t& id) const
 {
     auto it = detailMap.find(idKey(id));

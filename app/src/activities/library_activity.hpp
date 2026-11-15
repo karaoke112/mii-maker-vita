@@ -2,6 +2,7 @@
 
 #include <borealis.hpp>
 
+#include "mii_store.hpp"
 #include "views/mii_preview.hpp"
 #include <mii/mii.h>
 
@@ -45,6 +46,12 @@ class LibraryActivity : public brls::Activity
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
     void openView(int index);
+    // the list shown: the app's own (L) or the 3DS's in Azahar (R)
+    bool threeDs = false;
+    MiiStore& store();
+    void switchTab(bool to3ds);
+    void tabActions();
+    brls::AppletFrame* appletFrame = nullptr;
     void upRoutes();
     void buttonRoutes();
     bool busy() const { return pick != Pick::NONE || held >= 0; }

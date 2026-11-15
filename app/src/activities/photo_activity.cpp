@@ -50,9 +50,9 @@ void makeDir(const std::string& path)
 
 } // namespace
 
-PhotoActivity::PhotoActivity(const mii_charinfo_t& mii, bool favorite, int* expression, int* pose)
+PhotoActivity::PhotoActivity(const mii_charinfo_t& mii, int pants, int* expression, int* pose)
     : mii(mii)
-    , favorite(favorite)
+    , pants(pants)
     , expression(expression)
     , pose(pose)
 {
@@ -70,7 +70,7 @@ brls::View* PhotoActivity::createContentView()
     preview->setFrontSource(&facingFront);
     preview->setExpressionSource(expression);
     preview->setPoseSource(pose);
-    preview->setFavoriteSource(&favorite);
+    preview->setPantsSource(&pants);
     preview->setBackdrop(nvg(shownColor(background)));
     // the photo's own shape (960 x 544) on its background: the Mii is framed
     // here as it will be in the picture
@@ -166,7 +166,7 @@ void PhotoActivity::takePhoto()
     preview->currentFraming(&spec.fullBody, &spec.zoom, &spec.centerY);
     spec.expression = *expression;
     spec.pose = *pose;
-    spec.pants = favorite ? MII3D_PANTS_RED : MII3D_PANTS_GRAY;
+    spec.pants = pants;
     const uint32_t bg = kBackgrounds[background].argb;
 
     char stamp[32];

@@ -48,6 +48,7 @@ class GridCell : public brls::Box
     }
 
     void setSelected(bool s) { selected = s; }
+    bool disabled = false; // not available here (the 3DS lacks it)
 
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override
@@ -73,6 +74,21 @@ class GridCell : public brls::Box
         if (!drewIcon && !opt.colorOf && !opt.paint)
             brls::Box::draw(vg, x, y, width, height, style, ctx);
 
+        if (disabled) {
+            // greyed out: veiled, and struck through
+            NVGcolor veil = ui::background();
+            veil.a = 0.72f;
+            nvgBeginPath(vg);
+            nvgRect(vg, x, y, width, height);
+            nvgFillColor(vg, veil);
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x + width * 0.2f, y + height * 0.8f);
+            nvgLineTo(vg, x + width * 0.8f, y + height * 0.2f);
+            nvgStrokeColor(vg, ui::textDim());
+            nvgStrokeWidth(vg, 3);
+            nvgStroke(vg);
+        }
         if (selected) {
             nvgBeginPath(vg);
             nvgRect(vg, x + 2, y + 2, width - 4, height - 4);
@@ -137,6 +153,8 @@ class GridCell : public brls::Box
     int nvgImage = -1;
 };
 
+std::function<bool(mii_field_t, uint8_t)> OptionGrid::availability;
+
 std::vector<uint8_t> OptionGrid::range(mii_field_t field)
 {
     std::vector<uint8_t> v;
@@ -173,7 +191,12 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
             cell->setMarginLeft(opt.gap);
         cell->setFocusable(true);
         cell->setHighlightCornerRadius(3);
-        cell->registerClickAction([this, value](brls::View*) {
+        cell->disabled = availability && !availability(field, value);
+        cell->registerClickAction([this, value, cell](brls::View*) {
+            if (cell->disabled) {
+                brls::Application::notify(brls::getStr("editor/not_on_3ds"));
+                return true;
+            }
             mii_field_set(this->mii, this->field, value);
             this->refresh();
             if (this->onChange)

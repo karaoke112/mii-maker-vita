@@ -15,7 +15,8 @@ class MiiPreview;
 class PhotoActivity : public brls::Activity
 {
   public:
-    PhotoActivity(const mii_charinfo_t& mii, bool favorite, int* expression, int* pose);
+    // `pants`: MII3D_PANTS_* (red for a favorite...)
+    PhotoActivity(const mii_charinfo_t& mii, int pants, int* expression, int* pose);
 
     brls::View* createContentView() override;
 
@@ -23,7 +24,7 @@ class PhotoActivity : public brls::Activity
     void takePhoto();
 
     mii_charinfo_t mii;
-    bool favorite;
+    int pants;
     int* expression;
     int* pose;
     float yaw = 0.0f, pitch = 0.0f;

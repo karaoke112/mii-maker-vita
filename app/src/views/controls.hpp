@@ -41,6 +41,9 @@ class OptionGrid : public brls::Box
 
     // Items 0..max(field) in natural order.
     static std::vector<uint8_t> range(mii_field_t field);
+    // While set (the 3DS editor): the values it rejects are greyed out and
+    // cannot be chosen.
+    static std::function<bool(mii_field_t, uint8_t)> availability;
 
     brls::View* getDefaultFocus() override;
     // keeps the selection right when the value changes elsewhere (the

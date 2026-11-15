@@ -691,6 +691,65 @@ static void test_qr(void)
     CHECK(strcmp(name, "QR test") == 0);
 }
 
+/* CFL_DB.dat: a database laid out like the 3DS's; putting a Mii in a slot
+ * and fixing the checksum must leave every other byte as it was. */
+static void test_cfldb(void)
+{
+    static uint8_t db[0x4BD20], before[0x4BD20];
+    memset(db, 0, sizeof(db));
+    memcpy(db, "CFOG", 4);
+    db[5] = 0x01; /* 0x00010000, big-endian */
+    memcpy(db + 0x23F8, "CFHE", 4);
+    memset(db + 0x23FC, 0xFF, 4);
+    for (int n = 0; n < 3000; n++) { /* empty nodes: prev / next 0x7FFF */
+        db[0x2400 + n * 14 + 10] = 0xFF; db[0x2400 + n * 14 + 11] = 0x7F;
+        db[0x2400 + n * 14 + 12] = 0xFF; db[0x2400 + n * 14 + 13] = 0x7F;
+    }
+    memcpy(db + 0xC820, "CFRA", 4);
+    db[0xE4AC] = 1;
+    const uint16_t cfra = mii_crc16(db + 0xC820, 0xE4BE - 0xC820, 0);
+    db[0xE4BE] = (uint8_t)(cfra >> 8);
+    db[0xE4BF] = (uint8_t)cfra;
+    CHECK_EQ(mii_cfldb_check(db, sizeof(db)), MII_ERR_CRC); /* not fixed yet */
+    mii_cfldb_fix_checksum(db);
+    CHECK_EQ(mii_cfldb_check(db, sizeof(db)), MII_OK);
+    CHECK_EQ(mii_cfldb_check(db, 0x100), MII_ERR_SIZE);
+    CHECK(!mii_cfldb_slot_used(db, 0));
+    CHECK(mii_cfldb_slot(db, 100) == NULL);
+
+    memcpy(before, db, sizeof(db));
+    mii_charinfo_t ci, back;
+    mii_charinfo_init_default(&ci, 1);
+    mii_name_set_utf8(&ci, "Tester");
+    mii_ver3_info_t info;
+    mii_ver3_info_init_default(&info);
+    info.birth_platform = 3;
+    info.page_index = 0;
+    info.slot_index = 1;
+    uint8_t v3[MII_VER3_STOREDATA_SIZE];
+    CHECK_EQ(mii_ver3_encode(&ci, &info, v3), MII_OK);
+    memcpy(mii_cfldb_slot(db, 1), v3, MII_CFLDB_ENTRY_SIZE);
+    mii_cfldb_fix_checksum(db);
+    CHECK_EQ(mii_cfldb_check(db, sizeof(db)), MII_OK);
+    CHECK(mii_cfldb_slot_used(db, 1));
+    /* only slot 1 and the checksum changed */
+    int outside = 0;
+    for (size_t i = 0; i < sizeof(db); i++) {
+        const int in_slot = i >= 0x8 + 0x5C && i < 0x8 + 2 * 0x5C;
+        const int in_crc = i == 0xC81E || i == 0xC81F;
+        if (!in_slot && !in_crc && db[i] != before[i])
+            outside++;
+    }
+    CHECK_EQ(outside, 0);
+    mii_ver3_info_t got;
+    CHECK_EQ(mii_ver3_decode(&back, &got, mii_cfldb_slot(db, 1), MII_CFLDB_ENTRY_SIZE, NULL), MII_OK);
+    CHECK_EQ(got.slot_index, 1);
+    CHECK_EQ(back.gender, 1);
+    /* a changed byte anywhere in the first section is caught */
+    db[0x3000] ^= 1;
+    CHECK_EQ(mii_cfldb_check(db, sizeof(db)), MII_ERR_CRC);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 3 && !strcmp(argv[1], "--gen-vectors"))
@@ -709,6 +768,7 @@ int main(int argc, char **argv)
     test_wii();
     test_qr();
     test_nfdb();
+    test_cfldb();
     test_editor_data();
 #ifdef VECTOR_DIR
     test_vectors(argc > 1 ? argv[1] : VECTOR_DIR);
