@@ -1,5 +1,7 @@
 #include "views/controls.hpp"
 
+#include "views/cull.hpp"
+
 #include <cstdio>
 
 #include "ui_theme.hpp"
@@ -29,15 +31,24 @@ class GridCell : public brls::Box
         iconSize = (int)std::lround(opt.cell * 1.15f * opt.iconScale);
         if (iconSize < 32)
             iconSize = 32;
-        this->setJustifyContent(brls::JustifyContent::CENTER);
-        this->setAlignItems(brls::AlignItems::CENTER);
-        if (!opt.colorOf && !opt.paint) {
-            auto* label = new brls::Label();
-            label->setText(opt.labelOf ? opt.labelOf(value) : std::to_string(value + 1));
-            label->setFontSize(opt.labelOf ? 22 : 20);
-            label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-            this->addView(label);
+        // (the text is drawn here, not by a label of its own: a page of
+        // 132 hairstyles opens faster without 132 labels to lay out)
+        if (!opt.colorOf && !opt.paint)
+            text = opt.labelOf ? opt.labelOf(value) : std::to_string(value + 1);
+    }
+
+    // Tiles off screen are not drawn; their icons are asked for when they
+    // come within a screen of it (so scrolling finds them ready), not all
+    // at once when the page opens.
+    void frame(brls::FrameContext* ctx) override
+    {
+        const float off = ui::offscreenDistance(this);
+        if (off > 0.0f) {
+            if (off < kPrefetch && opt.iconOf)
+                requestIcon();
+            return;
         }
+        brls::Box::frame(ctx);
     }
 
     ~GridCell() override
@@ -71,8 +82,13 @@ class GridCell : public brls::Box
         } else if (opt.iconOf) {
             drewIcon = drawIcon(vg, sx, sy, side);
         }
-        if (!drewIcon && !opt.colorOf && !opt.paint)
-            brls::Box::draw(vg, x, y, width, height, style, ctx);
+        if (!drewIcon && !text.empty()) {
+            nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
+            nvgFontSize(vg, opt.labelOf ? 22.0f : 20.0f);
+            nvgFillColor(vg, ui::text());
+            nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgText(vg, x + width / 2, y + height / 2, text.c_str(), nullptr);
+        }
 
         if (disabled) {
             // greyed out: veiled, and struck through
@@ -106,25 +122,29 @@ class GridCell : public brls::Box
     }
 
   private:
-    bool drawIcon(NVGcontext* vg, float sx, float sy, float side)
+    void requestIcon()
     {
         HeadRenderer& hr = HeadRenderer::instance();
-        if (hr.available()) {
-            HeadRenderer::Spec spec;
-            spec.size = iconSize;
-            spec.lowPriority = true;
-            opt.iconOf(value, *mii, &spec);
-            // re-checked every frame, so icons follow the Mii's colors
-            if (!hasRequested || std::memcmp(&spec.mii, &requested.mii, sizeof(spec.mii)) != 0 ||
-                spec.icon != requested.icon) {
-                requested = spec;
-                hasRequested = true;
-                hr.request(this, spec, [this](HeadRenderer::Image img, int, int) {
-                    image = img;
-                    dirty = true;
-                });
-            }
+        if (!hr.available())
+            return;
+        HeadRenderer::Spec spec;
+        spec.size = iconSize;
+        spec.lowPriority = true;
+        opt.iconOf(value, *mii, &spec);
+        // re-checked every frame, so icons follow the Mii's colors
+        if (!hasRequested || std::memcmp(&spec.mii, &requested.mii, sizeof(spec.mii)) != 0 || spec.icon != requested.icon) {
+            requested = spec;
+            hasRequested = true;
+            hr.request(this, spec, [this](HeadRenderer::Image img, int, int) {
+                image = img;
+                dirty = true;
+            });
         }
+    }
+
+    bool drawIcon(NVGcontext* vg, float sx, float sy, float side)
+    {
+        requestIcon();
         if (!image)
             return false;
         if (nvgImage < 0)
@@ -141,9 +161,11 @@ class GridCell : public brls::Box
         return true;
     }
 
+    static constexpr float kPrefetch = 544.0f; // (a screen)
     const mii_charinfo_t* mii;
     uint8_t value;
     const OptionGrid::Options& opt;
+    std::string text;
     int iconSize;
     bool selected = false;
     HeadRenderer::Spec requested;

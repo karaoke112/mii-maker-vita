@@ -19,6 +19,7 @@
 #include <mii/mii_editor.h>
 #include "views/controls.hpp"
 #include "views/icon.hpp"
+#include "views/cull.hpp"
 #include "views/mii_preview.hpp"
 
 #include <cstring>
@@ -32,10 +33,26 @@ static constexpr int kColumns = 5;
 class MiiCard : public brls::Box
 {
   public:
-    MiiCard()
+    explicit MiiCard(const mii_charinfo_t* mii)
         : brls::Box(brls::Axis::COLUMN)
+        , mii(mii)
     {
     }
+    // Only the cards on screen are drawn, and only they hold a thumbnail
+    // (made when the card comes on screen, dropped once it is well off it:
+    // a list of 1000 Miis keeps a screenful or so). Its picture comes back
+    // from the renderer's cache when it returns.
+    void frame(brls::FrameContext* ctx) override
+    {
+        const float off = ui::offscreenDistance(this);
+        if (off > 0.0f) {
+            if (thumb && off > kKeepThumb)
+                thumb.reset();
+            return;
+        }
+        brls::Box::frame(ctx);
+    }
+    MiiPreview* thumbnail() const { return thumb.get(); }
     std::function<void(NVGcontext*, float, float, float, float, brls::Style, brls::FrameContext*)> overlay;
     bool empty = false;
     bool checked = false; // chosen, while choosing several
@@ -45,6 +62,15 @@ class MiiCard : public brls::Box
         brls::FrameContext* ctx) override
     {
         brls::Box::draw(vg, x, y, width, height, style, ctx);
+        if (!empty) {
+            if (!thumb) {
+                thumb.reset(new MiiPreview(mii, 160));
+                thumb->setDimensions(width, height);
+                if (priority)
+                    HeadRenderer::instance().setPriority(thumb.get(), *priority);
+            }
+            thumb->draw(vg, x, y, width, height, style, ctx);
+        }
         if (empty) { // an empty place, or the held Mii's
             nvgBeginPath(vg);
             nvgRoundedRect(vg, x + 3, y + 3, width - 6, height - 6, 16);
@@ -89,6 +115,13 @@ class MiiCard : public brls::Box
         if (overlay)
             overlay(vg, x, y, width, height, style, ctx);
     }
+    // where its thumbnail comes in the renderer's queue (nearest the cursor first)
+    std::unique_ptr<int> priority;
+
+  private:
+    static constexpr float kKeepThumb = 1200.0f; // (about two screens)
+    const mii_charinfo_t* mii;
+    std::unique_ptr<MiiPreview> thumb;
 };
 
 brls::View* LibraryActivity::createContentView()
@@ -501,7 +534,6 @@ void LibraryActivity::rebuild()
     brls::Application::giveFocus(createButton);
     grid->clearViews();
     cards.clear();
-    thumbs.clear();
     // one card per Mii; the 3DS's list: its 100 places. Carrying a Mii from
     // the 3DS, one empty card at the end of this list to put it there.
     int n = usable ? lib.places() : 0;
@@ -554,7 +586,7 @@ void LibraryActivity::rebuild()
                 row->setMarginTop(16);
             grid->addView(row);
         }
-        auto* card = new MiiCard();
+        auto* card = new MiiCard(&miis[i]);
         cards.push_back(card);
         card->setDimensions(200, 250);
         card->setMarginRight(20);
@@ -564,12 +596,6 @@ void LibraryActivity::rebuild()
         card->empty = !present[i];
         card->favorite = present[i] && lib.details(miis[i].create_id).favorite;
         card->personal = present[i] && lib.isPersonal((int)i);
-        auto* preview = new MiiPreview(&miis[i], 160);
-        thumbs.push_back(preview);
-        preview->setDimensions(200, 250);
-        if (!present[i])
-            preview->setVisibility(brls::Visibility::INVISIBLE);
-        card->addView(preview);
 
         const int index = (int)i;
         card->registerClickAction([this, index](brls::View*) {
@@ -671,9 +697,15 @@ void LibraryActivity::updateSettingsAction()
 void LibraryActivity::thumbPriorities(int focus)
 {
     const int fr = focus / kColumns, fc = focus % kColumns;
-    for (size_t i = 0; i < thumbs.size(); i++) {
+    for (size_t i = 0; i < cards.size(); i++) {
         const int r = (int)i / kColumns, c = (int)i % kColumns;
-        HeadRenderer::instance().setPriority(thumbs[i], 2 * std::abs(r - fr) + std::abs(c - fc));
+        auto* card = static_cast<MiiCard*>(cards[i]);
+        const int p = 2 * std::abs(r - fr) + std::abs(c - fc);
+        if (!card->priority)
+            card->priority.reset(new int(p));
+        *card->priority = p;
+        if (MiiPreview* t = card->thumbnail()) // (the others take it when made)
+            HeadRenderer::instance().setPriority(t, p);
     }
 }
 
@@ -773,8 +805,7 @@ void LibraryActivity::holdLook()
         floating.reset(new MiiPreview(&heldMii, 160));
         floating->setDimensions(200, 250);
     }
-    if (held >= 0 && held < (int)thumbs.size()) {
-        thumbs[held]->setVisibility(brls::Visibility::INVISIBLE);
+    if (held >= 0 && held < (int)cards.size()) {
         auto* card = static_cast<MiiCard*>(cards[held]);
         card->empty = true;
         card->favorite = card->personal = false;
@@ -825,7 +856,6 @@ void LibraryActivity::refreshCards()
     for (size_t i = 0; i < miis.size(); i++) {
         present[i] = (int)i < lib.places() && lib.get((int)i, &miis[i]);
         const bool shown = present[i] && (int)i != held;
-        thumbs[i]->setVisibility(shown ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
         auto* card = static_cast<MiiCard*>(cards[i]);
         card->empty = !shown;
         card->favorite = shown && lib.details(miis[i].create_id).favorite;

@@ -107,7 +107,6 @@ class LibraryActivity : public brls::Activity
     std::string parent2Prompt() const;
     bool stale = false;
     std::vector<brls::View*> cards;
-    std::vector<brls::View*> thumbs; // the cards' previews
     void thumbPriorities(int focus);
     std::vector<mii_charinfo_t> miis; // one per card (an empty place: a default Mii, not shown)
     std::vector<bool> present;        // a Mii there (the 3DS's list has empty places)
