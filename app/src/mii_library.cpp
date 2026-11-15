@@ -1,5 +1,7 @@
 #include "mii_library.hpp"
 
+#include "cfl3ds_store.hpp"
+
 #include "mii_qr.hpp"
 #include "trade.hpp"
 
@@ -258,7 +260,7 @@ void MiiLibrary::setDetails(const mii_create_id_t& id, const MiiDetails& d)
 }
 
 // from a 3DS / Wii U file or QR code
-void MiiLibrary::detailsFromVer3(const mii_create_id_t& id, const mii_ver3_info_t& info)
+MiiDetails MiiLibrary::detailsOf(const mii_ver3_info_t& info)
 {
     MiiDetails d;
     d.favorite = info.favorite != 0;
@@ -271,6 +273,12 @@ void MiiLibrary::detailsFromVer3(const mii_create_id_t& id, const mii_ver3_info_
     char name[64];
     mii_name_get_utf8(&tmp, name, sizeof(name));
     d.creator = name;
+    return d;
+}
+
+void MiiLibrary::detailsFromVer3(const mii_create_id_t& id, const mii_ver3_info_t& info)
+{
+    const MiiDetails d = detailsOf(info);
     if (d.isDefault())
         detailMap.erase(idKey(id));
     else
@@ -461,9 +469,11 @@ std::string MiiLibrary::fileName(const mii_charinfo_t& ci)
 bool MiiLibrary::exportMii(int index, std::string* outPath)
 {
     mii_charinfo_t ci;
-    if (!get(index, &ci))
-        return false;
+    return get(index, &ci) && exportMii(ci, outPath);
+}
 
+bool MiiLibrary::exportMii(const mii_charinfo_t& ci, std::string* outPath, const mii_ver3_info_t* given)
+{
     const std::string base = dir + "/export/" + fileName(ci);
 
     uint8_t buf[MII_VER3_STOREDATA_SIZE];
@@ -471,7 +481,10 @@ bool MiiLibrary::exportMii(int index, std::string* outPath)
     ok &= mii_charinfo_encode(&ci, buf) == MII_OK && writeFile(base + ".charinfo", buf, MII_CHARINFO_SIZE);
     ok &= mii_storedata_encode(&ci, authorId, buf) == MII_OK && writeFile(base + ".nfsd", buf, MII_STOREDATA_SIZE);
     mii_ver3_info_t info;
-    ver3Info(ci, &info);
+    if (given)
+        info = *given;
+    else
+        ver3Info(ci, &info);
     ok &= mii_ver3_encode(&ci, &info, buf) == MII_OK && writeFile(base + ".ffsd", buf, MII_VER3_STOREDATA_SIZE);
     if (outPath)
         *outPath = base;
@@ -537,20 +550,43 @@ std::vector<MiiLibrary::Pending> MiiLibrary::scanImports(int* unreadable)
     return out;
 }
 
-MiiLibrary::ImportResult MiiLibrary::importPending(const std::vector<Pending>& chosen)
+MiiLibrary::ImportResult MiiLibrary::importPending(const std::vector<Pending>& chosen, MiiStore* into)
 {
     ImportResult result;
     const std::string in = importDir(), done = in + "/imported";
     mkdir(done.c_str(), 0777);
     bool changed = false;
+    if (into == this)
+        into = nullptr;
     for (const Pending& p : chosen) {
-        if (putEntry(p.mii) < 0) {
-            result.full = true;
-            break;
+        if (into) {
+            // another list (saved there at once)
+            mii_charinfo_t m = p.mii;
+            mii_ver3_info_t had;
+            auto* c3 = into->threeDs() ? static_cast<Cfl3dsStore*>(into) : nullptr;
+            if (c3 && p.hasInfo && !c3->info(m.create_id, &had)) {
+                // a 3DS Mii keeps what it carries (its console, birthday...)
+                if (c3->putNew(&m, c3->firstFree(), &p.info) < 0) {
+                    result.full = true;
+                    break;
+                }
+            } else {
+                if (into->put(&m) < 0) {
+                    result.full = true;
+                    break;
+                }
+                if (p.hasInfo)
+                    into->setDetails(m.create_id, detailsOf(p.info));
+            }
+        } else {
+            if (putEntry(p.mii) < 0) {
+                result.full = true;
+                break;
+            }
+            if (p.hasInfo) // its favorite, birthday, creator...
+                detailsFromVer3(p.mii.create_id, p.info);
+            changed = true;
         }
-        if (p.hasInfo) // its favorite, birthday, creator...
-            detailsFromVer3(p.mii.create_id, p.info);
-        changed = true;
         result.imported++;
         const std::string from = in + "/" + p.file, to = done + "/" + p.file;
         std::remove(to.c_str());

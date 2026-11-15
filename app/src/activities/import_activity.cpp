@@ -46,10 +46,12 @@ class ImportCard : public brls::Box
 
 } // namespace
 
-ImportActivity::ImportActivity(std::vector<MiiLibrary::Pending> pending, int unreadable, std::function<void(int)> onDone)
+ImportActivity::ImportActivity(std::vector<MiiLibrary::Pending> pending, int unreadable, MiiStore* into,
+    std::function<void(int)> onDone)
     : pending(std::move(pending))
     , states(this->pending.size(), IMPORT)
     , unreadable(unreadable)
+    , into(into)
     , onDone(std::move(onDone))
 {
 }
@@ -168,7 +170,7 @@ void ImportActivity::finish()
         int deleted = 0;
         for (const std::string& f : toDelete)
             deleted += lib.deleteImport(f) ? 1 : 0;
-        const MiiLibrary::ImportResult r = lib.importPending(chosen);
+        const MiiLibrary::ImportResult r = lib.importPending(chosen, into);
         std::string msg = std::to_string(r.imported) + " " + "library/import_done"_i18n;
         if (deleted)
             msg += ", " + brls::getStr("import/deleted_n", std::to_string(deleted));

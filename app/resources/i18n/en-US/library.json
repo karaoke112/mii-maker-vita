@@ -53,7 +53,14 @@
   "title_3ds": "3DS Miis (Azahar)",
   "tab_3ds": "3DS Miis",
   "tab_vita": "Your Miis",
-  "no_3ds": "No 3DS Mii database found. Start Mii Maker in Azahar once, then look in ux0:data/azahar/nand/extdata/00048000/F000000B/user/ for CFL_DB.dat.",
   "bad_3ds": "Azahar's Mii database (CFL_DB.dat) is not one this app can change safely, so it is left as it is.",
-  "personal_kept": "The personal Mii stays: the 3DS needs it."
+  "personal_kept": "The personal Mii stays: the 3DS needs it.",
+  "need_personal": "Make your Personal Mii in Azahar's Mii Maker first to get started here!",
+  "add_here": "New Mii Here",
+  "copy_here": "Copy Here",
+  "place_taken": "That place is taken: choose an empty one.",
+  "full_3ds": "The 3DS holds 100 Miis at most.",
+  "copy_failed": "Could not copy the Mii.",
+  "copied_3ds": "{} was copied to the 3DS.",
+  "copied_vita": "{} was copied to your Miis."
 }

@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
-#include <dirent.h>
 #include <sys/stat.h>
 
 #ifdef __PSV__
@@ -51,27 +50,16 @@ Cfl3dsStore& Cfl3dsStore::instance()
     return s;
 }
 
-// The database is in the shared extdata F000000B (3dbrew); any folder there
-// holding user/CFL_DB.dat is taken, that one first.
+// The database is in the shared extdata F000000B (3dbrew)
 bool Cfl3dsStore::load()
 {
     ok = false;
     why.clear();
-    file.clear();
-    std::vector<std::string> candidates = { std::string(kAzahar) + "/F000000B/user/CFL_DB.dat",
-                                            std::string(kAzahar) + "/f000000b/user/CFL_DB.dat" };
-    if (DIR* d = opendir(kAzahar)) {
-        while (struct dirent* e = readdir(d))
-            if (e->d_name[0] != '.')
-                candidates.push_back(std::string(kAzahar) + "/" + e->d_name + "/user/CFL_DB.dat");
-        closedir(d);
-    }
-    for (const std::string& c : candidates)
-        if (exists(c)) {
-            file = c;
-            break;
-        }
-    if (file.empty()) {
+    used = 0;
+    for (int& s : slotAt)
+        s = -1;
+    file = std::string(kAzahar) + "/F000000B/user/CFL_DB.dat";
+    if (!exists(file)) {
         why = "missing";
         return false;
     }
@@ -94,44 +82,71 @@ bool Cfl3dsStore::load()
             return false;
         }
     }
-    sortOrder();
+    mapPlaces();
     ok = true;
     brls::Logger::info("3DS Mii database {}: {} Miis", file, count());
     return true;
 }
 
-// Mii Maker's order: each Mii's own page and slot (the order in the file
-// means nothing to it)
-void Cfl3dsStore::sortOrder()
+// Mii Maker's place for each Mii: its own page and slot (the order in the
+// file means nothing to it). The position byte: the page in the low half,
+// the place on it in the high, ten to a page.
+static int placeOfByte(uint8_t b)
 {
-    order.clear();
-    for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++)
-        if (mii_cfldb_slot_used(data.data(), s))
-            order.push_back(s);
-    auto pos = [this](int s) {
-        const uint8_t b = mii_cfldb_slot(data.data(), s)[2];
-        return (b & 0xF) * 16 + (b >> 4); /* page, then the slot on it */
-    };
-    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return pos(a) < pos(b); });
+    const int page = b & 0xF, slot = b >> 4;
+    return page < 10 && slot < 10 ? page * 10 + slot : -1;
+}
+
+static uint8_t byteOfPlace(int place) { return (uint8_t)((place / 10) | ((place % 10) << 4)); }
+
+void Cfl3dsStore::mapPlaces()
+{
+    used = 0;
+    for (int& s : slotAt)
+        s = -1;
+    std::vector<int> homeless; // (a place out of range, or one taken twice: the first free one)
+    for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++) {
+        if (!mii_cfldb_slot_used(data.data(), s))
+            continue;
+        used++;
+        const int p = placeOfByte(mii_cfldb_slot(data.data(), s)[2]);
+        if (p >= 0 && slotAt[p] < 0)
+            slotAt[p] = s;
+        else
+            homeless.push_back(s);
+    }
+    for (int s : homeless) {
+        const int p = firstFree();
+        if (p >= 0)
+            slotAt[p] = s;
+    }
+}
+
+int Cfl3dsStore::firstFree() const
+{
+    for (int p = 0; p < MII_CFLDB_MAX_MIIS; p++)
+        if (slotAt[p] < 0)
+            return p;
+    return -1;
+}
+
+int Cfl3dsStore::placeOfSlot(int slot) const
+{
+    for (int p = 0; p < MII_CFLDB_MAX_MIIS; p++)
+        if (slotAt[p] == slot)
+            return p;
+    return -1;
+}
+
+void Cfl3dsStore::snap(mii_charinfo_t* ci)
+{
+    mii_charinfo_t back;
+    uint8_t v3[MII_VER3_STOREDATA_SIZE];
+    if (mii_ver3_encode(ci, nullptr, v3) == MII_OK && mii_ver3_decode(&back, nullptr, v3, sizeof(v3), &ci->create_id) == MII_OK)
+        *ci = back;
 }
 
 static uint32_t rd32be(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
-
-// The first place free in Mii Maker's grid (ten to a page), as its
-// position byte: the page in the low half, the place on it in the high
-int Cfl3dsStore::freePlace() const
-{
-    for (int i = 0; i < MII_CFLDB_MAX_MIIS; i++) {
-        const uint8_t want = (uint8_t)((i / 10) | ((i % 10) << 4));
-        bool used = false;
-        for (int s : order)
-            if (mii_cfldb_slot(const_cast<uint8_t*>(data.data()), s)[2] == want)
-                used = true;
-        if (!used)
-            return want;
-    }
-    return 0;
-}
 
 // A create id for a 3DS Mii (the 3DS format has none): made from its system
 // id, Mii id and creator MAC, so it stays the same for the same Mii
@@ -152,7 +167,9 @@ void Cfl3dsStore::idFor(const uint8_t* entry, mii_create_id_t* out)
 
 int Cfl3dsStore::slotOf(const mii_create_id_t& id) const
 {
-    for (int s : order) {
+    for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++) {
+        if (!mii_cfldb_slot_used(const_cast<uint8_t*>(data.data()), s))
+            continue;
         mii_create_id_t c;
         idFor(mii_cfldb_slot(const_cast<uint8_t*>(data.data()), s), &c);
         if (mii_create_id_equal(&c, &id))
@@ -161,100 +178,168 @@ int Cfl3dsStore::slotOf(const mii_create_id_t& id) const
     return -1;
 }
 
-bool Cfl3dsStore::get(int index, mii_charinfo_t* out) const
+bool Cfl3dsStore::get(int place, mii_charinfo_t* out) const
 {
-    if (!ok || index < 0 || index >= count())
+    if (!ok || place < 0 || place >= MII_CFLDB_MAX_MIIS || slotAt[place] < 0)
         return false;
-    const uint8_t* e = mii_cfldb_slot(const_cast<uint8_t*>(data.data()), order[index]);
+    const uint8_t* e = mii_cfldb_slot(const_cast<uint8_t*>(data.data()), slotAt[place]);
     mii_create_id_t id;
     idFor(e, &id);
     return mii_ver3_decode(out, nullptr, e, MII_CFLDB_ENTRY_SIZE, &id) == MII_OK;
 }
 
+bool Cfl3dsStore::info(const mii_create_id_t& id, mii_ver3_info_t* out) const
+{
+    const int slot = slotOf(id);
+    mii_charinfo_t ci;
+    return slot >= 0 &&
+        mii_ver3_decode(&ci, out, mii_cfldb_slot(const_cast<uint8_t*>(data.data()), slot), MII_CFLDB_ENTRY_SIZE, nullptr) == MII_OK;
+}
+
+// A Mii already here is saved again in its place, with all it carries
+// besides its face; a new one goes in the place asked for with
+// setNextPlace (when free), else the first free.
 int Cfl3dsStore::put(mii_charinfo_t* ci)
 {
-    if (!ok)
+    if (!usable())
         return -1;
-    int slot = slotOf(ci->create_id);
+    const int slot = slotOf(ci->create_id);
+    if (slot < 0) {
+        int place = nextPlace >= 0 && nextPlace < MII_CFLDB_MAX_MIIS && slotAt[nextPlace] < 0 ? nextPlace : firstFree();
+        nextPlace = -1;
+        return place < 0 ? -1 : putNew(ci, place, nullptr);
+    }
     mii_ver3_info_t info;
     mii_charinfo_t old;
-    const bool isNew = slot < 0;
-    if (!isNew) {
-        // keep everything the Mii carries besides its face
-        mii_ver3_decode(&old, &info, mii_cfldb_slot(data.data(), slot), MII_CFLDB_ENTRY_SIZE, nullptr);
+    mii_ver3_decode(&old, &info, mii_cfldb_slot(data.data(), slot), MII_CFLDB_ENTRY_SIZE, nullptr);
+    uint8_t v3[MII_VER3_STOREDATA_SIZE];
+    if (mii_ver3_encode(ci, &info, v3) != MII_OK)
+        return -1;
+    const std::vector<uint8_t> before = data;
+    std::memcpy(mii_cfldb_slot(data.data(), slot), v3, MII_CFLDB_ENTRY_SIZE);
+    if (!save()) {
+        data = before;
+        return -1;
+    }
+    idFor(mii_cfldb_slot(data.data(), slot), &ci->create_id);
+    return placeOfSlot(slot);
+}
+
+int Cfl3dsStore::putNew(mii_charinfo_t* ci, int place, const mii_ver3_info_t* from)
+{
+    if (!usable() || place < 0 || place >= MII_CFLDB_MAX_MIIS || slotAt[place] >= 0)
+        return -1;
+    int slot = -1;
+    for (int s = 0; s < MII_CFLDB_MAX_MIIS && slot < 0; s++)
+        if (!mii_cfldb_slot_used(data.data(), s))
+            slot = s;
+    if (slot < 0)
+        return -1; /* 100 Miis */
+    mii_ver3_info_t info;
+    mii_charinfo_t old;
+    const std::time_t now = std::time(nullptr);
+    const uint32_t since2010 = now > 1262304000 ? (uint32_t)(now - 1262304000) : 0;
+    if (from) {
+        info = *from;
     } else {
-        for (int s = 0; s < MII_CFLDB_MAX_MIIS && slot < 0; s++)
-            if (!mii_cfldb_slot_used(data.data(), s))
-                slot = s;
-        if (slot < 0)
-            return -1; /* 100 Miis */
         // a Mii of this console: the personal Mii's system id and MAC (so
         // it is not a "foreign" one), made now, on a 3DS
         mii_ver3_info_init_default(&info);
         info.birth_platform = 3;
         info.copyable = 1;
-        if (mii_cfldb_slot_used(data.data(), 0)) {
-            mii_ver3_info_t personal;
-            mii_ver3_decode(&old, &personal, mii_cfldb_slot(data.data(), 0), MII_CFLDB_ENTRY_SIZE, nullptr);
-            std::memcpy(info.author_id, personal.author_id, sizeof(info.author_id));
-            std::memcpy(info.creator_mac, personal.creator_mac, sizeof(info.creator_mac));
-        }
-        const std::time_t now = std::time(nullptr);
-        const uint32_t since2010 = now > 1262304000 ? (uint32_t)(now - 1262304000) : 0;
+        mii_ver3_info_t personal;
+        mii_ver3_decode(&old, &personal, mii_cfldb_slot(data.data(), 0), MII_CFLDB_ENTRY_SIZE, nullptr);
+        std::memcpy(info.author_id, personal.author_id, sizeof(info.author_id));
+        std::memcpy(info.creator_mac, personal.creator_mac, sizeof(info.creator_mac));
         info.mii_id = 0x80000000u | 0x10000000u | ((since2010 / 2) & 0x0FFFFFFFu);
-        const int place = freePlace();
-        info.page_index = (uint8_t)(place & 0xF);
-        info.slot_index = (uint8_t)(place >> 4);
-        // a fresh id if one with the same time exists
-        for (int tries = 0; tries < 64; tries++) {
-            bool clash = false;
-            for (int s : order)
-                if (rd32be(mii_cfldb_slot(data.data(), s) + 0x0C) == info.mii_id)
-                    clash = true;
-            if (!clash)
-                break;
-            info.mii_id = 0x90000000u | ((info.mii_id + 1) & 0x0FFFFFFFu);
-        }
+    }
+    info.page_index = (uint8_t)(place / 10);
+    info.slot_index = (uint8_t)(place % 10);
+    // a Mii id of its own (the same Mii twice would be one Mii to the 3DS);
+    // a special Mii stays special
+    for (int tries = 0; tries < 256; tries++) {
+        bool clash = false;
+        for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++)
+            if (mii_cfldb_slot_used(data.data(), s) && rd32be(mii_cfldb_slot(data.data(), s) + 0x0C) == info.mii_id)
+                clash = true;
+        if (!clash)
+            break;
+        info.mii_id = (info.mii_id & 0xF0000000u) | ((tries == 0 ? since2010 / 2 : info.mii_id + 1) & 0x0FFFFFFFu);
     }
     uint8_t v3[MII_VER3_STOREDATA_SIZE];
     if (mii_ver3_encode(ci, &info, v3) != MII_OK)
         return -1;
     const std::vector<uint8_t> before = data;
     std::memcpy(mii_cfldb_slot(data.data(), slot), v3, MII_CFLDB_ENTRY_SIZE);
-    if (isNew)
-        sortOrder();
+    mii_cfldb_slot(data.data(), slot)[2] = byteOfPlace(place);
     if (!save()) {
         data = before;
-        sortOrder();
+        mapPlaces();
         return -1;
     }
+    mapPlaces();
     idFor(mii_cfldb_slot(data.data(), slot), &ci->create_id);
-    return (int)(std::find(order.begin(), order.end(), slot) - order.begin());
+    return placeOfSlot(slot);
 }
 
-bool Cfl3dsStore::canRemove(int index) const
+bool Cfl3dsStore::canRemove(int place) const
 {
-    return ok && index >= 0 && index < count() && order[index] != 0;
+    return usable() && place >= 0 && place < MII_CFLDB_MAX_MIIS && slotAt[place] > 0;
 }
 
 // The Miis after it in the file move up one slot (the personal Mii stays
 // first); where the others show in Mii Maker does not change.
-bool Cfl3dsStore::remove(int index)
+bool Cfl3dsStore::remove(int place)
 {
-    if (!canRemove(index))
+    if (!canRemove(place))
         return false;
     const std::vector<uint8_t> before = data;
-    const int slot = order[index];
+    const int slot = slotAt[place];
     for (int s = slot; s + 1 < MII_CFLDB_MAX_MIIS; s++)
         std::memcpy(mii_cfldb_slot(data.data(), s), mii_cfldb_slot(data.data(), s + 1), MII_CFLDB_ENTRY_SIZE);
     std::memset(mii_cfldb_slot(data.data(), MII_CFLDB_MAX_MIIS - 1), 0, MII_CFLDB_ENTRY_SIZE);
-    sortOrder();
     if (!save()) {
         data = before;
-        sortOrder();
         return false;
     }
+    // (the places shown stay: a Mii that was put in a free one when read
+    // keeps it)
+    for (int& s : slotAt)
+        if (s == slot)
+            s = -1;
+        else if (s > slot)
+            s--;
+    used--;
     return true;
+}
+
+// Only the position byte of the Miis changes (moving one changes nothing
+// else in it)
+bool Cfl3dsStore::move(int from, int to)
+{
+    if (!usable() || from < 0 || to < 0 || from >= MII_CFLDB_MAX_MIIS || to >= MII_CFLDB_MAX_MIIS || slotAt[from] < 0)
+        return false;
+    if (from == to)
+        return true;
+    const std::vector<uint8_t> before = data;
+    const int a = slotAt[from], b = slotAt[to];
+    mii_cfldb_slot(data.data(), a)[2] = byteOfPlace(to);
+    if (b >= 0)
+        mii_cfldb_slot(data.data(), b)[2] = byteOfPlace(from);
+    if (!save()) {
+        data = before;
+        return false;
+    }
+    slotAt[to] = a;
+    slotAt[from] = b;
+    return true;
+}
+
+bool Cfl3dsStore::swap(int a, int b)
+{
+    if (a >= 0 && a < MII_CFLDB_MAX_MIIS && slotAt[a] < 0)
+        return move(b, a);
+    return move(a, b);
 }
 
 MiiDetails Cfl3dsStore::details(const mii_create_id_t& id) const

@@ -3,6 +3,8 @@
 #include <borealis.hpp>
 #include <mii/mii.h>
 
+#include "mii_store.hpp"
+
 #include <functional>
 #include <vector>
 
@@ -12,8 +14,9 @@
 class TradeActivity : public brls::Activity
 {
   public:
-    // receiving; `onSaved` runs after a received Mii was saved
-    explicit TradeActivity(std::function<void()> onSaved);
+    // receiving, into `into` (the app's list or the 3DS's); `onSaved` runs
+    // after a received Mii was saved
+    TradeActivity(MiiStore* into, std::function<void()> onSaved);
     // sending `miis`, offered one after another to the receiver chosen
     explicit TradeActivity(std::vector<mii_charinfo_t> miis);
 
@@ -25,4 +28,5 @@ class TradeActivity : public brls::Activity
     mii_charinfo_t shown {}; // the Mii being offered (the preview points here)
     brls::Label* count = nullptr;
     std::function<void()> onSaved;
+    MiiStore* into = nullptr;
 };

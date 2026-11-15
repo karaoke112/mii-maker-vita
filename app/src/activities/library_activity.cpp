@@ -40,7 +40,7 @@ class MiiCard : public brls::Box
         brls::FrameContext* ctx) override
     {
         brls::Box::draw(vg, x, y, width, height, style, ctx);
-        if (empty) { // the held Mii's place
+        if (empty) { // an empty place, or the held Mii's
             nvgBeginPath(vg);
             nvgRoundedRect(vg, x + 3, y + 3, width - 6, height - 6, 16);
             nvgStrokeColor(vg, ui::rule());
@@ -90,8 +90,9 @@ brls::View* LibraryActivity::createContentView()
     add->setFontSize(24);
     add->setMarginRight(20);
     add->registerClickAction([this](brls::View*) {
-        if (busy())
-            return true; // (a tap while choosing a Mii or holding one)
+        if (busy() || !store().usable())
+            return true; // (a tap while choosing a Mii or holding one; the 3DS list before its personal Mii)
+        addPlace = -1;
         showAddMenu();
         return true;
     });
@@ -106,7 +107,7 @@ brls::View* LibraryActivity::createContentView()
     send->setHeight(64);
     send->setFontSize(24);
     send->registerClickAction([this](brls::View*) {
-        if (busy())
+        if (busy() || !store().usable())
             return true;
         showSendMenu();
         return true;
@@ -119,7 +120,7 @@ brls::View* LibraryActivity::createContentView()
     receive->setHeight(64);
     receive->setFontSize(24);
     receive->registerClickAction([this](brls::View*) {
-        if (busy())
+        if (busy() || !store().usable())
             return true;
         showReceiveMenu();
         return true;
@@ -209,7 +210,7 @@ brls::View* LibraryActivity::createContentView()
     }, true);
     // desktop builds: P (keyboards have no START)
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_P), [this](brls::View*) {
-        if (held < 0 && pick == Pick::NONE)
+        if (!holding && pick == Pick::NONE)
             showSettings();
         return true;
     });
@@ -218,9 +219,9 @@ brls::View* LibraryActivity::createContentView()
         brls::View* focus = brls::Application::getCurrentFocus();
         for (size_t i = 0; i < cards.size(); i++)
             if (cards[i] == focus) {
-                if (held >= 0)
+                if (holding)
                     swapHeld((int)i);
-                else if (pick == Pick::NONE && store().canMove())
+                else if (pick == Pick::NONE && store().canMove() && hasMii((int)i))
                     startHold((int)i);
             }
         return true;
@@ -242,7 +243,7 @@ void LibraryActivity::settingsAction(bool shown)
 {
     settingsShown = shown;
     rootFrame->registerAction(shown ? "settings/title"_i18n : "", brls::BUTTON_START, [this](brls::View*) {
-        if (held < 0 && pick == Pick::NONE)
+        if (!holding && pick == Pick::NONE)
             showSettings();
         return true;
     }, !shown);
@@ -269,7 +270,22 @@ void LibraryActivity::rebuildForTheme()
 void LibraryActivity::openEditor(const mii_charinfo_t& start)
 {
     // no cross-fade: the old screen should not linger behind the new one
-    brls::Application::pushActivity(new EditorActivity(start, [this](const mii_charinfo_t&) { rebuild(); }, &store()),
+    if (threeDs)
+        Cfl3dsStore::instance().setNextPlace(addPlace);
+    brls::Application::pushActivity(new EditorActivity(start, [this](const mii_charinfo_t& saved) {
+        rebuild();
+        // the cursor on the Mii just saved
+        for (size_t i = 0; i < miis.size(); i++)
+            if (present[i] && mii_create_id_equal(&miis[i].create_id, &saved.create_id)) {
+                // (once laid out, so the list scrolls to it)
+                const int at = (int)i;
+                brls::sync([this, at] {
+                    if (at < (int)cards.size())
+                        brls::Application::giveFocus(cards[at]);
+                });
+                break;
+            }
+    }, &store()),
         brls::TransitionAnimation::NONE);
 }
 
@@ -277,7 +293,20 @@ void LibraryActivity::openEditor(const mii_charinfo_t& start)
 // showed last (L / R move through the list there).
 void LibraryActivity::openView(int index)
 {
-    brls::Application::pushActivity(new MiiViewActivity(miis, index, &store(), [this](int shown, bool changed) {
+    // the Miis there are (none of the empty places)
+    std::vector<mii_charinfo_t> list;
+    std::vector<int> at;
+    int start = 0;
+    for (size_t i = 0; i < miis.size(); i++)
+        if (present[i]) {
+            if ((int)i == index)
+                start = (int)list.size();
+            list.push_back(miis[i]);
+            at.push_back((int)i);
+        }
+    if (list.empty())
+        return;
+    brls::Application::pushActivity(new MiiViewActivity(list, at, start, &store(), [this](int shown, bool changed) {
         if (changed)
             rebuild();
         if (shown >= 0 && shown < (int)cards.size())
@@ -291,7 +320,7 @@ void LibraryActivity::openView(int index)
 // Choosing several (deleting, sending): Cross ticks a Mii or unticks it.
 void LibraryActivity::toggleChosen(int index)
 {
-    if (index < 0 || index >= (int)cards.size())
+    if (!hasMii(index))
         return;
     if (chosen.size() != cards.size())
         chosen.assign(cards.size(), false);
@@ -374,6 +403,8 @@ void LibraryActivity::tabActions()
     brls::Application::getGlobalHintsUpdateEvent()->fire();
 }
 
+void LibraryActivity::clearNextPlace() { Cfl3dsStore::instance().setNextPlace(-1); }
+
 MiiStore& LibraryActivity::store()
 {
     if (threeDs)
@@ -382,28 +413,28 @@ MiiStore& LibraryActivity::store()
 }
 
 // R: the 3DS's Miis, read from Azahar's Mii database (when there is one
-// this app can safely change); L: back to the app's own.
+// this app can safely change); L: back to the app's own. A Mii held goes
+// along, to be copied into the other list.
 void LibraryActivity::switchTab(bool to3ds)
 {
-    if (to3ds == threeDs || busy())
+    if (to3ds == threeDs || pick != Pick::NONE)
         return;
     if (to3ds) {
-        Cfl3dsStore& s = Cfl3dsStore::instance();
         // read again each time: Azahar may have changed it meanwhile
-        if (!s.load()) {
-            auto* dialog = new brls::Dialog(s.error() == "missing" ? "library/no_3ds"_i18n : "library/bad_3ds"_i18n);
-            dialog->addButton("hints/ok"_i18n, [] {});
-            dialog->open();
+        Cfl3dsStore& s = Cfl3dsStore::instance();
+        s.load();
+        if (holding && !s.usable()) {
+            brls::Application::notify(s.loaded() || s.error() == "missing" ? "library/need_personal"_i18n : "library/bad_3ds"_i18n);
             return;
         }
     }
     threeDs = to3ds;
     appletFrame->setTitle(threeDs ? "library/title_3ds"_i18n : "library/title"_i18n);
-    // the 3DS list: Add Mii only (sending and receiving use the app's list)
-    for (size_t i = 1; i < 3 && i < topButtons.size(); i++)
-        topButtons[i]->setVisibility(threeDs ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     tabActions();
+    const int at = heldAt;
     rebuild();
+    if (holding && !cards.empty())
+        brls::Application::giveFocus(cards[std::max(0, std::min(at, (int)cards.size() - 1))]);
 }
 
 void LibraryActivity::upRoutes()
@@ -416,6 +447,7 @@ void LibraryActivity::upRoutes()
 void LibraryActivity::rebuild()
 {
     MiiStore& lib = store();
+    const bool usable = lib.usable();
 
     // The cards are about to be freed; never leave focus on one of them
     // (Add Mii takes it for now, even while it is off limits in a mode;
@@ -425,22 +457,43 @@ void LibraryActivity::rebuild()
     grid->clearViews();
     cards.clear();
     thumbs.clear();
-    miis.clear();
-    miis.reserve(MiiLibrary::kMax); // previews keep pointers into this vector (the 3DS: 100)
-    for (int i = 0; i < lib.count(); i++) {
-        mii_charinfo_t ci;
-        if (lib.get(i, &ci))
-            miis.push_back(ci);
+    // one card per Mii; the 3DS's list: its 100 places. Carrying a Mii from
+    // the 3DS, one empty card at the end of this list to put it there.
+    int n = usable ? lib.places() : 0;
+    if (usable && copying() && !lib.fixedPlaces() && lib.count() < lib.capacity())
+        n++;
+    miis.assign(n, mii_charinfo_t {}); // (previews keep pointers into it: not resized until the next rebuild)
+    present.assign(n, false);
+    for (int i = 0; i < n; i++) {
+        present[i] = i < lib.places() && lib.get(i, &miis[i]);
+        if (!present[i])
+            mii_charinfo_init_default(&miis[i], 0);
     }
-    empty->setVisibility(miis.empty() ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
-    if (countLabel)
-        countLabel->setText(brls::getStr("library/count", std::to_string(miis.size()), std::to_string(lib.capacity())));
+    // the 3DS's list needs a personal Mii (made in Mii Maker) before
+    // anything can be done there
+    if (threeDs) {
+        Cfl3dsStore& c3 = Cfl3dsStore::instance();
+        empty->setText(c3.loaded() || c3.error() == "missing" ? "library/need_personal"_i18n : "library/bad_3ds"_i18n);
+        empty->setVisibility(usable ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    } else {
+        empty->setText("library/empty"_i18n);
+        empty->setVisibility(lib.count() == 0 ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    }
+    if (countLabel) {
+        countLabel->setText(brls::getStr("library/count", std::to_string(lib.count()), std::to_string(lib.capacity())));
+        countLabel->setVisibility(usable ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    }
 
     brls::Box* row = nullptr;
-    held = heldAt = -1;
-    // while choosing a Mii, the cursor stays on the Miis
-    for (brls::View* b : topButtons)
-        b->setFocusable(pick == Pick::NONE);
+    held = holding && holdFrom3ds == threeDs ? holdFrom : -1;
+    heldAt = -1;
+    // while choosing a Mii, the cursor stays on the Miis; with no personal
+    // Mii on the 3DS, only the settings work
+    for (brls::View* b : topButtons) {
+        const bool works = usable || b == settingsButton;
+        b->setFocusable(pick == Pick::NONE && !holding && works);
+        b->setAlpha(works ? 1.0f : 0.35f);
+    }
     if (rootFrame)
         updateSettingsAction(); // in case a Mii was held, or the mode changed
     cardActionIds.assign(miis.size(), {});
@@ -448,6 +501,9 @@ void LibraryActivity::rebuild()
         if (i % kColumns == 0) {
             row = new brls::Box(brls::Axis::ROW);
             row->setMarginBottom(20);
+            // the 3DS's pages (ten Miis each) a little apart
+            if (lib.fixedPlaces() && i && i % 10 == 0)
+                row->setMarginTop(16);
             grid->addView(row);
         }
         auto* card = new MiiCard();
@@ -457,15 +513,24 @@ void LibraryActivity::rebuild()
         card->setFocusable(true);
         card->setCornerRadius(18);
         card->setHighlightCornerRadius(20);
+        card->empty = !present[i];
         auto* preview = new MiiPreview(&miis[i], 160);
         thumbs.push_back(preview);
         preview->setDimensions(200, 250);
+        if (!present[i])
+            preview->setVisibility(brls::Visibility::INVISIBLE);
         card->addView(preview);
 
         const int index = (int)i;
         card->registerClickAction([this, index](brls::View*) {
-            if (held >= 0) {
+            if (holding) {
                 endHold(true);
+            } else if (!hasMii(index)) {
+                // an empty place: a new Mii there
+                if (pick == Pick::NONE) {
+                    addPlace = index;
+                    showAddMenu();
+                }
             } else if (pick == Pick::EXPORT) {
                 exportMii(index); // stays in this mode: Circle ends it
             } else if (choosingSeveral()) {
@@ -473,7 +538,8 @@ void LibraryActivity::rebuild()
             } else if (pick == Pick::KID) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
-                brls::Application::pushActivity(new ChildActivity(mii, [this] { rebuild(); }), brls::TransitionAnimation::NONE);
+                brls::Application::pushActivity(new ChildActivity(mii, &store(), [this] { rebuild(); }),
+                    brls::TransitionAnimation::NONE);
             } else if (pick == Pick::PARENT1) {
                 parentA = miis[index];
                 parentAIndex = index;
@@ -485,7 +551,8 @@ void LibraryActivity::rebuild()
                 }
                 const mii_charinfo_t a = parentA, b = miis[index];
                 setPick(Pick::NONE);
-                brls::Application::pushActivity(new ChildActivity(a, b, [this] { rebuild(); }), brls::TransitionAnimation::NONE);
+                brls::Application::pushActivity(new ChildActivity(a, b, &store(), [this] { rebuild(); }),
+                    brls::TransitionAnimation::NONE);
             } else if (pick == Pick::QR) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
@@ -498,7 +565,7 @@ void LibraryActivity::rebuild()
         card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
         card->getFocusEvent()->subscribe([this, index](brls::View*) {
             thumbPriorities(index);
-            if (held >= 0)
+            if (holding)
                 showHeldAt(index);
         });
         row->addView(card);
@@ -506,21 +573,25 @@ void LibraryActivity::rebuild()
     // up / down go to the card straight above or below (borealis would go
     // back to the last card focused in that row); a short last row takes
     // its last card
-    const int n = (int)cards.size();
-    for (int i = 0; i < n; i++) {
+    const int count = (int)cards.size();
+    for (int i = 0; i < count; i++) {
         if (i >= kColumns)
             cards[i]->setCustomNavigationRoute(brls::FocusDirection::UP, cards[i - kColumns]);
-        if (i / kColumns < (n - 1) / kColumns)
-            cards[i]->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards[std::min(i + kColumns, n - 1)]);
+        if (i / kColumns < (count - 1) / kColumns)
+            cards[i]->setCustomNavigationRoute(brls::FocusDirection::DOWN, cards[std::min(i + kColumns, count - 1)]);
     }
     // up from the first row: the Add Mii button; down from the buttons: the
     // first Mii
     upRoutes();
     buttonRoutes();
+    if (holding)
+        holdLook(); // (a Mii carried over from the other list)
     allCardActions();
     thumbPriorities(0);
-    if (pick != Pick::NONE && !cards.empty())
+    if ((pick != Pick::NONE || holding) && !cards.empty())
         brls::Application::giveFocus(cards[0]);
+    else if (!usable && settingsButton)
+        brls::Application::giveFocus(settingsButton); // (the 3DS's list, before its personal Mii)
 }
 
 // Every card's buttons, then one hints update (one per card made picking a
@@ -540,7 +611,7 @@ void LibraryActivity::allCardActions()
 void LibraryActivity::updateSettingsAction()
 {
     brls::sync([this] {
-        const bool want = held < 0 && pick == Pick::NONE;
+        const bool want = !holding && pick == Pick::NONE;
         if (want != settingsShown)
             settingsAction(want);
     });
@@ -564,23 +635,31 @@ void LibraryActivity::cardActions(int index)
         card->unregisterAction(id);
     cardActionIds[index].clear();
     auto& ids = cardActionIds[index];
-    if (held >= 0) {
-        card->updateActionHint(brls::BUTTON_A, "library/place"_i18n);
-        ids.push_back(card->registerAction("library/swap"_i18n, brls::BUTTON_Y, [this, index](brls::View*) {
-            swapHeld(index);
-            return true;
-        }));
+    const bool here = hasMii(index);
+    if (holding) {
+        // carried from the other list: a copy goes here (on the 3DS, into
+        // an empty place)
+        card->updateActionHint(brls::BUTTON_A, !copying()                       ? "library/place"_i18n
+                : here && store().fixedPlaces() ? std::string("")
+                                                : "library/copy_here"_i18n);
+        if (!copying())
+            ids.push_back(card->registerAction(here ? "library/swap"_i18n : "library/place"_i18n, brls::BUTTON_Y,
+                [this, index](brls::View*) {
+                    swapHeld(index);
+                    return true;
+                }));
         ids.push_back(card->registerAction("hints/cancel"_i18n, brls::BUTTON_B, [this](brls::View*) {
             endHold(false);
             return true;
         }));
     } else {
         const bool isChosen = index < (int)chosen.size() && chosen[index];
-        card->updateActionHint(brls::BUTTON_A, pick == Pick::EXPORT ? "library/export"_i18n
-                : pick == Pick::QR                                      ? "library/qr"_i18n
-                : choosingSeveral()                                     ? (isChosen ? "library/unselect"_i18n : "library/select"_i18n)
+        card->updateActionHint(brls::BUTTON_A, !here ? (pick == Pick::NONE ? "library/add_here"_i18n : std::string(""))
+                : pick == Pick::EXPORT                                      ? "library/export"_i18n
+                : pick == Pick::QR                                          ? "library/qr"_i18n
+                : choosingSeveral() ? (isChosen ? "library/unselect"_i18n : "library/select"_i18n)
                 : pick == Pick::PARENT1 || pick == Pick::PARENT2 || pick == Pick::KID ? "library/child_choose"_i18n
-                                                                        : "library/view"_i18n);
+                                                                                      : "library/view"_i18n);
         if (pick != Pick::NONE) {
             // choosing a Mii: Circle ends it (Done after exporting several);
             // no deleting or picking up meanwhile
@@ -604,19 +683,21 @@ void LibraryActivity::cardActions(int index)
                 brls::Application::getGlobalHintsUpdateEvent()->fire();
             return;
         }
-        // Square: choose Miis to delete, starting with this one
-        ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
-            brls::sync([this, index] {
-                setPick(Pick::DELETE);
-                toggleChosen(index);
-            });
-            return true;
-        }));
-        if (pick == Pick::NONE && store().canMove())
-            ids.push_back(card->registerAction("library/pick_up"_i18n, brls::BUTTON_Y, [this, index](brls::View*) {
-                startHold(index);
+        if (here) {
+            // Square: choose Miis to delete, starting with this one
+            ids.push_back(card->registerAction("library/delete"_i18n, brls::BUTTON_X, [this, index](brls::View*) {
+                brls::sync([this, index] {
+                    setPick(Pick::DELETE);
+                    toggleChosen(index);
+                });
                 return true;
             }));
+            if (store().canMove())
+                ids.push_back(card->registerAction("library/pick_up"_i18n, brls::BUTTON_Y, [this, index](brls::View*) {
+                    startHold(index);
+                    return true;
+                }));
+        }
     }
     if (!batchingHints)
         brls::Application::getGlobalHintsUpdateEvent()->fire();
@@ -624,25 +705,34 @@ void LibraryActivity::cardActions(int index)
 
 void LibraryActivity::startHold(int index)
 {
-    held = index;
+    holding = true;
+    holdFrom3ds = threeDs;
+    holdFrom = held = index;
     heldMii = miis[index];
+    holdLook();
+    showHeldAt(index);
+    allCardActions();
+}
+
+// How the list looks while a Mii is held: its place empty (when it is from
+// this list), no highlight under the lifted card, no settings, and the
+// cursor kept in the list.
+void LibraryActivity::holdLook()
+{
     if (!floating) {
         floating.reset(new MiiPreview(&heldMii, 160));
         floating->setDimensions(200, 250);
     }
-    thumbs[index]->setVisibility(brls::Visibility::INVISIBLE); // its place is empty while held
-    // the lifted card has its own outline; the one under it is covered
+    if (held >= 0 && held < (int)thumbs.size()) {
+        thumbs[held]->setVisibility(brls::Visibility::INVISIBLE);
+        static_cast<MiiCard*>(cards[held])->empty = true;
+    }
     for (brls::View* c : cards)
         c->setHideHighlight(true);
-    static_cast<MiiCard*>(cards[index])->empty = true;
-    showHeldAt(index);
-    // no settings while holding a Mii (nor their hint), and the cursor stays
-    // in the list
     updateSettingsAction();
     for (brls::View* b : topButtons)
         b->setFocusable(false);
     upRoutes();
-    allCardActions();
 }
 
 // The held Mii floats above the card under the cursor, shifted up and left
@@ -674,52 +764,105 @@ void LibraryActivity::showHeldAt(int index)
     }
 }
 
-// Rereads the order from the library into the cards (their previews point
-// into `miis`), without rebuilding the screen.
-void LibraryActivity::reloadOrder()
+// Rereads the Miis from the list into the cards (their previews point
+// into `miis`), without rebuilding the screen; the held Mii's place stays
+// empty.
+void LibraryActivity::refreshCards()
 {
-    MiiLibrary& lib = MiiLibrary::instance();
-    for (size_t i = 0; i < miis.size(); i++)
-        lib.get((int)i, &miis[i]);
+    MiiStore& lib = store();
+    for (size_t i = 0; i < miis.size(); i++) {
+        present[i] = (int)i < lib.places() && lib.get((int)i, &miis[i]);
+        const bool shown = present[i] && (int)i != held;
+        thumbs[i]->setVisibility(shown ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
+        static_cast<MiiCard*>(cards[i])->empty = !shown;
+    }
 }
 
 void LibraryActivity::endHold(bool place)
 {
     const int from = held, to = heldAt;
+    // carried from the other list: a copy of it here (it stays held when
+    // it cannot go there)
+    if (place && copying()) {
+        if (to < 0 || !copyHeld(to))
+            return;
+        holding = false;
+        held = heldAt = -1;
+        for (brls::View* c : cards)
+            static_cast<MiiCard*>(c)->overlay = nullptr;
+        rebuild();
+        if (to < (int)cards.size())
+            brls::Application::giveFocus(cards[to]);
+        return;
+    }
+    holding = false;
     held = heldAt = -1;
     updateSettingsAction();
     for (brls::View* b : topButtons)
-        b->setFocusable(pick == Pick::NONE);
+        b->setFocusable(pick == Pick::NONE && (store().usable() || b == settingsButton));
     upRoutes();
     for (brls::View* c : cards) {
         static_cast<MiiCard*>(c)->overlay = nullptr;
         c->setHideHighlight(false);
     }
-    if (from >= 0 && from < (int)thumbs.size()) {
-        thumbs[from]->setVisibility(brls::Visibility::VISIBLE);
-        static_cast<MiiCard*>(cards[from])->empty = false;
-    }
     // Put down on another card: it moves there and the Mii between close
-    // up, taking the place it left.
-    if (place && from != to && to >= 0) {
-        if (!MiiLibrary::instance().move(from, to))
+    // up, taking the place it left (on the 3DS: into that place, or
+    // trading places with the Mii there).
+    if (place && from >= 0 && from != to && to >= 0) {
+        if (!store().move(from, to))
             brls::Application::notify("library/move_failed"_i18n);
-        reloadOrder();
     }
+    refreshCards();
     allCardActions();
 }
 
+// The held Mii, from the other list, copied in at `to` with its details
+// (favorite, birthday, creator); a copy of its own (a new create id).
+bool LibraryActivity::copyHeld(int to)
+{
+    MiiStore& into = store();
+    MiiStore& from = holdFrom3ds ? static_cast<MiiStore&>(Cfl3dsStore::instance()) : MiiLibrary::instance();
+    if (into.fixedPlaces() && hasMii(to)) {
+        brls::Application::notify("library/place_taken"_i18n);
+        return false;
+    }
+    if (into.count() >= into.capacity()) {
+        brls::Application::notify(threeDs ? "library/full_3ds"_i18n : "library/import_full"_i18n);
+        return false;
+    }
+    mii_charinfo_t m = heldMii;
+    const MiiDetails d = from.details(m.create_id);
+    MiiLibrary::instance().newCreateId(&m.create_id);
+    if (into.threeDs())
+        Cfl3dsStore::snap(&m); // the 3DS's parts and colors
+    if (into.putAt(&m, to) < 0) {
+        brls::Application::notify("library/copy_failed"_i18n);
+        return false;
+    }
+    into.setDetails(m.create_id, d);
+    char name[64];
+    mii_name_get_utf8(&m, name, sizeof(name));
+    brls::Application::notify(brls::getStr(threeDs ? "library/copied_3ds" : "library/copied_vita", std::string(name)));
+    return true;
+}
+
 // Puts the held Mii where the hovered one is and picks that one up (it
-// now belongs in the empty place the held one left).
+// now belongs in the empty place the held one left). On an empty place
+// of the 3DS's: just put down there.
 void LibraryActivity::swapHeld(int index)
 {
-    if (index == held)
+    if (index == held || copying())
         return;
-    if (!MiiLibrary::instance().swap(held, index)) {
+    if (!hasMii(index)) {
+        heldAt = index;
+        endHold(true);
+        return;
+    }
+    if (!store().swap(held, index)) {
         brls::Application::notify("library/move_failed"_i18n);
         return;
     }
-    reloadOrder();
+    refreshCards();
     heldMii = miis[held];
     showHeldAt(index);
 }
@@ -736,7 +879,7 @@ void LibraryActivity::importMiis()
                                              : "library/import_none"_i18n + " " + lib.importDir() + "/");
         return;
     }
-    brls::Application::pushActivity(new ImportActivity(std::move(found), unreadable, [this](int imported) {
+    brls::Application::pushActivity(new ImportActivity(std::move(found), unreadable, &store(), [this](int imported) {
         if (imported)
             rebuild();
     }),
@@ -746,7 +889,10 @@ void LibraryActivity::importMiis()
 void LibraryActivity::exportMii(int index)
 {
     std::string path;
-    if (MiiLibrary::instance().exportMii(index, &path))
+    mii_ver3_info_t info;
+    // a 3DS Mii as it is (its console, birthday...)
+    const bool has3ds = threeDs && Cfl3dsStore::instance().info(miis[index].create_id, &info);
+    if (MiiLibrary::instance().exportMii(miis[index], &path, has3ds ? &info : nullptr))
         brls::Application::notify("library/exported"_i18n + " " + path);
     else
         brls::Application::notify("library/export_failed"_i18n);
@@ -762,8 +908,10 @@ void LibraryActivity::addScanned(const mii_charinfo_t& scanned)
         lib.newCreateId(&mii.create_id);
     char name[64];
     mii_name_get_utf8(&mii, name, sizeof(name));
-    if (lib.put(&mii) < 0) {
-        brls::Application::notify("library/import_full"_i18n);
+    if (threeDs)
+        Cfl3dsStore::snap(&mii);
+    if (store().put(&mii) < 0) {
+        brls::Application::notify(threeDs ? "library/full_3ds"_i18n : "library/import_full"_i18n);
         return;
     }
     brls::Application::notify("qr/added"_i18n + " " + name);
@@ -811,8 +959,12 @@ void LibraryActivity::setPick(Pick mode)
     // (unless the cursor is on a Mii already: Square starts on that one)
     brls::View* focus = brls::Application::getCurrentFocus();
     const bool onCard = std::find(cards.begin(), cards.end(), focus) != cards.end();
-    if (mode != Pick::NONE && !wasChoosing && !onCard && !cards.empty())
-        brls::Application::giveFocus(cards[0]);
+    if (mode != Pick::NONE && !wasChoosing && !onCard)
+        for (size_t i = 0; i < cards.size(); i++)
+            if (present[i]) {
+                brls::Application::giveFocus(cards[i]);
+                break;
+            }
 }
 
 // Down from the top buttons: the first Mii.
@@ -837,22 +989,22 @@ void LibraryActivity::showAddMenu()
 {
     std::vector<PopupMenu::Item> items = {
         PopupMenu::item("library/add_scratch"_i18n, [this] {
-            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, false),
+            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, false, threeDs),
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_lookalike"_i18n, [this] {
-            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, true),
+            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, true, threeDs),
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_kid"_i18n, [this] {
-            if (miis.empty()) {
+            if (store().count() == 0) {
                 brls::Application::notify("library/empty"_i18n);
                 return;
             }
             setPick(Pick::KID);
         }),
         PopupMenu::item("library/add_child"_i18n, [this] {
-            if (miis.size() < 2) {
+            if (store().count() < 2) {
                 brls::Application::notify("library/child_need_two"_i18n);
                 return;
             }
@@ -860,8 +1012,8 @@ void LibraryActivity::showAddMenu()
             setPick(Pick::PARENT1);
         }),
     };
-    if (threeDs)
-        items.resize(2); // the 3DS's list: from scratch or a look-alike (the generators save to the app's)
+    if (addPlace >= 0)
+        items.resize(2); // (an empty place: a new Mii; the generators start from a Mii)
     brls::Application::pushActivity(new PopupMenu("library/add"_i18n, items), brls::TransitionAnimation::NONE);
 }
 
@@ -878,7 +1030,7 @@ void LibraryActivity::showReceiveMenu()
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_receive"_i18n, [this] {
-            brls::Application::pushActivity(new TradeActivity([this] { stale = true; }),
+            brls::Application::pushActivity(new TradeActivity(&store(), [this] { stale = true; }),
                 brls::TransitionAnimation::NONE);
         }),
     };
@@ -887,7 +1039,7 @@ void LibraryActivity::showReceiveMenu()
 
 void LibraryActivity::showSendMenu()
 {
-    if (miis.empty()) {
+    if (store().count() == 0) {
         brls::Application::notify("library/empty"_i18n);
         return;
     }

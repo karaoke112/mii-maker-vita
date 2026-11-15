@@ -59,6 +59,10 @@ class MiiLibrary : public MiiStore
     // Writes .charinfo, .nfsd and .ffsd copies to <data>/export/, named
     // <nickname>_<first 4 bytes of the create id in hex>.
     bool exportMii(int index, std::string* outPath);
+    // the same for any Mii; `info`: its 3DS data, written as it is
+    bool exportMii(const mii_charinfo_t& ci, std::string* outPath, const mii_ver3_info_t* info = nullptr);
+    // a Mii's favorite, birthday, creator... as a 3DS Mii carries them
+    static MiiDetails detailsOf(const mii_ver3_info_t& info);
 
     struct ImportResult {
         int imported = 0; // added or updated
@@ -82,8 +86,9 @@ class MiiLibrary : public MiiStore
         mii_ver3_info_t info {};
     };
     std::vector<Pending> scanImports(int* unreadable);
-    // Adds these (their files move to import/imported/)
-    ImportResult importPending(const std::vector<Pending>& chosen);
+    // Adds these (their files move to import/imported/), to this list or
+    // `into` another (the 3DS's)
+    ImportResult importPending(const std::vector<Pending>& chosen, MiiStore* into = nullptr);
     // Deletes a file from the import folder
     bool deleteImport(const std::string& file);
     std::string importDir() const { return dir + "/import"; }

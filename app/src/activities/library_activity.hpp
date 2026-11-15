@@ -20,6 +20,7 @@ class LibraryActivity : public brls::Activity
     // back on top: show Miis that arrived while another screen was open
     void onResume() override
     {
+        clearNextPlace(); // (a new Mii started on an empty place, or not saved)
         if (stale) {
             stale = false;
             rebuild();
@@ -27,6 +28,7 @@ class LibraryActivity : public brls::Activity
     }
 
   private:
+    static void clearNextPlace();
     void rebuild();
     void importMiis();
     void exportMii(int index);
@@ -54,18 +56,25 @@ class LibraryActivity : public brls::Activity
     brls::AppletFrame* appletFrame = nullptr;
     void upRoutes();
     void buttonRoutes();
-    bool busy() const { return pick != Pick::NONE || held >= 0; }
+    bool busy() const { return pick != Pick::NONE || holding; }
 
     // Moving Miis: Triangle picks the Mii up; it travels with the cursor;
     // Cross puts it down there, Circle puts it back, Triangle swaps it with
-    // the Mii under the cursor and carries that one instead.
+    // the Mii under the cursor and carries that one instead. L / R take it
+    // to the other list, where Cross puts a copy of it.
     void cardActions(int index);
     void startHold(int index);
+    void holdLook();
     void showHeldAt(int index);
     void endHold(bool place);
+    bool copyHeld(int to);
     void swapHeld(int index);
-    void reloadOrder();
-    int held = -1;   // where the held Mii is in the library, or -1
+    void refreshCards();
+    bool holding = false;
+    bool holdFrom3ds = false; // the list it was picked up from
+    int holdFrom = -1;        // and where in it
+    bool copying() const { return holding && holdFrom3ds != threeDs; }
+    int held = -1;   // where the held Mii is in the list shown, or -1 (from the other list)
     int heldAt = -1; // the card under the cursor
     mii_charinfo_t heldMii {};
     std::unique_ptr<MiiPreview> floating; // the held Mii, drawn lifted
@@ -93,5 +102,8 @@ class LibraryActivity : public brls::Activity
     std::vector<brls::View*> cards;
     std::vector<brls::View*> thumbs; // the cards' previews
     void thumbPriorities(int focus);
-    std::vector<mii_charinfo_t> miis;
+    std::vector<mii_charinfo_t> miis; // one per card (an empty place: a default Mii, not shown)
+    std::vector<bool> present;        // a Mii there (the 3DS's list has empty places)
+    bool hasMii(int index) const { return index >= 0 && index < (int)present.size() && present[index]; }
+    int addPlace = -1; // Cross on an empty place: the new Mii goes there
 };

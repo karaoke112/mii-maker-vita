@@ -5,6 +5,8 @@
 #include <borealis.hpp>
 #include <mii/mii.h>
 
+#include "mii_store.hpp"
+
 #include <array>
 #include <functional>
 
@@ -15,9 +17,10 @@
 class ChildActivity : public brls::Activity
 {
   public:
-    ChildActivity(const mii_charinfo_t& parentA, const mii_charinfo_t& parentB, std::function<void()> onClosed);
+    // saved to `store` (the app's list or the 3DS's)
+    ChildActivity(const mii_charinfo_t& parentA, const mii_charinfo_t& parentB, MiiStore* store, std::function<void()> onClosed);
     // Kid-o-matic: `mii` growing up
-    ChildActivity(const mii_charinfo_t& mii, std::function<void()> onClosed);
+    ChildActivity(const mii_charinfo_t& mii, MiiStore* store, std::function<void()> onClosed);
 
     brls::View* createContentView() override;
 
@@ -27,6 +30,7 @@ class ChildActivity : public brls::Activity
 
     mii_charinfo_t parentA, parentB;
     bool kid = false; // Kid-o-matic
+    MiiStore* store;
     std::function<void()> onClosed;
     std::array<mii_charinfo_t, child::kStages> stages; // the previews point into it
     std::array<bool, child::kStages> saved {};

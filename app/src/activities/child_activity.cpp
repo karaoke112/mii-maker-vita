@@ -1,6 +1,7 @@
 #include "activities/child_activity.hpp"
 
 #include "activities/editor_activity.hpp"
+#include "cfl3ds_store.hpp"
 #include "mii_library.hpp"
 #include "ui_theme.hpp"
 #include "views/controls.hpp"
@@ -15,18 +16,20 @@ static std::string miiName(const mii_charinfo_t& m)
     return name;
 }
 
-ChildActivity::ChildActivity(const mii_charinfo_t& a, const mii_charinfo_t& b, std::function<void()> onClosed)
+ChildActivity::ChildActivity(const mii_charinfo_t& a, const mii_charinfo_t& b, MiiStore* store, std::function<void()> onClosed)
     : parentA(a)
     , parentB(b)
+    , store(store)
     , onClosed(std::move(onClosed))
 {
     generate();
 }
 
-ChildActivity::ChildActivity(const mii_charinfo_t& mii, std::function<void()> onClosed)
+ChildActivity::ChildActivity(const mii_charinfo_t& mii, MiiStore* store, std::function<void()> onClosed)
     : parentA(mii)
     , parentB(mii)
     , kid(true)
+    , store(store)
     , onClosed(std::move(onClosed))
 {
     generate();
@@ -38,6 +41,9 @@ void ChildActivity::generate()
     for (mii_create_id_t& id : ids)
         MiiLibrary::instance().newCreateId(&id);
     stages = kid ? child::growUp(parentA, ids) : child::generate(parentA, parentB, ids);
+    if (store && store->threeDs()) // as the 3DS can keep them
+        for (mii_charinfo_t& m : stages)
+            Cfl3dsStore::snap(&m);
     saved.fill(false);
 }
 
@@ -100,7 +106,8 @@ brls::View* ChildActivity::createContentView()
                                                     stages[i] = m;
                                                     saved[i] = true;
                                                     refreshLabels();
-                                                }),
+                                                },
+                                                store),
                 brls::TransitionAnimation::NONE);
             return true;
         });

@@ -8,7 +8,8 @@ struct MiiDetails;
 
 // A list of Miis the Mii list can show and change: the app's own
 // (MiiLibrary, the Switch format) or the 3DS Mii database of Azahar
-// (Cfl3dsStore). Indices are in the order the list shows them.
+// (Cfl3dsStore). Indices are in the order the list shows them; with
+// fixedPlaces() they are places (as many as capacity()), some empty.
 class MiiStore
 {
   public:
@@ -21,6 +22,22 @@ class MiiStore
     // here). Saved at once. The index, or -1 (full, or not saved).
     virtual int put(mii_charinfo_t* ci) = 0;
     virtual bool remove(int index) = 0;
+    // A new Mii put at `index` (the ones from there on move along one; with
+    // fixed places, only into an empty one). The index, or -1.
+    virtual int putAt(mii_charinfo_t* ci, int index)
+    {
+        const int i = put(ci);
+        if (i >= 0 && index >= 0 && index < i && move(i, index))
+            return index;
+        return i;
+    }
+    // Places that stay where they are, empty ones too (the 3DS's 100)
+    virtual bool fixedPlaces() const { return false; }
+    // The number of cards the list shows
+    int places() const { return fixedPlaces() ? capacity() : count(); }
+    // Whether Miis can be added and changed here at all (the 3DS's list
+    // needs its personal Mii first)
+    virtual bool usable() const { return true; }
     // Whether a Mii may be deleted (the 3DS's personal Mii may not)
     virtual bool canRemove(int index) const { (void)index; return true; }
     // Moving Miis around (Triangle in the list)

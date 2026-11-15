@@ -13,9 +13,10 @@
 
 using namespace brls::literals;
 
-MiiViewActivity::MiiViewActivity(std::vector<mii_charinfo_t> miis, int index, MiiStore* store,
+MiiViewActivity::MiiViewActivity(std::vector<mii_charinfo_t> miis, std::vector<int> at, int index, MiiStore* store,
     std::function<void(int, bool)> onClosed)
     : miis(std::move(miis))
+    , at(std::move(at))
     , index(index)
     , onClosed(std::move(onClosed))
     , store(store)
@@ -75,11 +76,10 @@ brls::View* MiiViewActivity::createContentView()
         }
         brls::Application::pushActivity(new QrShowActivity(current), brls::TransitionAnimation::NONE);
     }));
-    if (!store->threeDs()) // (Kid-o-matic saves to the app's list)
-        items.push_back(PopupMenu::item("view/kid"_i18n, [this] {
-            brls::Application::pushActivity(new ChildActivity(current, [this] { changed = true; }),
-                brls::TransitionAnimation::NONE);
-        }));
+    items.push_back(PopupMenu::item("view/kid"_i18n, [this] {
+        brls::Application::pushActivity(new ChildActivity(current, store, [this] { changed = true; }),
+            brls::TransitionAnimation::NONE);
+    }));
     items.push_back(PopupMenu::item("view/delete"_i18n, [this] { remove(); }));
     for (size_t i = 0; i < items.size(); i++)
         right->addView(PopupMenu::row(items[i], i == 0));
@@ -150,19 +150,25 @@ void MiiViewActivity::edit()
 
 void MiiViewActivity::remove()
 {
-    if (!store->canRemove(index)) { // the 3DS's personal Mii
+    if (!store->canRemove(at[index])) { // the 3DS's personal Mii
         brls::Application::notify("library/personal_kept"_i18n);
         return;
     }
     auto* dialog = new brls::Dialog("library/delete_confirm"_i18n);
     dialog->addButton("hints/cancel"_i18n, [] {});
     dialog->addButton("library/delete"_i18n, [this] {
-        if (!store->remove(index)) {
+        const int removed = at[index];
+        if (!store->remove(removed)) {
             brls::Application::notify("library/delete_failed"_i18n);
             return;
         }
         changed = true;
         miis.erase(miis.begin() + index);
+        at.erase(at.begin() + index);
+        if (!store->fixedPlaces()) // the Miis after it moved up one
+            for (int& a : at)
+                if (a > removed)
+                    a--;
         // after the dialog has closed: the next Mii, or back to the list
         brls::sync([this] {
             if (miis.empty())
@@ -177,7 +183,7 @@ void MiiViewActivity::remove()
 void MiiViewActivity::close()
 {
     auto cb = onClosed;
-    const int i = index;
+    const int i = index < (int)at.size() ? at[index] : -1;
     const bool c = changed;
     brls::Application::popActivity(brls::TransitionAnimation::NONE, [cb, i, c] {
         if (cb)

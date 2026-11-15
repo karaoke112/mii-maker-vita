@@ -17,7 +17,7 @@ class TradeView : public brls::View
 {
   public:
     TradeView(bool receiving, const std::vector<mii_charinfo_t>* miis, mii_charinfo_t* offered, brls::Label* count,
-        brls::Label* status, brls::Box* list, std::function<void()> onSaved)
+        brls::Label* status, brls::Box* list, MiiStore* into, std::function<void()> onSaved)
         : receiving(receiving)
         , miis(miis)
         , offeredMii(offered)
@@ -25,6 +25,7 @@ class TradeView : public brls::View
         , status(status)
         , list(list)
         , onSaved(std::move(onSaved))
+        , into(into ? into : &MiiLibrary::instance())
     {
         this->setFocusable(false);
     }
@@ -196,7 +197,7 @@ class TradeView : public brls::View
             mii_charinfo_t save = incoming;
             char n[64];
             mii_name_get_utf8(&save, n, sizeof(n));
-            const bool ok = MiiLibrary::instance().put(&save) >= 0;
+            const bool ok = into->put(&save) >= 0;
             session->answer(to, offer, ok);
             brls::Application::notify(ok ? "trade/received"_i18n + " " + n : "library/import_full"_i18n);
             if (ok && onSaved)
@@ -218,6 +219,7 @@ class TradeView : public brls::View
     brls::Label* status;
     brls::Box* list;
     std::function<void()> onSaved;
+    MiiStore* into;
 
     trade::Link link;
     std::unique_ptr<trade::Session> session;
@@ -234,9 +236,10 @@ class TradeView : public brls::View
 
 } // namespace
 
-TradeActivity::TradeActivity(std::function<void()> onSaved)
+TradeActivity::TradeActivity(MiiStore* into, std::function<void()> onSaved)
     : receiving(true)
     , onSaved(std::move(onSaved))
+    , into(into)
 {
 }
 
@@ -286,7 +289,7 @@ brls::View* TradeActivity::createContentView()
     right->addView(note);
     root->addView(right);
 
-    auto* ticker = new TradeView(receiving, &miis, &shown, count, status, list, onSaved);
+    auto* ticker = new TradeView(receiving, &miis, &shown, count, status, list, into, onSaved);
     ticker->setDimensions(1, 1);
     root->addView(ticker);
 

@@ -14,8 +14,9 @@
 class ImportActivity : public brls::Activity
 {
   public:
-    // `pending` from MiiLibrary::scanImports; `onDone(imported)` after START
-    ImportActivity(std::vector<MiiLibrary::Pending> pending, int unreadable, std::function<void(int)> onDone);
+    // `pending` from MiiLibrary::scanImports, to join `into` (the app's list
+    // or the 3DS's); `onDone(imported)` after START
+    ImportActivity(std::vector<MiiLibrary::Pending> pending, int unreadable, MiiStore* into, std::function<void(int)> onDone);
 
     brls::View* createContentView() override;
 
@@ -28,6 +29,7 @@ class ImportActivity : public brls::Activity
     std::vector<MiiLibrary::Pending> pending; // the previews point into it
     std::vector<State> states;
     int unreadable;
+    MiiStore* into;
     std::function<void(int)> onDone;
     std::vector<brls::View*> cards;
     brls::Label* summary = nullptr;

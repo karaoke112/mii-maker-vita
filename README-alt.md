@@ -43,8 +43,15 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   Kid-o-matic and Delete; L / R show the Mii before / after it. The list
   holds 200 Miis. **R** shows the **3DS's Miis** instead, read from
   Azahar's Mii database (`ux0:data/azahar/nand/extdata/00048000/F000000B/user/CFL_DB.dat`,
-  100 Miis) and **L** goes back: they can be viewed, edited, added and
-  deleted there (the personal Mii always stays). Only Mii Maker's part of
+  100 Miis) and **L** goes back. That list shows Mii Maker's 100 places
+  (ten to a page), empty ones outlined, each Mii where Mii Maker has it;
+  everything works there as in your own list (moving Miis to any place,
+  Send / Receive, Kid-o-matic, the Child Generator, look-alikes made only
+  of 3DS parts and colors), and Cross on an empty place makes a new Mii
+  there. The personal Mii always stays; until Azahar's Mii Maker has made
+  one, that list says so and its buttons are off. Holding a Mii (Triangle),
+  L / R take it to the other list, where Cross puts a copy of it in the
+  place under the cursor. Only Mii Maker's part of
   that file and its checksum are changed; a Mii saved unchanged comes back
   byte for byte; the file is backed up (`CFL_DB.dat.bak` before each save,
   `CFL_DB.dat.orig` as it first was); a file that does not check out is not

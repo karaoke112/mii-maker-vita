@@ -15,10 +15,12 @@
 class MiiViewActivity : public brls::Activity
 {
   public:
-    // `onClosed(index, changed)`: the Mii shown last, and whether any Mii
+    // `onClosed(index, changed)`: the Mii shown last (its index in the store), and whether any Mii
     // was edited, deleted or added (Kid-o-matic) meanwhile.
-    // `store`: where the Miis are (the app's list or the 3DS's)
-    MiiViewActivity(std::vector<mii_charinfo_t> miis, int index, MiiStore* store, std::function<void(int, bool)> onClosed);
+    // `store`: where the Miis are (the app's list or the 3DS's); `at`: each
+    // one's index there (the 3DS's list has empty places between)
+    MiiViewActivity(std::vector<mii_charinfo_t> miis, std::vector<int> at, int index, MiiStore* store,
+        std::function<void(int, bool)> onClosed);
 
     brls::View* createContentView() override;
 
@@ -30,6 +32,7 @@ class MiiViewActivity : public brls::Activity
     void close();
 
     std::vector<mii_charinfo_t> miis;
+    std::vector<int> at;
     int index;
     std::function<void(int, bool)> onClosed;
     bool changed = false;
