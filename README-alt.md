@@ -41,7 +41,7 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   tabs). Cross on a Mii in the list opens it on its own screen: the whole
   Mii to turn, and Edit, Change Expression, Change Pose, View QR Code, Use
   Kid-o-matic and Delete; L / R show the Mii before / after it. The list
-  holds 200 Miis. **R** shows the **3DS's Miis** instead, read from
+  holds 1000 Miis; a favorite has a red star on its card. **R** shows the **3DS's Miis** instead, read from
   Azahar's Mii database (`ux0:data/azahar/nand/extdata/00048000/F000000B/user/CFL_DB.dat`,
   100 Miis) and **L** goes back. That list shows Mii Maker's 100 places
   (ten to a page), empty ones outlined, each Mii where Mii Maker has it;
@@ -56,11 +56,17 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   byte for byte; the file is backed up (`CFL_DB.dat.bak` before each save,
   `CFL_DB.dat.orig` as it first was); a file that does not check out is not
   touched. Editing a 3DS Mii, the parts and colors the 3DS lacks (Switch
-  colors, the newer glasses) are greyed out. **Photo Studio** (on that screen) poses a Mii with an
+  colors, the newer glasses) are greyed out; the personal Mii's card has a
+  gold crown. **R** again shows the **Wii's Miis**: a list of their own (up
+  to 100), kept as the Wii's Mii database (`ux0:data/mii/wii/RFL_DB.dat`)
+  for ports of Wii games, with the Wii's parts and colors only in the
+  editor, look-alikes and imported Miis. (Older versions kept a copy of your
+  Miis there; it is moved aside once, to `RFL_DB.dat.vita-copy.bak`.) On the
+  3DS and Wii lists, Add Mii can also import your favorite Miis. **Photo Studio** (on that screen) poses a Mii with an
   expression on a background of your choice, whole or close up, and saves
   a 960 x 544 PNG to `ux0:picture/MIIMAKER/` for the Photos app (Clear
   gives a see-through background). Each Mii has a **Profile** in the editor
-  (beside Nickname): favorite (red pants, as on the Wii U and Switch),
+  (the star tile, in the Mii's favorite color): favorite color, favorite (red pants, as on the Wii U and Switch),
   birthday, creator and mingle, kept in `ux0:data/mii/details.txt` and
   carried into .ffsd / .cfsd files, QR codes and the Wii database. A cog
   button beside Receive Mii opens the settings, as START does.
@@ -93,9 +99,9 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   `mii_maker_wiiu.ogg`; loop points from `LOOPSTART` / `LOOPLENGTH` or
   `LOOPEND` comments, in samples; not included). Miis are saved to
   `ux0:data/mii/database.nfdb` (the first 100, shared with other apps;
-  Miis 101-200 in `database2.nfdb`; the app's own files
-  go in `ux0:data/mii-maker-vita/`), and the first 100 also as a Wii Mii
-  database, `ux0:data/mii/wii/RFL_DB.dat`, which ports of Wii games can read
+  each next hundred in `database2.nfdb` ... `database10.nfdb`; the app's own files
+  go in `ux0:data/mii-maker-vita/`). The Wii list is
+  `ux0:data/mii/wii/RFL_DB.dat`, which ports of Wii games can read
   (a Super Mario Galaxy port change for this is in progress). Icons come from openly licensed,
   human-made sets (Material Symbols, Material Design Icons, Health Icons,
   Tabler) and the button glyphs from PromptFont. Every button hint can be

@@ -48,10 +48,17 @@ class LibraryActivity : public brls::Activity
     void setPick(Pick mode);
     void openEditor(const mii_charinfo_t& start);
     void openView(int index);
-    // the list shown: the app's own (L) or the 3DS's in Azahar (R)
-    bool threeDs = false;
-    MiiStore& store();
-    void switchTab(bool to3ds);
+    // the list shown: the app's own, the 3DS's in Azahar, the Wii's (L / R)
+    enum Tab { TAB_VITA, TAB_3DS, TAB_WII, TAB_COUNT };
+    int tab = TAB_VITA;
+    MiiStore& store() { return store(tab); }
+    static MiiStore& store(int t);
+    static std::string tabName(int t);  // (the L / R hints)
+    static std::string tabTitle(int t); // (the list's title)
+    void switchTab(int to);
+    std::string fullMessage() const;
+    void importFavorites();
+    void focusCard(int index);
     void tabActions();
     brls::AppletFrame* appletFrame = nullptr;
     void upRoutes();
@@ -71,9 +78,9 @@ class LibraryActivity : public brls::Activity
     void swapHeld(int index);
     void refreshCards();
     bool holding = false;
-    bool holdFrom3ds = false; // the list it was picked up from
-    int holdFrom = -1;        // and where in it
-    bool copying() const { return holding && holdFrom3ds != threeDs; }
+    int holdFromTab = TAB_VITA; // the list it was picked up from
+    int holdFrom = -1;          // and where in it
+    bool copying() const { return holding && holdFromTab != tab; }
     int held = -1;   // where the held Mii is in the list shown, or -1 (from the other list)
     int heldAt = -1; // the card under the cursor
     mii_charinfo_t heldMii {};

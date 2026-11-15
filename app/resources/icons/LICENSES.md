@@ -29,6 +29,7 @@ images (`app/sce_sys/livearea/contents/`), with text set in M PLUS Rounded 1c.
 | thinner.png | width_normal | Material Symbols, Google | Apache-2.0 |
 | wider.png | width_wide | Material Symbols, Google | Apache-2.0 |
 | none.png | block (outline) | Material Symbols, Google | Apache-2.0 |
+| crown.png | crown | Material Design Icons, Pictogrammers | Apache-2.0 |
 | app icon, LiveArea | face_6 | Material Symbols, Google | Apache-2.0 |
 
 - Material Symbols: <https://github.com/google/material-design-icons>,

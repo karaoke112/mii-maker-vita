@@ -1,6 +1,6 @@
 {
   "joining": "Joining the ad-hoc network...",
-  "not_joined": "Not connected. Press B and try again; the other Vita must join too.",
+  "not_joined": "Not connected. Press Circle and try again; the other Vita must join too.",
   "no_socket": "Could not open the connection.",
   "waiting": "Waiting for a Mii. Other Vitas see this one as",
   "looking": "Looking for a Vita that is receiving...",

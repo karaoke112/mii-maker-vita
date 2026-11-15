@@ -16,7 +16,7 @@
   "import_none": "No Mii files (.charinfo, .nfsd, .ffsd, .cfsd) or QR code pictures found in",
   "import_done": "Mii(s) imported",
   "import_failed": "file(s) could not be read",
-  "import_full": "The Mii list is full (200 Miis)",
+  "import_full": "The Mii list is full (1000 Miis)",
   "add": "Add Mii",
   "send": "Send Mii",
   "receive": "Receive Mii",
@@ -61,6 +61,14 @@
   "place_taken": "That place is taken: choose an empty one.",
   "full_3ds": "The 3DS holds 100 Miis at most.",
   "copy_failed": "Could not copy the Mii.",
-  "copied_3ds": "{} was copied to the 3DS.",
-  "copied_vita": "{} was copied to your Miis."
+  "tab_wii": "Wii Miis",
+  "title_wii": "Wii Miis",
+  "full_wii": "The Wii holds 100 Miis at most.",
+  "bad_wii": "The Wii Mii database (ux0:data/mii/wii/RFL_DB.dat) is not one this app can change safely, so it is left as it is.",
+  "copied": "{} was copied to {}.",
+  "add_favorites": "Import Favorite Miis from Your Miis",
+  "no_favorites": "None of your Miis is a favorite yet (Profile, in the editor).",
+  "favorites_added": "{} favorite Miis copied here.",
+  "favorites_already": "({} were here already.)",
+  "favorites_all_here": "Your favorite Miis are all here already."
 }

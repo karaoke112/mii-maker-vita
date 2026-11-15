@@ -87,18 +87,15 @@ bool MiiLibrary::load()
 
     loadDetails();
     entries.clear();
-    std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>> second;
     const bool ok = loadPart(0, &entries);
-    if (ok && loadPart(1, &second)) {
-        for (auto& e : second) // the second hundred (a Mii in both: the first)
+    for (int part = 1; ok && part < kParts; part++) {
+        // the next hundred (a Mii in two: the first)
+        std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>> more;
+        if (!loadPart(part, &more))
+            break;
+        for (auto& e : more)
             if (find(*reinterpret_cast<const mii_create_id_t*>(e.data() + 0x30)) < 0 && count() < kMax)
                 entries.push_back(e);
-    }
-    if (ok) {
-        // the Wii copy, for game ports, if an older version made none
-        struct stat st;
-        if (stat((paths::wiiDir() + "/RFL_DB.dat").c_str(), &st) != 0)
-            exportWii();
     }
     return ok;
 }
@@ -127,16 +124,18 @@ bool MiiLibrary::loadPart(int part, std::vector<std::array<uint8_t, MII_STOREDAT
 
 bool MiiLibrary::save()
 {
-    // the first hundred where other apps read them; the second hundred
-    // beside it (removed when there are none)
+    // the first hundred where other apps read them; each next hundred
+    // beside it (the files no longer needed removed)
     bool ok = savePart(0);
-    if (count() > MII_NFDB_MAX_MIIS) {
-        ok = savePart(1) && ok;
-    } else {
-        std::remove(dbPath(1).c_str());
-        std::remove((dbPath(1) + ".bak").c_str());
+    for (int part = 1; part < kParts; part++) {
+        if (count() > part * MII_NFDB_MAX_MIIS) {
+            ok = savePart(part) && ok;
+        } else {
+            std::remove(dbPath(part).c_str());
+            std::remove((dbPath(part) + ".bak").c_str());
+            written[part].clear();
+        }
     }
-    exportWii();
     return ok;
 }
 
@@ -150,6 +149,8 @@ bool MiiLibrary::savePart(int part)
         std::memcpy(db.entries[db.count++], entries[i].data(), MII_STOREDATA_SIZE);
     if (mii_nfdb_encode(&db, buf) != MII_OK)
         return false;
+    if (written[part].size() == sizeof(buf) && std::memcmp(written[part].data(), buf, sizeof(buf)) == 0)
+        return true; // (this hundred did not change)
 
     // Write a new file, keep the previous one as .bak, then swap in.
     // (sceIoRename does not replace an existing file.)
@@ -164,6 +165,7 @@ bool MiiLibrary::savePart(int part)
         brls::Logger::error("Could not replace {}", path);
         return false;
     }
+    written[part].assign(buf, buf + sizeof(buf));
     return true;
 }
 
@@ -256,7 +258,6 @@ void MiiLibrary::setDetails(const mii_create_id_t& id, const MiiDetails& d)
     else
         detailMap[idKey(id)] = clean;
     saveDetails();
-    exportWii(); // the Wii database carries them
 }
 
 // from a 3DS / Wii U file or QR code
@@ -308,56 +309,6 @@ int MiiLibrary::putEntry(const mii_charinfo_t& ci)
         entries[index] = sd;
     }
     return index;
-}
-
-// The first 100 Miis as a Wii Mii database, where Wii game ports can read
-// them (ux0:data/mii/wii/RFL_DB.dat, the Wii's /shared2/menu/FaceLib/).
-// Parts the Wii lacks become its default ones there.
-bool MiiLibrary::exportWii() const
-{
-    static uint8_t miis[MII_WII_DB_MAX][MII_WII_DATA_SIZE];
-    mii_wii_info_t info;
-    mii_wii_info_init_default(&info);
-    std::memcpy(info.system_id, authorId, sizeof(info.system_id));
-    int n = 0;
-    for (int i = 0; i < count() && n < MII_WII_DB_MAX; i++) {
-        mii_charinfo_t ci;
-        if (!get(i, &ci))
-            continue;
-        // the details the Wii keeps: favorite, birthday, mingle, creator
-        const MiiDetails d = details(ci.create_id);
-        info.favorite = d.favorite;
-        info.birth_month = d.birthMonth;
-        info.birth_day = d.birthDay;
-        info.local_only = !d.mingle;
-        std::memset(info.creator_name, 0, sizeof(info.creator_name));
-        if (!d.creator.empty()) {
-            mii_charinfo_t tmp;
-            mii_charinfo_init_default(&tmp, 0);
-            mii_name_set_utf8(&tmp, d.creator.c_str());
-            std::memcpy(info.creator_name, tmp.name, sizeof(info.creator_name));
-        }
-        if (mii_wii_encode(&ci, &info, miis[n]) == MII_OK)
-            n++;
-    }
-    auto data = std::make_shared<std::vector<uint8_t>>(MII_WII_DB_SIZE);
-    if (mii_wii_db_write(miis, n, data->data(), data->size()) != MII_OK)
-        return false;
-    // Written on its own thread: the file is 768 KB, and saving (moving a
-    // Mii, say) should not wait for the memory card. One write at a time,
-    // the newest last.
-    static std::mutex writing;
-    std::thread([data] {
-        std::lock_guard<std::mutex> lock(writing);
-        const std::string path = paths::wiiDir() + "/RFL_DB.dat", tmp = path + ".tmp";
-        if (!writeFile(tmp, data->data(), data->size())) {
-            brls::Logger::error("Could not write {}", tmp);
-            return;
-        }
-        std::remove(path.c_str());
-        std::rename(tmp.c_str(), path.c_str());
-    }).detach();
-    return true;
 }
 
 bool MiiLibrary::get(int index, mii_charinfo_t* out) const

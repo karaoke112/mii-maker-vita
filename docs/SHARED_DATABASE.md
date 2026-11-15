@@ -10,9 +10,10 @@ ux0:data/mii/
 ├── database.nfdb       the first 100 Miis (Switch NFDB format, 6808 bytes)
 ├── database.nfdb.bak   previous version, written before each save
 ├── database2.nfdb      Miis 101-200, in the same format (only while there are more than 100; + .bak)
+│   ...                 and so on, to database10.nfdb (Miis 901-1000)
 ├── details.txt         what the Switch format has no room for: favorite, birthday, mingle, creator (see below)
 ├── wii/
-│   ├── RFL_DB.dat      the same Miis as the Wii's Mii database, for ports of Wii games
+│   ├── RFL_DB.dat      the Wii Miis (a list of their own, up to 100), for ports of Wii games
 │   └── RFL_Res.dat     the Wii's Mii face resource, if the player provides it (not made here)
 ├── export/             files written by "Export": <name>_<id>.charinfo/.nfsd/.ffsd
 └── import/             Mii files to add with "Import" (moved to import/imported/ once added)
@@ -25,8 +26,8 @@ should not need anything from there.
 ## Format
 
 `database.nfdb` is byte-for-byte the Switch's own Mii database format
-(`database2.nfdb` too; the list goes on from it, in order, so an app that
-reads only `database.nfdb` sees the first 100):
+(`database2.nfdb` to `database10.nfdb` too; the list goes on through them,
+in order, so an app that reads only `database.nfdb` sees the first 100):
 
 | Offset | Size | Content |
 | --- | --- | --- |
@@ -68,8 +69,8 @@ Add libmii to your build with `add_subdirectory(path/to/libmii)` and link
 
 ## For ports of Wii games: `wii/RFL_DB.dat`
 
-Every save also writes the first 100 Miis to `wii/RFL_DB.dat`, byte for
-byte the file the Wii keeps at `/shared2/menu/FaceLib/RFL_DB.dat` and that
+The Wii Miis (Mii Maker Vita's Wii list, up to 100, apart from the Miis
+above) are kept in `wii/RFL_DB.dat`, byte for byte the file the Wii keeps at `/shared2/menu/FaceLib/RFL_DB.dat` and that
 its face library (RVLFaceLib, "RFL") reads. A port that compiles RFL (from
 a decompilation) can map that NAND folder to `ux0:data/mii/wii/`:
 
@@ -84,11 +85,12 @@ a decompilation) can map that NAND folder to `ux0:data/mii/wii/`:
 
 RFL's structures are big-endian; a little-endian port converts them after
 reading (and checks the CRC on the bytes as read). The Mii IDs are stable
-per Mii (from its create ID), with bit 31 set (a normal Mii); the system
-ID is the first four bytes of Mii Maker Vita's author ID.
+per Mii, with bit 31 set (a normal Mii); a Mii made here has the first
+four bytes of Mii Maker Vita's author ID as its system ID.
 
-The Wii has fewer parts and colors than later consoles: Miis using newer
-ones get the Wii's default part, or the nearest color, in this copy only.
+The Wii has fewer parts and colors than later consoles: Mii Maker Vita's
+Wii list offers only the Wii's (a Mii copied in gets the Wii's default
+part, or the nearest color).
 `libmii` reads and writes the format (`mii_wii_encode`, `mii_wii_decode`,
 `mii_wii_db_write`).
 

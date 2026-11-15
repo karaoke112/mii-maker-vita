@@ -3,6 +3,7 @@
 #include <mii/mii.h>
 
 #include <string>
+#include <vector>
 
 struct MiiDetails;
 
@@ -51,6 +52,36 @@ class MiiStore
     // on a 3DS also blue (from another console) and gold (special)
     virtual int pants(const mii_charinfo_t& mii) const = 0;
 
-    // Only what the 3DS format holds (the editor greys out the rest)
+    // The 3DS's list (its personal Mii, places...)
     virtual bool threeDs() const { return false; }
+    // The personal Mii (the 3DS's own), shown with a crown
+    virtual bool isPersonal(int index) const { (void)index; return false; }
+
+    // Only what this list's format holds (3DS, Wii): snap() makes a Mii
+    // that; the editor greys out the rest, look-alikes use only it
+    virtual bool limited() const { return false; }
+    virtual void snap(mii_charinfo_t* ci) const { (void)ci; }
+    // Whether a part or color survives in this list (on the default Mii)
+    bool holds(mii_field_t field, uint8_t value) const
+    {
+        if (!limited() || (unsigned)field >= MII_FIELD_COUNT)
+            return true;
+        if (holdCache.empty())
+            holdCache.assign(MII_FIELD_COUNT * 256, -1);
+        int8_t& k = holdCache[field * 256 + value];
+        if (k < 0) {
+            mii_charinfo_t ci;
+            mii_charinfo_init_default(&ci, 0);
+            mii_field_set(&ci, field, value);
+            k = 0;
+            if (mii_field_get(&ci, field) == value) {
+                snap(&ci);
+                k = mii_field_get(&ci, field) == value ? 1 : 0;
+            }
+        }
+        return k == 1;
+    }
+
+  private:
+    mutable std::vector<int8_t> holdCache;
 };

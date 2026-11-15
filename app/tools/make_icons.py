@@ -61,6 +61,8 @@ ICONS = {
     "wider": ("ms:width-wide", 128),
     # "none" tiles
     "none": ("ms:block-outline", 128),
+    # Mii list cards: the 3DS's personal Mii
+    "crown": ("mdi:crown", 64),
 }
 
 # app icon and LiveArea art

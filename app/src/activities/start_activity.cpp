@@ -1,7 +1,5 @@
 #include "activities/start_activity.hpp"
 
-#include "cfl3ds_store.hpp"
-
 #include "settings.hpp"
 
 #include "ui_theme.hpp"
@@ -14,10 +12,10 @@
 
 using namespace brls::literals;
 
-StartActivity::StartActivity(OnPicked onPicked, bool lookalike, bool threeDs)
+StartActivity::StartActivity(OnPicked onPicked, bool lookalike, const MiiStore* limits)
     : onPicked(std::move(onPicked))
     , lookalike(lookalike)
-    , threeDs(threeDs)
+    , limits(limits)
     , choices(lookalike ? 10 : 2)
     , seed((uint32_t)brls::getCPUTimeUsec() | 1u)
 {
@@ -55,8 +53,8 @@ void StartActivity::shuffle()
             mii_charinfo_init_random(&choices[i], (int)(i % 2), &seed); // five of each style
         else
             anyMii(&choices[i], &seed);
-        if (threeDs) // the 3DS's parts and colors only
-            Cfl3dsStore::snap(&choices[i]);
+        if (limits) // that list's parts and colors only
+            limits->snap(&choices[i]);
     }
 }
 

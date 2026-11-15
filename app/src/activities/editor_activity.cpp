@@ -274,35 +274,8 @@ static const MenuEntry kMenu[] = {
     { Category::STYLE, "style", "editor/menu/style" },
     { Category::BODY, "body", "editor/menu/body" },
     { Category::GLASSES, "glasses", "editor/menu/glasses" },
-    { Category::FAVORITE_COLOR, "star", "editor/menu/favorite_color" },
+    { Category::FAVORITE_COLOR, "star", "profile/title" }, // Profile (the star in the favorite color)
 };
-
-// The 3DS editor: what a value becomes stored as a 3DS Mii; it is
-// available when it comes back unchanged.
-static bool ver3Holds(mii_field_t field, uint8_t value)
-{
-    static int8_t known[MII_FIELD_COUNT][256];
-    static bool ready = false;
-    if (!ready) {
-        std::memset(known, -1, sizeof(known));
-        ready = true;
-    }
-    if ((unsigned)field >= MII_FIELD_COUNT)
-        return true;
-    int8_t& k = known[field][value];
-    if (k < 0) {
-        mii_charinfo_t ci, back;
-        mii_charinfo_init_default(&ci, 0);
-        mii_field_set(&ci, field, value);
-        uint8_t v3[MII_VER3_STOREDATA_SIZE];
-        k = mii_field_get(&ci, field) == value && mii_ver3_encode(&ci, nullptr, v3) == MII_OK &&
-                mii_ver3_decode(&back, nullptr, v3, sizeof(v3), nullptr) == MII_OK &&
-                mii_field_get(&back, field) == value
-            ? 1
-            : 0;
-    }
-    return k == 1;
-}
 
 EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved, MiiStore* store)
     : session(std::make_shared<EditorSession>())
@@ -310,14 +283,11 @@ EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved, Mii
     , store(store ? store : &MiiLibrary::instance())
 {
     session->mii = start;
-    if (this->store->threeDs()) {
-        // as the 3DS will keep it: its colors and glasses are the 3DS's
-        mii_charinfo_t back;
-        uint8_t v3[MII_VER3_STOREDATA_SIZE];
-        if (mii_ver3_encode(&start, nullptr, v3) == MII_OK &&
-            mii_ver3_decode(&back, nullptr, v3, sizeof(v3), &start.create_id) == MII_OK)
-            session->mii = back;
-        OptionGrid::availability = ver3Holds;
+    if (this->store->limited()) {
+        // as the 3DS / Wii will keep it: only its parts and colors
+        this->store->snap(&session->mii);
+        MiiStore* st = this->store;
+        OptionGrid::availability = [st](mii_field_t f, uint8_t v) { return st->holds(f, v); };
     }
     if (mii_create_id_is_valid(&start.create_id))
         session->details = this->store->details(start.create_id);
@@ -325,7 +295,7 @@ EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved, Mii
 
 EditorActivity::~EditorActivity()
 {
-    if (store->threeDs())
+    if (store->limited())
         OptionGrid::availability = nullptr;
 }
 
@@ -340,6 +310,13 @@ static std::string birthdayText(const MiiDetails& d)
 
 static void showProfile(std::shared_ptr<EditorSession> s, int focus = 0)
 {
+    // the favorite color's page, over this menu
+    PopupMenu::Item color = PopupMenu::item("editor/menu/favorite_color"_i18n, [s] {
+        brls::Application::pushActivity(new CategoryActivity(s, Category::FAVORITE_COLOR), brls::TransitionAnimation::NONE);
+    });
+    color.keepOpen = true;
+    color.swatch = [s] { return mii_favorite_color_rgb(s->mii.favorite_color); };
+
     PopupMenu::Item fav = PopupMenu::item("profile/favorite"_i18n, [s] {
         s->details.favorite = !s->details.favorite; // red pants at once
         s->dirty = true;
@@ -409,7 +386,7 @@ static void showProfile(std::shared_ptr<EditorSession> s, int focus = 0)
     mingle.value = [s] { return s->details.mingle ? "settings/on"_i18n : "settings/off"_i18n; };
     mingle.off = [s] { return !s->details.mingle; };
 
-    brls::Application::pushActivity(new PopupMenu("profile/title"_i18n, { fav, birthday, creator, mingle }, focus),
+    brls::Application::pushActivity(new PopupMenu("profile/title"_i18n, { color, fav, birthday, creator, mingle }, focus),
         brls::TransitionAnimation::NONE);
 }
 
@@ -433,7 +410,10 @@ brls::View* EditorActivity::createContentView()
                 row->setMarginLeft(28);
             const Category cat = e.category;
             row->registerClickAction([s, cat](brls::View*) {
-                brls::Application::pushActivity(new CategoryActivity(s, cat), brls::TransitionAnimation::NONE);
+                if (cat == Category::FAVORITE_COLOR)
+                    showProfile(s); // (Profile: the favorite color is in it)
+                else
+                    brls::Application::pushActivity(new CategoryActivity(s, cat), brls::TransitionAnimation::NONE);
                 return true;
             });
             if (e.category == Category::FAVORITE_COLOR)
@@ -482,30 +462,8 @@ brls::View* EditorActivity::createContentView()
             "editor/nickname"_i18n, "", MII_NAME_LENGTH, cur);
         return true;
     });
-    // Nickname and Profile side by side, under the categories
-    auto* nameLine = new brls::Box(brls::Axis::ROW);
-    nameRow->setGrow(1);
-    nameRow->setWidthPercentage(50);
-    nameLine->addView(nameRow);
-    auto* profileRow = new MenuRow(nullptr, "profile/title"_i18n, false);
-    profileRow->setGrow(1);
-    profileRow->setWidthPercentage(50);
-    profileRow->setMarginLeft(28);
-    brls::Label* favValue = profileRow->addValue();
-    favValue->setText("profile/favorite"_i18n);
-    // (hidden, not emptied: an empty label squeezes the name)
-    auto showFav = [s, favValue] {
-        favValue->setVisibility(s->details.favorite ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
-    };
-    showFav();
-    profileRow->registerClickAction([s](brls::View*) {
-        showProfile(s);
-        return true;
-    });
-    // (the value follows the profile when the menu closes)
-    profileRow->getFocusEvent()->subscribe([showFav](brls::View*) { showFav(); });
-    nameLine->addView(profileRow);
-    menu->addView(nameLine);
+    // the nickname: a line of its own, under the categories
+    menu->addView(nameRow);
     // Up / down stay in the same column (borealis would otherwise return
     // to whichever column of a line was focused last).
     for (size_t k = 0; k < rows.size(); k++) {
@@ -513,9 +471,7 @@ brls::View* EditorActivity::createContentView()
             rows[k]->setCustomNavigationRoute(brls::FocusDirection::UP, rows[k - 2]);
         rows[k]->setCustomNavigationRoute(brls::FocusDirection::DOWN, k + 2 < rows.size() ? rows[k + 2] : nameRow);
     }
-    rows[rows.size() - 1]->setCustomNavigationRoute(brls::FocusDirection::DOWN, profileRow);
     nameRow->setCustomNavigationRoute(brls::FocusDirection::UP, rows[rows.size() - 2]);
-    profileRow->setCustomNavigationRoute(brls::FocusDirection::UP, rows[rows.size() - 1]);
 
     auto* doneLine = new brls::Box(brls::Axis::ROW);
     doneLine->setJustifyContent(brls::JustifyContent::CENTER);

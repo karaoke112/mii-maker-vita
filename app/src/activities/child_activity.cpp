@@ -41,9 +41,9 @@ void ChildActivity::generate()
     for (mii_create_id_t& id : ids)
         MiiLibrary::instance().newCreateId(&id);
     stages = kid ? child::growUp(parentA, ids) : child::generate(parentA, parentB, ids);
-    if (store && store->threeDs()) // as the 3DS can keep them
+    if (store && store->limited()) // as the 3DS / Wii can keep them
         for (mii_charinfo_t& m : stages)
-            Cfl3dsStore::snap(&m);
+            store->snap(&m);
     saved.fill(false);
 }
 

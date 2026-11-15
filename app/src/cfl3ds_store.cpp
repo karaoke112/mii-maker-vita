@@ -138,7 +138,7 @@ int Cfl3dsStore::placeOfSlot(int slot) const
     return -1;
 }
 
-void Cfl3dsStore::snap(mii_charinfo_t* ci)
+void Cfl3dsStore::snap(mii_charinfo_t* ci) const
 {
     mii_charinfo_t back;
     uint8_t v3[MII_VER3_STOREDATA_SIZE];

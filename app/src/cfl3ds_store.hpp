@@ -56,7 +56,9 @@ class Cfl3dsStore : public MiiStore
     // its 3DS data besides the face (for exporting it as it is)
     bool info(const mii_create_id_t& id, mii_ver3_info_t* out) const;
     // what a Mii becomes stored as a 3DS Mii
-    static void snap(mii_charinfo_t* ci);
+    bool limited() const override { return true; }
+    void snap(mii_charinfo_t* ci) const override;
+    bool isPersonal(int place) const override { return ok && place >= 0 && place < MII_CFLDB_MAX_MIIS && slotAt[place] == 0; }
     MiiDetails details(const mii_create_id_t& id) const override;
     void setDetails(const mii_create_id_t& id, const MiiDetails& d) override;
     int pants(const mii_charinfo_t& mii) const override;

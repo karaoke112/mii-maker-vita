@@ -9,6 +9,7 @@
 #include "activities/start_activity.hpp"
 #include "head_renderer.hpp"
 #include "cfl3ds_store.hpp"
+#include "wii_store.hpp"
 #include "mii_library.hpp"
 #include "music.hpp"
 #include "mii_qr.hpp"
@@ -19,6 +20,8 @@
 #include "views/controls.hpp"
 #include "views/icon.hpp"
 #include "views/mii_preview.hpp"
+
+#include <cstring>
 
 using namespace brls::literals;
 
@@ -36,6 +39,8 @@ class MiiCard : public brls::Box
     std::function<void(NVGcontext*, float, float, float, float, brls::Style, brls::FrameContext*)> overlay;
     bool empty = false;
     bool checked = false; // chosen, while choosing several
+    bool favorite = false; // a red star at the top left
+    bool personal = false; // the 3DS's personal Mii: a gold crown there
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
         brls::FrameContext* ctx) override
     {
@@ -46,6 +51,18 @@ class MiiCard : public brls::Box
             nvgStrokeColor(vg, ui::rule());
             nvgStrokeWidth(vg, 3);
             nvgStroke(vg);
+        }
+        // the badges, top left: the crown, then the star
+        float bx = x + 12;
+        const float by = y + 12, bs = 34;
+        if (personal) {
+            static IconView* crown = new IconView("crown", bs, nvgRGB(0xE8, 0xB0, 0x10));
+            crown->draw(vg, bx, by, bs, bs, style, ctx);
+            bx += bs + 4;
+        }
+        if (favorite) {
+            static IconView* star = new IconView("star", bs, nvgRGB(0xE5, 0x2E, 0x2E));
+            star->draw(vg, bx, by, bs, bs, style, ctx);
         }
         if (checked) {
             // an accent outline and a ticked circle at the top right
@@ -179,17 +196,17 @@ brls::View* LibraryActivity::createContentView()
     scroll->setContentView(content);
 
     auto* frame = new brls::AppletFrame(scroll);
-    frame->setTitle(threeDs ? "library/title_3ds"_i18n : "library/title"_i18n);
     rootFrame = frame;
     appletFrame = frame;
-    // R: the 3DS's Miis (Azahar's Mii database); L: back to these
+    frame->setTitle(tabTitle(tab));
+    // R / L: the next list (the 3DS's, the Wii's) / the one before
     tabActions();
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_Q), [this](brls::View*) {
-        switchTab(false);
+        switchTab(tab - 1);
         return true;
     });
     frame->registerAction(brls::BrlsKeyCombination(brls::BRLS_KBD_KEY_E), [this](brls::View*) {
-        switchTab(true);
+        switchTab(tab + 1);
         return true;
     });
     // how many Miis there are, at the top right
@@ -270,19 +287,14 @@ void LibraryActivity::rebuildForTheme()
 void LibraryActivity::openEditor(const mii_charinfo_t& start)
 {
     // no cross-fade: the old screen should not linger behind the new one
-    if (threeDs)
+    if (tab == TAB_3DS)
         Cfl3dsStore::instance().setNextPlace(addPlace);
     brls::Application::pushActivity(new EditorActivity(start, [this](const mii_charinfo_t& saved) {
         rebuild();
         // the cursor on the Mii just saved
         for (size_t i = 0; i < miis.size(); i++)
             if (present[i] && mii_create_id_equal(&miis[i].create_id, &saved.create_id)) {
-                // (once laid out, so the list scrolls to it)
-                const int at = (int)i;
-                brls::sync([this, at] {
-                    if (at < (int)cards.size())
-                        brls::Application::giveFocus(cards[at]);
-                });
+                focusCard((int)i);
                 break;
             }
     }, &store()),
@@ -309,8 +321,7 @@ void LibraryActivity::openView(int index)
     brls::Application::pushActivity(new MiiViewActivity(list, at, start, &store(), [this](int shown, bool changed) {
         if (changed)
             rebuild();
-        if (shown >= 0 && shown < (int)cards.size())
-            brls::Application::giveFocus(cards[shown]);
+        focusCard(shown);
     }),
         brls::TransitionAnimation::NONE);
 }
@@ -383,58 +394,92 @@ void LibraryActivity::finishChoosing()
             chosen.clear();
             rebuild();
             if (!cards.empty())
-                brls::Application::giveFocus(cards[std::min(at, (int)cards.size() - 1)]);
+                focusCard(std::min(at, (int)cards.size() - 1));
         });
     });
     dialog->open();
 }
 
-// The two lists: L / R hints say where the other one is
+// The lists: the L / R hints name the one before / after
 void LibraryActivity::tabActions()
 {
-    rootFrame->registerAction(threeDs ? "" : "library/tab_3ds"_i18n, brls::BUTTON_RB, [this](brls::View*) {
-        brls::sync([this] { switchTab(true); });
+    const bool hasNext = tab + 1 < TAB_COUNT, hasPrev = tab > 0;
+    rootFrame->registerAction(hasNext ? tabName(tab + 1) : "", brls::BUTTON_RB, [this](brls::View*) {
+        brls::sync([this] { switchTab(tab + 1); });
         return true;
-    }, threeDs);
-    rootFrame->registerAction(threeDs ? "library/tab_vita"_i18n : "", brls::BUTTON_LB, [this](brls::View*) {
-        brls::sync([this] { switchTab(false); });
+    }, !hasNext);
+    rootFrame->registerAction(hasPrev ? tabName(tab - 1) : "", brls::BUTTON_LB, [this](brls::View*) {
+        brls::sync([this] { switchTab(tab - 1); });
         return true;
-    }, !threeDs);
+    }, !hasPrev);
     brls::Application::getGlobalHintsUpdateEvent()->fire();
 }
 
 void LibraryActivity::clearNextPlace() { Cfl3dsStore::instance().setNextPlace(-1); }
 
-MiiStore& LibraryActivity::store()
+MiiStore& LibraryActivity::store(int t)
 {
-    if (threeDs)
+    if (t == TAB_3DS)
         return Cfl3dsStore::instance();
+    if (t == TAB_WII)
+        return WiiStore::instance();
     return MiiLibrary::instance();
 }
 
-// R: the 3DS's Miis, read from Azahar's Mii database (when there is one
-// this app can safely change); L: back to the app's own. A Mii held goes
-// along, to be copied into the other list.
-void LibraryActivity::switchTab(bool to3ds)
+std::string LibraryActivity::tabName(int t)
 {
-    if (to3ds == threeDs || pick != Pick::NONE)
+    return t == TAB_3DS ? "library/tab_3ds"_i18n : t == TAB_WII ? "library/tab_wii"_i18n : "library/tab_vita"_i18n;
+}
+
+std::string LibraryActivity::tabTitle(int t)
+{
+    return t == TAB_3DS ? "library/title_3ds"_i18n : t == TAB_WII ? "library/title_wii"_i18n : "library/title"_i18n;
+}
+
+std::string LibraryActivity::fullMessage() const
+{
+    return tab == TAB_3DS ? "library/full_3ds"_i18n : tab == TAB_WII ? "library/full_wii"_i18n : "library/import_full"_i18n;
+}
+
+// The cursor on a card once the list is laid out (so it scrolls there)
+void LibraryActivity::focusCard(int index)
+{
+    brls::sync([this, index] {
+        if (index >= 0 && index < (int)cards.size())
+            brls::Application::giveFocus(cards[index]);
+    });
+}
+
+// R: the 3DS's Miis, read from Azahar's Mii database (when there is one
+// this app can safely change), then the Wii's; L: back. A Mii held goes
+// along, to be copied into the other list.
+void LibraryActivity::switchTab(int to)
+{
+    if (to == tab || to < 0 || to >= TAB_COUNT || pick != Pick::NONE)
         return;
-    if (to3ds) {
-        // read again each time: Azahar may have changed it meanwhile
+    // read again each time: Azahar may have changed the 3DS's meanwhile
+    if (to == TAB_3DS) {
         Cfl3dsStore& s = Cfl3dsStore::instance();
         s.load();
         if (holding && !s.usable()) {
             brls::Application::notify(s.loaded() || s.error() == "missing" ? "library/need_personal"_i18n : "library/bad_3ds"_i18n);
             return;
         }
+    } else if (to == TAB_WII) {
+        WiiStore& w = WiiStore::instance();
+        w.load();
+        if (holding && !w.usable()) {
+            brls::Application::notify("library/bad_wii"_i18n);
+            return;
+        }
     }
-    threeDs = to3ds;
-    appletFrame->setTitle(threeDs ? "library/title_3ds"_i18n : "library/title"_i18n);
+    tab = to;
+    appletFrame->setTitle(tabTitle(tab));
     tabActions();
     const int at = heldAt;
     rebuild();
     if (holding && !cards.empty())
-        brls::Application::giveFocus(cards[std::max(0, std::min(at, (int)cards.size() - 1))]);
+        focusCard(std::max(0, std::min(at, (int)cards.size() - 1)));
 }
 
 void LibraryActivity::upRoutes()
@@ -471,10 +516,13 @@ void LibraryActivity::rebuild()
     }
     // the 3DS's list needs a personal Mii (made in Mii Maker) before
     // anything can be done there
-    if (threeDs) {
+    if (tab == TAB_3DS) {
         Cfl3dsStore& c3 = Cfl3dsStore::instance();
         empty->setText(c3.loaded() || c3.error() == "missing" ? "library/need_personal"_i18n : "library/bad_3ds"_i18n);
         empty->setVisibility(usable ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    } else if (!usable) {
+        empty->setText("library/bad_wii"_i18n);
+        empty->setVisibility(brls::Visibility::VISIBLE);
     } else {
         empty->setText("library/empty"_i18n);
         empty->setVisibility(lib.count() == 0 ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
@@ -485,7 +533,7 @@ void LibraryActivity::rebuild()
     }
 
     brls::Box* row = nullptr;
-    held = holding && holdFrom3ds == threeDs ? holdFrom : -1;
+    held = holding && holdFromTab == tab ? holdFrom : -1;
     heldAt = -1;
     // while choosing a Mii, the cursor stays on the Miis; with no personal
     // Mii on the 3DS, only the settings work
@@ -514,6 +562,8 @@ void LibraryActivity::rebuild()
         card->setCornerRadius(18);
         card->setHighlightCornerRadius(20);
         card->empty = !present[i];
+        card->favorite = present[i] && lib.details(miis[i].create_id).favorite;
+        card->personal = present[i] && lib.isPersonal((int)i);
         auto* preview = new MiiPreview(&miis[i], 160);
         thumbs.push_back(preview);
         preview->setDimensions(200, 250);
@@ -706,7 +756,7 @@ void LibraryActivity::cardActions(int index)
 void LibraryActivity::startHold(int index)
 {
     holding = true;
-    holdFrom3ds = threeDs;
+    holdFromTab = tab;
     holdFrom = held = index;
     heldMii = miis[index];
     holdLook();
@@ -725,7 +775,9 @@ void LibraryActivity::holdLook()
     }
     if (held >= 0 && held < (int)thumbs.size()) {
         thumbs[held]->setVisibility(brls::Visibility::INVISIBLE);
-        static_cast<MiiCard*>(cards[held])->empty = true;
+        auto* card = static_cast<MiiCard*>(cards[held]);
+        card->empty = true;
+        card->favorite = card->personal = false;
     }
     for (brls::View* c : cards)
         c->setHideHighlight(true);
@@ -774,7 +826,10 @@ void LibraryActivity::refreshCards()
         present[i] = (int)i < lib.places() && lib.get((int)i, &miis[i]);
         const bool shown = present[i] && (int)i != held;
         thumbs[i]->setVisibility(shown ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
-        static_cast<MiiCard*>(cards[i])->empty = !shown;
+        auto* card = static_cast<MiiCard*>(cards[i]);
+        card->empty = !shown;
+        card->favorite = shown && lib.details(miis[i].create_id).favorite;
+        card->personal = shown && lib.isPersonal((int)i);
     }
 }
 
@@ -791,8 +846,7 @@ void LibraryActivity::endHold(bool place)
         for (brls::View* c : cards)
             static_cast<MiiCard*>(c)->overlay = nullptr;
         rebuild();
-        if (to < (int)cards.size())
-            brls::Application::giveFocus(cards[to]);
+        focusCard(to);
         return;
     }
     holding = false;
@@ -821,20 +875,19 @@ void LibraryActivity::endHold(bool place)
 bool LibraryActivity::copyHeld(int to)
 {
     MiiStore& into = store();
-    MiiStore& from = holdFrom3ds ? static_cast<MiiStore&>(Cfl3dsStore::instance()) : MiiLibrary::instance();
+    MiiStore& from = store(holdFromTab);
     if (into.fixedPlaces() && hasMii(to)) {
         brls::Application::notify("library/place_taken"_i18n);
         return false;
     }
     if (into.count() >= into.capacity()) {
-        brls::Application::notify(threeDs ? "library/full_3ds"_i18n : "library/import_full"_i18n);
+        brls::Application::notify(fullMessage());
         return false;
     }
     mii_charinfo_t m = heldMii;
     const MiiDetails d = from.details(m.create_id);
     MiiLibrary::instance().newCreateId(&m.create_id);
-    if (into.threeDs())
-        Cfl3dsStore::snap(&m); // the 3DS's parts and colors
+    into.snap(&m); // (the 3DS's or Wii's parts and colors)
     if (into.putAt(&m, to) < 0) {
         brls::Application::notify("library/copy_failed"_i18n);
         return false;
@@ -842,7 +895,7 @@ bool LibraryActivity::copyHeld(int to)
     into.setDetails(m.create_id, d);
     char name[64];
     mii_name_get_utf8(&m, name, sizeof(name));
-    brls::Application::notify(brls::getStr(threeDs ? "library/copied_3ds" : "library/copied_vita", std::string(name)));
+    brls::Application::notify(brls::getStr("library/copied", std::string(name), tabName(tab)));
     return true;
 }
 
@@ -891,7 +944,7 @@ void LibraryActivity::exportMii(int index)
     std::string path;
     mii_ver3_info_t info;
     // a 3DS Mii as it is (its console, birthday...)
-    const bool has3ds = threeDs && Cfl3dsStore::instance().info(miis[index].create_id, &info);
+    const bool has3ds = tab == TAB_3DS && Cfl3dsStore::instance().info(miis[index].create_id, &info);
     if (MiiLibrary::instance().exportMii(miis[index], &path, has3ds ? &info : nullptr))
         brls::Application::notify("library/exported"_i18n + " " + path);
     else
@@ -908,14 +961,77 @@ void LibraryActivity::addScanned(const mii_charinfo_t& scanned)
         lib.newCreateId(&mii.create_id);
     char name[64];
     mii_name_get_utf8(&mii, name, sizeof(name));
-    if (threeDs)
-        Cfl3dsStore::snap(&mii);
+    store().snap(&mii);
     if (store().put(&mii) < 0) {
-        brls::Application::notify(threeDs ? "library/full_3ds"_i18n : "library/import_full"_i18n);
+        brls::Application::notify(fullMessage());
         return;
     }
     brls::Application::notify("qr/added"_i18n + " " + name);
     brls::sync([this] { rebuild(); });
+}
+
+// The 3DS's and Wii's lists: copies of the favorite Miis of the app's own
+// list (made of that list's parts and colors), but none already there.
+void LibraryActivity::importFavorites()
+{
+    MiiLibrary& lib = MiiLibrary::instance();
+    MiiStore& into = store();
+    // the same Mii: every part, color and the name (a copy has a create
+    // id of its own)
+    auto same = [](const mii_charinfo_t& a, const mii_charinfo_t& b) {
+        for (int f = 0; f < MII_FIELD_COUNT; f++)
+            if (mii_field_get(&a, (mii_field_t)f) != mii_field_get(&b, (mii_field_t)f))
+                return false;
+        return std::memcmp(a.name, b.name, sizeof(a.name)) == 0;
+    };
+    std::vector<mii_charinfo_t> there;
+    for (int i = 0; i < into.places(); i++) {
+        mii_charinfo_t m;
+        if (into.get(i, &m))
+            there.push_back(m);
+    }
+    int added = 0, already = 0, favorites = 0;
+    bool full = false;
+    for (int i = 0; i < lib.count(); i++) {
+        mii_charinfo_t m;
+        if (!lib.get(i, &m))
+            continue;
+        const MiiDetails d = lib.details(m.create_id);
+        if (!d.favorite)
+            continue;
+        favorites++;
+        into.snap(&m);
+        bool dup = false;
+        for (const mii_charinfo_t& t : there)
+            if (same(t, m))
+                dup = true;
+        if (dup) {
+            already++;
+            continue;
+        }
+        if (into.count() >= into.capacity()) {
+            full = true;
+            break;
+        }
+        lib.newCreateId(&m.create_id);
+        if (into.put(&m) < 0) {
+            full = true;
+            break;
+        }
+        into.setDetails(m.create_id, d);
+        there.push_back(m);
+        added++;
+    }
+    std::string msg = !favorites   ? "library/no_favorites"_i18n
+        : !added && already ? "library/favorites_all_here"_i18n
+                            : brls::getStr("library/favorites_added", std::to_string(added));
+    if (added && already)
+        msg += " " + brls::getStr("library/favorites_already", std::to_string(already));
+    if (full)
+        msg += " " + fullMessage();
+    brls::Application::notify(msg);
+    if (added)
+        brls::sync([this] { rebuild(); });
 }
 
 // The second parent's prompt names the first.
@@ -989,11 +1105,11 @@ void LibraryActivity::showAddMenu()
 {
     std::vector<PopupMenu::Item> items = {
         PopupMenu::item("library/add_scratch"_i18n, [this] {
-            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, false, threeDs),
+            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, false, store().limited() ? &store() : nullptr),
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_lookalike"_i18n, [this] {
-            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, true, threeDs),
+            brls::Application::pushActivity(new StartActivity([this](const mii_charinfo_t& ci) { openEditor(ci); }, true, store().limited() ? &store() : nullptr),
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_kid"_i18n, [this] {
@@ -1014,6 +1130,8 @@ void LibraryActivity::showAddMenu()
     };
     if (addPlace >= 0)
         items.resize(2); // (an empty place: a new Mii; the generators start from a Mii)
+    else if (tab != TAB_VITA)
+        items.push_back(PopupMenu::item("library/add_favorites"_i18n, [this] { importFavorites(); }));
     brls::Application::pushActivity(new PopupMenu("library/add"_i18n, items), brls::TransitionAnimation::NONE);
 }
 
