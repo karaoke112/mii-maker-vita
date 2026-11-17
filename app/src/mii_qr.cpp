@@ -47,12 +47,10 @@ int loadKeys()
     return mii_qr_keys();
 }
 
-bool make(const mii_charinfo_t& mii, Code* out)
+bool make(const mii_charinfo_t& mii, const mii_ver3_info_t& info, Code* out)
 {
     uint8_t payload[MII_QR_PAYLOAD_MAX];
     size_t size = 0;
-    mii_ver3_info_t info;
-    MiiLibrary::instance().ver3Info(mii, &info);
     if (mii_qr_encode(&mii, &info, Settings::get().qrSwitch2 ? 1 : 0, payload, &size) != MII_OK)
         return false;
     std::vector<uint8_t> data(qrcodegen_BUFFER_LEN_MAX), temp(qrcodegen_BUFFER_LEN_MAX);
@@ -158,9 +156,11 @@ bool Scanner::finish(mii_charinfo_t* mii)
         if (err != QUIRC_SUCCESS)
             continue;
         mii_charinfo_t ci;
-        if (mii_qr_decode(&ci, nullptr, data.payload, (size_t)data.payload_len, nullptr) == MII_OK &&
+        mii_ver3_info_t info;
+        if (mii_qr_decode(&ci, &info, data.payload, (size_t)data.payload_len, nullptr) == MII_OK &&
             mii_verify(&ci, 0) == MII_FIELD_COUNT) {
             *mii = ci;
+            lastInfo = info;
             return true;
         }
         otherCode = true;
@@ -168,7 +168,7 @@ bool Scanner::finish(mii_charinfo_t* mii)
     return false;
 }
 
-bool scanImageFile(const std::string& path, mii_charinfo_t* mii)
+bool scanImageFile(const std::string& path, mii_charinfo_t* mii, mii_ver3_info_t* info)
 {
     int w = 0, h = 0, n = 0;
     uint8_t* gray = stbi_load(path.c_str(), &w, &h, &n, 1);
@@ -177,6 +177,8 @@ bool scanImageFile(const std::string& path, mii_charinfo_t* mii)
     Scanner s;
     const bool found = s.scan(w, h, [&](uint8_t* buf) { std::memcpy(buf, gray, (size_t)w * h); }, mii);
     stbi_image_free(gray);
+    if (found && info)
+        *info = s.info();
     return found;
 }
 

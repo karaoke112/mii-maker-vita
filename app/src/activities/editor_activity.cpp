@@ -288,6 +288,7 @@ EditorActivity::EditorActivity(const mii_charinfo_t& start, OnSaved onSaved, Mii
         this->store->snap(&session->mii);
         MiiStore* st = this->store;
         OptionGrid::availability = [st](mii_field_t f, uint8_t v) { return st->holds(f, v); };
+        OptionGrid::unavailableText = brls::getStr(st->threeDs() ? "editor/not_on_3ds" : "editor/not_on_wii");
     }
     if (mii_create_id_is_valid(&start.create_id))
         session->details = this->store->details(start.create_id);
@@ -401,13 +402,13 @@ brls::View* EditorActivity::createContentView()
     std::vector<MenuRow*> rows; // in menu order: two per line
     for (int i = 0; i < n; i += 2) {
         auto* line = new brls::Box(brls::Axis::ROW);
+        line->setJustifyContent(brls::JustifyContent::SPACE_BETWEEN);
         for (int j = i; j < i + 2 && j < n; j++) {
             const MenuEntry& e = kMenu[j];
             auto* row = new MenuRow(e.icon, brls::getStr(e.key), i == 0);
-            row->setGrow(1);
-            row->setWidthPercentage(50);
-            if (j > i)
-                row->setMarginLeft(28);
+            // two columns with a gap (4%, about 28 px) between them, the
+            // right one ending where the nickname line does
+            row->setWidthPercentage(48);
             const Category cat = e.category;
             row->registerClickAction([s, cat](brls::View*) {
                 if (cat == Category::FAVORITE_COLOR)

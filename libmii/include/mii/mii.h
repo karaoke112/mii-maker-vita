@@ -341,8 +341,13 @@ mii_result_t mii_wii_decode(mii_charinfo_t *ci, mii_wii_info_t *info, const uint
  * /shared2/menu/FaceLib/): up to 100 Miis, out_size >= MII_WII_DB_SIZE. */
 mii_result_t mii_wii_db_write(const uint8_t (*miis)[MII_WII_DATA_SIZE], int count, uint8_t *out, size_t out_size);
 int mii_wii_db_valid(const uint8_t *db, size_t size);
-/* Copies slot `index` (0-99); 0 when the slot is empty or the file invalid. */
+/* Copies slot `index` (0-99); 0 when the slot is empty or the file invalid.
+ * (Checks the whole file's CRC each time: to read every slot, check it
+ * once with mii_wii_db_valid, then use mii_wii_db_slot.) */
 int mii_wii_db_get(const uint8_t *db, size_t size, int index, uint8_t out[MII_WII_DATA_SIZE]);
+/* Slot `index` (0-99) of a database already checked with mii_wii_db_valid,
+ * or NULL when it is empty. */
+const uint8_t *mii_wii_db_slot(const uint8_t *db, int index);
 uint16_t mii_wii_crc(const uint8_t *p, size_t len);
 
 /* ------------------------------------------------------------------------- */

@@ -102,6 +102,8 @@ class MiiLibrary : public MiiStore
     // (as the Switch 2 writes it; a 3DS refuses origin 4), with an id that
     // stays the same for the same Mii and this console's system id / MAC.
     void ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const;
+    // the same with these details (a Mii of another list)
+    void ver3Info(const mii_charinfo_t& mii, const MiiDetails& d, mii_ver3_info_t* out) const;
     const std::string& dataDir() const { return dir; }
 
   private:

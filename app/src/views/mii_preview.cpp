@@ -71,8 +71,22 @@ void MiiPreview::request3D()
     const float yawStep = fine ? 1.0f : 5.0f, pitchStep = fine ? 0.5f : 2.5f;
     const float yaw = std::round(yawRef() / yawStep) * yawStep;
     const float pitch = std::round(pitchRef() / pitchStep) * pitchStep;
+    // Stages are drawn for where the framing is heading, not for each step
+    // of the way (a render a frame, the GPU waited on every time, made the
+    // camera stutter): the picture is scaled and moved to each step (see
+    // draw). Zooming in, the picture from before (magnified) stays until
+    // the framing settles: a close-up shrunk would show the Mii cut off.
     const Frame& fr = frameRef();
-    const float pivot = std::round(fr.pivot * 4.0f) / 4.0f, zoom = std::round(fr.zoom * 400.0f) / 400.0f;
+    float aimPivot = fr.pivot, aimZoom = fr.zoom;
+    if (stage && hr.hasBody() && !compact) {
+        stageTarget(&aimPivot, &aimZoom);
+        const bool settled = std::fabs(fr.zoom - aimZoom) < 0.002f && std::fabs(fr.pivot - aimPivot) < 0.05f;
+        if (!settled && aimZoom > fr.zoom + 0.002f && hasRequested) {
+            aimPivot = requestedPivot;
+            aimZoom = requestedZoom;
+        }
+    }
+    const float pivot = std::round(aimPivot * 4.0f) / 4.0f, zoom = std::round(aimZoom * 400.0f) / 400.0f;
     const bool sharedChanged = shareKey && shareEpochs[shareKey] != shareEpoch;
     const int size = stage && hr.gpuActive() ? gpuSize() : renderSize;
     if (hasRequested && !sharedChanged && requestedYaw == yaw && requestedPitch == pitch && requestedSize == size &&
@@ -125,9 +139,10 @@ void MiiPreview::request3D()
         spec.background = 0xFF000000u | ((uint32_t)(bg.r * 255.0f + 0.5f) << 16) |
             ((uint32_t)(bg.g * 255.0f + 0.5f) << 8) | (uint32_t)(bg.b * 255.0f + 0.5f);
     }
-    hr.request(owner(), spec, [this, zoom](HeadRenderer::Image img, int size, int gpu) {
+    hr.request(owner(), spec, [this, zoom, pivot](HeadRenderer::Image img, int size, int gpu) {
         imageSize = size;
         imageZoom = zoom;
+        imagePivot = pivot;
         if (gpu > 0) {
             gpuImage = gpu;
             image.reset();
@@ -354,11 +369,22 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
                 // placed by the zoom the picture was drawn with, which can be
                 // a frame behind the eased framing
                 const Frame& f = frameRef();
-                const float shownZoom = imageZoom > 0.0f ? imageZoom : f.zoom;
-                const float t = std::fmax(0.0f, std::fmin(1.0f, (shownZoom - 1.1f) / (1.5f - 1.1f)));
+                const float zoomNow = f.set ? f.zoom : imageZoom;
+                const float t = std::fmax(0.0f, std::fmin(1.0f, (zoomNow - 1.1f) / (1.5f - 1.1f)));
                 const float fullSide = std::fmin(width, height) * 0.95f, bustSide = height * 1.05f;
                 side = fullSide + (bustSide - fullSide) * t;
                 iy = y + (height - side) / 2 - 12.0f * (1.0f - t);
+                shownSide = side; // (the size renders are made for)
+                // a picture drawn for another framing (where the framing is
+                // heading, or where it was), scaled and moved to this one:
+                // the camera's lens is narrow (8.4 degrees, 720 units back),
+                // so the picture scales like a flat one
+                if (f.set && imageZoom > 0.0f) {
+                    const float k = 1.0f / (std::tan(8.4f * 3.14159265f / 180.0f) * 720.0f);
+                    const float centre = iy + side * 0.5f - side * (imagePivot - f.pivot) * k * zoomNow * 0.5f;
+                    side *= zoomNow / imageZoom;
+                    iy = centre - side * 0.5f;
+                }
                 // a soft light behind the head (a shadow on the light theme)
                 const bool dark = ui::theme() != ui::Theme::LIGHT;
                 // fixed where the head is in the close-up: it stays put while
@@ -379,7 +405,8 @@ void MiiPreview::draw(NVGcontext* vg, float x, float y, float width, float heigh
                 side = stage ? std::fmin(width, height) * 0.95f : std::fmin(width * 1.15f, height - nameHeight);
                 iy = y + (height - nameHeight - side) / 2 + (stage ? -12 : 6);
             }
-            shownSide = side;
+            if (!(stage && !compact && HeadRenderer::instance().hasBody()))
+                shownSide = side;
             const float ix = ix0 - side / 2;
             nvgBeginPath(vg);
             nvgRect(vg, ix, iy, side, side);

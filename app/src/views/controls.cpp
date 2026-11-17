@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 
 static NVGcolor rgb(uint32_t c)
 {
@@ -37,19 +38,7 @@ class GridCell : public brls::Box
             text = opt.labelOf ? opt.labelOf(value) : std::to_string(value + 1);
     }
 
-    // Tiles off screen are not drawn; their icons are asked for when they
-    // come within a screen of it (so scrolling finds them ready), not all
-    // at once when the page opens.
-    void frame(brls::FrameContext* ctx) override
-    {
-        const float off = ui::offscreenDistance(this);
-        if (off > 0.0f) {
-            if (off < kPrefetch && opt.iconOf)
-                requestIcon();
-            return;
-        }
-        brls::Box::frame(ctx);
-    }
+
 
     ~GridCell() override
     {
@@ -121,7 +110,6 @@ class GridCell : public brls::Box
         }
     }
 
-  private:
     void requestIcon()
     {
         HeadRenderer& hr = HeadRenderer::instance();
@@ -142,6 +130,7 @@ class GridCell : public brls::Box
         }
     }
 
+  private:
     bool drawIcon(NVGcontext* vg, float sx, float sy, float side)
     {
         requestIcon();
@@ -161,7 +150,6 @@ class GridCell : public brls::Box
         return true;
     }
 
-    static constexpr float kPrefetch = 544.0f; // (a screen)
     const mii_charinfo_t* mii;
     uint8_t value;
     const OptionGrid::Options& opt;
@@ -175,7 +163,37 @@ class GridCell : public brls::Box
     int nvgImage = -1;
 };
 
+// A row of tiles: not drawn while off screen (one check for the row:
+// borealis draws boxes whether on screen or not); its icons are asked for
+// when it comes within a screen (so scrolling finds them ready), not all at
+// once when the page opens.
+class GridRow : public brls::Box
+{
+  public:
+    explicit GridRow(bool icons)
+        : brls::Box(brls::Axis::ROW)
+        , icons(icons)
+    {
+    }
+    void frame(brls::FrameContext* ctx) override
+    {
+        const float off = ui::offscreenDistance(this);
+        if (off > 0.0f) {
+            if (icons && off < kPrefetch)
+                for (brls::View* c : getChildren())
+                    static_cast<GridCell*>(c)->requestIcon();
+            return;
+        }
+        brls::Box::frame(ctx);
+    }
+
+  private:
+    static constexpr float kPrefetch = 544.0f; // (a screen)
+    bool icons;
+};
+
 std::function<bool(mii_field_t, uint8_t)> OptionGrid::availability;
+std::string OptionGrid::unavailableText;
 
 std::vector<uint8_t> OptionGrid::range(mii_field_t field)
 {
@@ -199,12 +217,18 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
 
     const float w = opt.labelOf && !opt.colorOf ? opt.cell * 2.4f : opt.cell;
     brls::Box* row = nullptr;
+    // (132 hairstyles: tiles made without XML attributes, which they never
+    // use, are made several times faster)
+    auto noXml = std::make_unique<brls::View::NoXMLAttributes>();
+    // (rows filled first, then added: each view added to a box lays out
+    // everything it is in again)
+    std::vector<brls::Box*> rowsMade;
     for (size_t i = 0; i < values.size(); i++) {
         if (i % opt.columns == 0) {
-            row = new brls::Box(brls::Axis::ROW);
+            row = new GridRow((bool)opt.iconOf);
             if (i > 0)
                 row->setMarginTop(opt.gap);
-            this->addView(row);
+            rowsMade.push_back(row);
         }
         const uint8_t value = values[i];
         auto* cell = new GridCell(this->mii, value, opt);
@@ -216,7 +240,7 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
         cell->disabled = availability && !availability(field, value);
         cell->registerClickAction([this, value, cell](brls::View*) {
             if (cell->disabled) {
-                brls::Application::notify(brls::getStr("editor/not_on_3ds"));
+                brls::Application::notify(unavailableText);
                 return true;
             }
             mii_field_set(this->mii, this->field, value);
@@ -229,6 +253,9 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
         row->addView(cell);
         cells.push_back(cell);
     }
+    for (brls::Box* r : rowsMade)
+        this->addView(r);
+    noXml.reset();
     // Up / down go to the tile in the same column (the last one of a
     // shorter row), not to whichever tile of that row was focused last.
     const int cols = opt.columns, count = (int)cells.size();

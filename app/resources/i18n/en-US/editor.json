@@ -63,5 +63,6 @@
     "body": "How tall and how wide is this Mii?",
     "favorite_color": "Which color does this Mii like best?"
   },
-  "not_on_3ds": "3DS Miis cannot have this."
+  "not_on_3ds": "3DS Miis cannot have this.",
+  "not_on_wii": "Wii Miis cannot have this."
 }

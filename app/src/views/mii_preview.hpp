@@ -146,6 +146,7 @@ class MiiPreview : public brls::View
     int nvgImageSize = 0;
     int imageSize = 0; // side of `image` (a quick pass is smaller)
     float imageZoom = 0.0f; // the framing zoom the shown picture was drawn with
+    float imagePivot = 0.0f; // and its camera height
     float shownSide = 0.0f; // the picture's side on screen, last frame
     int requestedSize = 0;
     int gpuSize() const;

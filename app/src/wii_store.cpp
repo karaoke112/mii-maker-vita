@@ -79,11 +79,14 @@ bool WiiStore::load()
         brls::Logger::error("{}: not a Wii Mii database this app can change", file);
         return false;
     }
+    // (the file was checked once above: each slot read as it is)
     for (int i = 0; i < MII_WII_DB_MAX; i++) {
         Entry e;
         mii_charinfo_t ci;
-        if (!mii_wii_db_get(data.data(), data.size(), i, e.data()))
+        const uint8_t* slot = mii_wii_db_slot(data.data(), i);
+        if (!slot)
             continue;
+        std::memcpy(e.data(), slot, e.size());
         if (mii_wii_decode(&ci, nullptr, e.data(), e.size()) != MII_OK) {
             brls::Logger::error("{}: Mii {} does not read", file, i);
             entries.clear();

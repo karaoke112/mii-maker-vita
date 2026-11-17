@@ -32,7 +32,7 @@ class LibraryActivity : public brls::Activity
     void rebuild();
     void importMiis();
     void exportMii(int index);
-    void addScanned(const mii_charinfo_t& mii);
+    void addScanned(const mii_charinfo_t& mii, const mii_ver3_info_t& info);
     void showAddMenu();
     void showSendMenu();
     void showReceiveMenu();

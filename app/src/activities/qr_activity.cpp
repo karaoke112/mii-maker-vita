@@ -1,5 +1,7 @@
 #include "activities/qr_activity.hpp"
 
+#include "cfl3ds_store.hpp"
+
 #include "mii_library.hpp"
 #include "mii_qr.hpp"
 #include "ui_theme.hpp"
@@ -64,8 +66,13 @@ brls::View* QrShowActivity::createContentView()
     root->setAlignItems(brls::AlignItems::CENTER);
     root->setGrow(1);
 
+    // the profile the code carries: a 3DS Mii's own, as it is; otherwise
+    // its list's (favorite, birthday, creator...)
+    mii_ver3_info_t info;
+    if (!(store && store->threeDs() && static_cast<Cfl3dsStore*>(store)->info(mii.create_id, &info)))
+        MiiLibrary::instance().ver3Info(mii, store ? store->details(mii.create_id) : MiiLibrary::instance().details(mii.create_id), &info);
     qr::Code code;
-    const bool made = qr::make(mii, &code);
+    const bool made = qr::make(mii, info, &code);
 
     auto* preview = new MiiPreview(&mii, 256);
     preview->setDimensions(260, 330);
@@ -148,12 +155,13 @@ class CameraScanner
         return true;
     }
 
-    bool found(mii_charinfo_t* mii)
+    bool found(mii_charinfo_t* mii, mii_ver3_info_t* info)
     {
         std::lock_guard<std::mutex> lock(mutex);
         if (!hasResult)
             return false;
         *mii = result;
+        *info = resultInfo;
         return true;
     }
 
@@ -216,6 +224,7 @@ class CameraScanner
                 fresh = true;
                 if (hit) {
                     result = mii;
+                    resultInfo = scanner.info();
                     hasResult = true;
                 }
             }
@@ -236,6 +245,7 @@ class CameraScanner
     std::vector<uint8_t> frame;
     bool fresh = false;
     mii_charinfo_t result;
+    mii_ver3_info_t resultInfo {};
     bool hasResult = false;
 };
 
@@ -243,7 +253,7 @@ class CameraScanner
 class CameraView : public brls::View
 {
   public:
-    CameraView(brls::Label* status, std::function<void(const mii_charinfo_t&)> onFound)
+    CameraView(brls::Label* status, QrScanActivity::OnFound onFound)
         : status(status)
         , onFound(std::move(onFound))
     {
@@ -303,10 +313,11 @@ class CameraView : public brls::View
                 status->setText(showingOther ? "qr/not_a_mii"_i18n : "qr/aim"_i18n);
             }
             mii_charinfo_t mii;
-            if (!done && camera.found(&mii)) {
+            mii_ver3_info_t info;
+            if (!done && camera.found(&mii, &info)) {
                 done = true;
                 auto cb = onFound;
-                brls::sync([cb, mii] { cb(mii); });
+                brls::sync([cb, mii, info] { cb(mii, info); });
             }
         }
     }
@@ -314,7 +325,7 @@ class CameraView : public brls::View
   private:
     CameraScanner camera;
     brls::Label* status;
-    std::function<void(const mii_charinfo_t&)> onFound;
+    QrScanActivity::OnFound onFound;
     std::vector<uint8_t> pixels;
     int image = -1;
     bool available = false;
@@ -337,10 +348,10 @@ brls::View* QrScanActivity::createContentView()
     status->setText("qr/aim"_i18n);
 
     OnFound found = onFound;
-    auto* camera = new CameraView(status, [found](const mii_charinfo_t& mii) {
-        brls::Application::popActivity(brls::TransitionAnimation::NONE, [found, mii] {
+    auto* camera = new CameraView(status, [found](const mii_charinfo_t& mii, const mii_ver3_info_t& info) {
+        brls::Application::popActivity(brls::TransitionAnimation::NONE, [found, mii, info] {
             if (found)
-                found(mii);
+                found(mii, info);
         });
     });
     camera->setDimensions(720, 540);

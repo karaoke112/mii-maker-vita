@@ -29,7 +29,9 @@ struct Code {
     bool dark(int x, int y) const { return modules[(size_t)y * size + x] != 0; }
 };
 
-bool make(const mii_charinfo_t& mii, Code* out);
+// `info`: what the code carries besides the face (the profile: favorite,
+// birthday, creator...)
+bool make(const mii_charinfo_t& mii, const mii_ver3_info_t& info, Code* out);
 
 // A PNG of the code: `scale` pixels per module, a white margin of `border`
 // modules.
@@ -77,6 +79,8 @@ class Scanner
     // QR codes were seen but none held a Mii (to tell the user why nothing
     // happens).
     bool sawOtherCode() const { return otherCode; }
+    // the last Mii found: what its code carries besides the face
+    const mii_ver3_info_t& info() const { return lastInfo; }
 
   private:
     uint8_t* begin(int w, int h);
@@ -86,9 +90,10 @@ class Scanner
     std::vector<uint8_t> gray;
     std::vector<uint32_t> integral;
     bool otherCode = false;
+    mii_ver3_info_t lastInfo {};
 };
 
 // Reads a PNG / JPEG / BMP file and looks for a Mii QR code in it.
-bool scanImageFile(const std::string& path, mii_charinfo_t* mii);
+bool scanImageFile(const std::string& path, mii_charinfo_t* mii, mii_ver3_info_t* info = nullptr);
 
 } // namespace qr

@@ -374,6 +374,11 @@ bool MiiLibrary::swap(int a, int b)
 
 void MiiLibrary::ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const
 {
+    ver3Info(mii, details(mii.create_id), out);
+}
+
+void MiiLibrary::ver3Info(const mii_charinfo_t& mii, const MiiDetails& d, mii_ver3_info_t* out) const
+{
     mii_ver3_info_init_default(out);
     out->copyable = 1;
     out->birth_platform = 3;
@@ -388,7 +393,6 @@ void MiiLibrary::ver3Info(const mii_charinfo_t& mii, mii_ver3_info_t* out) const
     out->creator_mac[0] &= 0xFE; // an ordinary (unicast) address
     // the details: favorite, birthday, mingle, and the creator (else, as a
     // 3DS shows it, this console's user name)
-    const MiiDetails d = details(mii.create_id);
     out->favorite = d.favorite;
     out->birth_month = d.birthMonth;
     out->birth_day = d.birthDay;
@@ -476,8 +480,10 @@ std::vector<MiiLibrary::Pending> MiiLibrary::scanImports(int* unreadable)
         mii_result_t r = MII_ERR_SIZE;
         if (image) {
             // a picture of a Mii QR code (3DS, Wii U, Switch 2, this app)
-            if (qr::scanImageFile(in + "/" + name, &p.mii))
+            if (qr::scanImageFile(in + "/" + name, &p.mii, &p.info)) {
                 r = MII_OK;
+                p.hasInfo = true; // (the profile the code carries)
+            }
         } else if (readFile(in + "/" + name, &data)) {
             if (ext == "charinfo")
                 r = mii_charinfo_decode(&p.mii, data.data(), data.size());

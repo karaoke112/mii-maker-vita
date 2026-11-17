@@ -74,7 +74,7 @@ brls::View* MiiViewActivity::createContentView()
             dialog->open();
             return;
         }
-        brls::Application::pushActivity(new QrShowActivity(current), brls::TransitionAnimation::NONE);
+        brls::Application::pushActivity(new QrShowActivity(current, store), brls::TransitionAnimation::NONE);
     }));
     items.push_back(PopupMenu::item("view/kid"_i18n, [this] {
         brls::Application::pushActivity(new ChildActivity(current, store, [this] { changed = true; }),

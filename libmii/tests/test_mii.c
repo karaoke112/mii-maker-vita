@@ -354,8 +354,32 @@ static void test_wii(void)
     CHECK_EQ(mii_wii_crc(db, 0x1F1E0), 0);
     CHECK(mii_wii_db_get(db, sizeof(db), 1, got) && memcmp(got, miis[1], sizeof(got)) == 0);
     CHECK(!mii_wii_db_get(db, sizeof(db), 3, got));
+    CHECK(mii_wii_db_slot(db, 1) && memcmp(mii_wii_db_slot(db, 1), miis[1], MII_WII_DATA_SIZE) == 0);
+    CHECK(mii_wii_db_slot(db, 3) == NULL);
     db[0x100] ^= 1;
     CHECK(!mii_wii_db_valid(db, sizeof(db)));
+    /* the faces and mouths the Wii lacks become the ones chosen for them */
+    {
+        static const uint8_t mouths[12][2] = { { 24, 0 }, { 25, 21 }, { 26, 22 }, { 27, 1 }, { 28, 17 }, { 29, 1 },
+            { 30, 10 }, { 31, 18 }, { 32, 4 }, { 33, 21 }, { 34, 14 }, { 35, 12 } };
+        static const uint8_t faces[4][2] = { { 8, 2 }, { 9, 1 }, { 10, 4 }, { 11, 6 } };
+        mii_charinfo_t m, r;
+        uint8_t w[MII_WII_DATA_SIZE];
+        for (int i = 0; i < 12; i++) {
+            mii_charinfo_init_default(&m, 0);
+            m.mouth_type = mouths[i][0];
+            CHECK_EQ(mii_wii_encode(&m, NULL, w), MII_OK);
+            CHECK_EQ(mii_wii_decode(&r, NULL, w, sizeof(w)), MII_OK);
+            CHECK_EQ(r.mouth_type, mouths[i][1]);
+        }
+        for (int i = 0; i < 4; i++) {
+            mii_charinfo_init_default(&m, 0);
+            m.faceline_type = faces[i][0];
+            CHECK_EQ(mii_wii_encode(&m, NULL, w), MII_OK);
+            CHECK_EQ(mii_wii_decode(&r, NULL, w, sizeof(w)), MII_OK);
+            CHECK_EQ(r.faceline_type, faces[i][1]);
+        }
+    }
 }
 
 static void test_nfdb(void)

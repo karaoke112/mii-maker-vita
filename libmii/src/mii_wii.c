@@ -64,6 +64,21 @@ static unsigned or_default(unsigned value, unsigned limit, unsigned fallback)
     return value < limit ? value : fallback;
 }
 
+/* The Wii's nearest look for the faces and mouths it lacks (chosen by eye,
+ * in the editor's grids): Switch faces 8-11 and mouths 24-35. */
+static const uint8_t k_wii_faceline[4] = { 2, 1, 4, 6 };
+static const uint8_t k_wii_mouth[12] = { 0, 21, 22, 1, 17, 1, 10, 18, 4, 21, 14, 12 };
+
+static unsigned wii_faceline(unsigned v)
+{
+    return v < 8 ? v : v < 12 ? k_wii_faceline[v - 8] : 0;
+}
+
+static unsigned wii_mouth(unsigned v)
+{
+    return v < 24 ? v : v < 36 ? k_wii_mouth[v - 24] : 0;
+}
+
 int mii_wii_compatible(const mii_charinfo_t *ci)
 {
     if (!ci)
@@ -124,7 +139,7 @@ mii_result_t mii_wii_encode(const mii_charinfo_t *ci, const mii_wii_info_t *info
     mii_wr32be(out + 0x18, info->mii_id ? info->mii_id : mii_wii_id_for(ci));
     memcpy(out + 0x1C, info->system_id, 4);
 
-    put(out, AT(0x20), 3, or_default(ci->faceline_type, 8, d.faceline_type));
+    put(out, AT(0x20), 3, wii_faceline(ci->faceline_type));
     put(out, AT(0x20) + 3, 3, mii_faceline_color_to_ver3(ci->faceline_color));
     put(out, AT(0x20) + 6, 4, face_tex_for(ci->faceline_make, ci->faceline_wrinkle));
     put(out, AT(0x20) + 13, 1, info->local_only & 1);
@@ -152,9 +167,9 @@ mii_result_t mii_wii_encode(const mii_charinfo_t *ci, const mii_wii_info_t *info
     put(out, AT(0x2C) + 8, 5, ci->nose_y);
 
     /* the Wii has three lip colors (orange, red, pink); the 3DS's peach
-     * and black become orange and red */
-    static const uint8_t k_lips[5] = { 0, 1, 2, 0, 1 };
-    put(out, AT(0x2E), 5, or_default(ci->mouth_type, 24, d.mouth_type));
+     * and black become orange */
+    static const uint8_t k_lips[5] = { 0, 1, 2, 0, 0 };
+    put(out, AT(0x2E), 5, wii_mouth(ci->mouth_type));
     put(out, AT(0x2E) + 5, 2, k_lips[mii_common_to_ver3_mouth_color(ci->mouth_color) % 5]);
     put(out, AT(0x2E) + 7, 4, ci->mouth_scale);
     put(out, AT(0x2E) + 11, 5, ci->mouth_y);
@@ -326,12 +341,20 @@ int mii_wii_db_valid(const uint8_t *db, size_t size)
     return db && size >= DB_HEADER_SIZE && memcmp(db, "RNOD", 4) == 0 && mii_wii_crc(db, DB_HEADER_SIZE) == 0;
 }
 
+const uint8_t *mii_wii_db_slot(const uint8_t *db, int index)
+{
+    if (!db || index < 0 || index >= MII_WII_DB_MAX)
+        return NULL;
+    const uint8_t *e = db + DB_MIIS + index * MII_WII_DATA_SIZE;
+    return mii_rd16be(e + 2) == 0 ? NULL : e; /* no name: an empty slot */
+}
+
 int mii_wii_db_get(const uint8_t *db, size_t size, int index, uint8_t out[MII_WII_DATA_SIZE])
 {
-    if (!mii_wii_db_valid(db, size) || index < 0 || index >= MII_WII_DB_MAX)
+    if (!mii_wii_db_valid(db, size))
         return 0;
-    const uint8_t *e = db + DB_MIIS + index * MII_WII_DATA_SIZE;
-    if (mii_rd16be(e + 2) == 0) /* no name: an empty slot */
+    const uint8_t *e = mii_wii_db_slot(db, index);
+    if (!e)
         return 0;
     memcpy(out, e, MII_WII_DATA_SIZE);
     return 1;

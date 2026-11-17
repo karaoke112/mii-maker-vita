@@ -1,0 +1,101 @@
+--- a/library/include/borealis/core/view.hpp
++++ b/library/include/borealis/core/view.hpp
+@@ -40,6 +40,7 @@
+ // When using this macro please use the same (wonky) formatting as what you see in Box.cpp or View.cpp
+ // otherwise clang-format will screw it up
+ #define BRLS_REGISTER_ENUM_XML_ATTRIBUTE(name, enumType, method, ...)                    \
++    if (!brls::View::skipXMLAttributes)                                                  \
+     this->registerStringXMLAttribute(name, [this](std::string value) {                   \
+         std::unordered_map<std::string, enumType> enumMap = __VA_ARGS__;                 \
+         if (enumMap.count(value) > 0)                                                    \
+@@ -299,6 +300,22 @@
+     std::set<std::string> knownAttributes;
+ 
+     void registerCommonAttributes();
++
++  public:
++    /**
++     * While above zero, views being made register no XML attributes (they
++     * cost most of making a view: about 90 handlers each). For views made
++     * in code in large numbers that are never given XML attributes; see
++     * NoXMLAttributes.
++     */
++    inline static int skipXMLAttributes = 0;
++    struct NoXMLAttributes
++    {
++        NoXMLAttributes() { skipXMLAttributes++; }
++        ~NoXMLAttributes() { skipXMLAttributes--; }
++    };
++
++  private:
+     void printXMLAttributeErrorMessage(tinyxml2::XMLElement* element, std::string name, std::string value);
+ 
+     unsigned maximumAllowedXMLElements = UINT_MAX;
+--- a/library/lib/core/view.cpp
++++ b/library/lib/core/view.cpp
+@@ -1963,6 +1963,8 @@
+ 
+ void View::registerCommonAttributes()
+ {
++    if (skipXMLAttributes)
++        return;
+     // Width
+     this->registerAutoXMLAttribute("width", [this] {
+         this->setWidth(View::AUTO);
+@@ -2382,42 +2384,56 @@
+ 
+ void View::registerFloatXMLAttribute(std::string name, FloatAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->floatAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }
+ 
+ void View::registerPercentageXMLAttribute(std::string name, FloatAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->percentageAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }
+ 
+ void View::registerAutoXMLAttribute(std::string name, AutoAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->autoAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }
+ 
+ void View::registerStringXMLAttribute(std::string name, StringAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->stringAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }
+ 
+ void View::registerColorXMLAttribute(std::string name, ColorAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->colorAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }
+ 
+ void View::registerBoolXMLAttribute(std::string name, BoolAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->boolAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }
+ 
+ void View::registerFilePathXMLAttribute(std::string name, FilePathAttributeHandler handler)
+ {
++    if (skipXMLAttributes)
++        return;
+     this->filePathAttributes[name] = handler;
+     this->knownAttributes.insert(name);
+ }

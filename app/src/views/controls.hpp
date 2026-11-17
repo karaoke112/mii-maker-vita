@@ -44,6 +44,8 @@ class OptionGrid : public brls::Box
     // While set (the 3DS editor): the values it rejects are greyed out and
     // cannot be chosen.
     static std::function<bool(mii_field_t, uint8_t)> availability;
+    // what pressing one of those says ("3DS Miis cannot have this.")
+    static std::string unavailableText;
 
     brls::View* getDefaultFocus() override;
     // keeps the selection right when the value changes elsewhere (the

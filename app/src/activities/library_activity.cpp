@@ -23,6 +23,7 @@
 #include "views/mii_preview.hpp"
 
 #include <cstring>
+#include <memory>
 
 using namespace brls::literals;
 
@@ -38,21 +39,12 @@ class MiiCard : public brls::Box
         , mii(mii)
     {
     }
-    // Only the cards on screen are drawn, and only they hold a thumbnail
-    // (made when the card comes on screen, dropped once it is well off it:
-    // a list of 1000 Miis keeps a screenful or so). Its picture comes back
-    // from the renderer's cache when it returns.
-    void frame(brls::FrameContext* ctx) override
-    {
-        const float off = ui::offscreenDistance(this);
-        if (off > 0.0f) {
-            if (thumb && off > kKeepThumb)
-                thumb.reset();
-            return;
-        }
-        brls::Box::frame(ctx);
-    }
+    // Only cards on screen are drawn (see MiiRow), and only they hold a
+    // thumbnail: made when the card is first drawn, dropped once its row is
+    // well off screen (a list of 1000 Miis keeps a screenful or so). The
+    // picture comes back from the renderer's cache when it returns.
     MiiPreview* thumbnail() const { return thumb.get(); }
+    void dropThumbnail() { thumb.reset(); }
     std::function<void(NVGcontext*, float, float, float, float, brls::Style, brls::FrameContext*)> overlay;
     bool empty = false;
     bool checked = false; // chosen, while choosing several
@@ -64,6 +56,7 @@ class MiiCard : public brls::Box
         brls::Box::draw(vg, x, y, width, height, style, ctx);
         if (!empty) {
             if (!thumb) {
+                brls::View::NoXMLAttributes noXml; // (see rebuild)
                 thumb.reset(new MiiPreview(mii, 160));
                 thumb->setDimensions(width, height);
                 if (priority)
@@ -119,9 +112,38 @@ class MiiCard : public brls::Box
     std::unique_ptr<int> priority;
 
   private:
-    static constexpr float kKeepThumb = 1200.0f; // (about two screens)
     const mii_charinfo_t* mii;
     std::unique_ptr<MiiPreview> thumb;
+};
+
+// A row of cards: skipped whole while off screen (one check for five
+// cards: borealis draws boxes whether on screen or not); far off, its
+// cards let their thumbnails go.
+class MiiRow : public brls::Box
+{
+  public:
+    MiiRow()
+        : brls::Box(brls::Axis::ROW)
+    {
+    }
+    void frame(brls::FrameContext* ctx) override
+    {
+        const float off = ui::offscreenDistance(this);
+        if (off > 0.0f) {
+            if (holdsThumbs && off > kKeepThumbs) {
+                for (brls::View* c : getChildren())
+                    static_cast<MiiCard*>(c)->dropThumbnail();
+                holdsThumbs = false;
+            }
+            return;
+        }
+        holdsThumbs = true;
+        brls::Box::frame(ctx);
+    }
+
+  private:
+    static constexpr float kKeepThumbs = 1200.0f; // (about two screens)
+    bool holdsThumbs = false;
 };
 
 brls::View* LibraryActivity::createContentView()
@@ -577,14 +599,21 @@ void LibraryActivity::rebuild()
     if (rootFrame)
         updateSettingsAction(); // in case a Mii was held, or the mode changed
     cardActionIds.assign(miis.size(), {});
+    // (rows and cards are made here in their hundreds and never given XML
+    // attributes: made without them, they are made several times faster)
+    auto noXml = std::make_unique<brls::View::NoXMLAttributes>();
+    // Each row is filled before it joins the screen, and the rows join it
+    // together at the end: borealis lays out the whole screen each time a
+    // view is added to it (a card at a time, 100 cards were 120 layouts).
+    std::vector<brls::Box*> rowsMade;
     for (size_t i = 0; i < miis.size(); i++) {
         if (i % kColumns == 0) {
-            row = new brls::Box(brls::Axis::ROW);
+            row = new MiiRow();
             row->setMarginBottom(20);
             // the 3DS's pages (ten Miis each) a little apart
             if (lib.fixedPlaces() && i && i % 10 == 0)
                 row->setMarginTop(16);
-            grid->addView(row);
+            rowsMade.push_back(row);
         }
         auto* card = new MiiCard(&miis[i]);
         cards.push_back(card);
@@ -632,7 +661,7 @@ void LibraryActivity::rebuild()
             } else if (pick == Pick::QR) {
                 const mii_charinfo_t mii = miis[index];
                 setPick(Pick::NONE);
-                brls::Application::pushActivity(new QrShowActivity(mii), brls::TransitionAnimation::NONE);
+                brls::Application::pushActivity(new QrShowActivity(mii, &store()), brls::TransitionAnimation::NONE);
             } else {
                 openView(index);
             }
@@ -646,6 +675,11 @@ void LibraryActivity::rebuild()
         });
         row->addView(card);
     }
+    auto* sheet = new brls::Box(brls::Axis::COLUMN);
+    for (brls::Box* r : rowsMade)
+        sheet->addView(r);
+    noXml.reset(); // (what follows makes views from XML: the hints)
+    grid->addView(sheet);
     // up / down go to the card straight above or below (borealis would go
     // back to the last card focused in that row); a short last row takes
     // its last card
@@ -983,7 +1017,7 @@ void LibraryActivity::exportMii(int index)
 
 // A Mii read from a QR code joins the library (QR codes carry no create id,
 // so it gets a new one).
-void LibraryActivity::addScanned(const mii_charinfo_t& scanned)
+void LibraryActivity::addScanned(const mii_charinfo_t& scanned, const mii_ver3_info_t& info)
 {
     mii_charinfo_t mii = scanned;
     MiiLibrary& lib = MiiLibrary::instance();
@@ -996,6 +1030,8 @@ void LibraryActivity::addScanned(const mii_charinfo_t& scanned)
         brls::Application::notify(fullMessage());
         return;
     }
+    // the profile the code carried (favorite, birthday, creator...)
+    store().setDetails(mii.create_id, MiiLibrary::detailsOf(info));
     brls::Application::notify("qr/added"_i18n + " " + name);
     brls::sync([this] { rebuild(); });
 }
@@ -1091,7 +1127,9 @@ void LibraryActivity::setPick(Pick mode)
                                             : "");
     pickLabel->setVisibility(mode == Pick::NONE ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     // (no settings while choosing a Mii; the prompt takes its place)
-    settingsButton->setVisibility(mode == Pick::NONE ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    // (hidden in its place: taken out of the layout and back, its icon came
+    // back off center)
+    settingsButton->setVisibility(mode == Pick::NONE ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
     // The cards stay as they are (this often runs from a card's own action,
     // which must not delete that card): only their buttons, the top
     // buttons and the routes change.
@@ -1174,7 +1212,7 @@ void LibraryActivity::showReceiveMenu()
                 needKey();
                 return;
             }
-            brls::Application::pushActivity(new QrScanActivity([this](const mii_charinfo_t& mii) { addScanned(mii); }),
+            brls::Application::pushActivity(new QrScanActivity([this](const mii_charinfo_t& mii, const mii_ver3_info_t& info) { addScanned(mii, info); }),
                 brls::TransitionAnimation::NONE);
         }),
         PopupMenu::item("library/add_receive"_i18n, [this] {

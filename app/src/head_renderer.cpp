@@ -410,15 +410,17 @@ void HeadRenderer::pumpGpuPreviews()
     }
 }
 
-// Icons for the GPU: as many as fit in a few milliseconds per frame (at
-// least one), nearest the cursor first. While the cursor moves, only every
-// third frame draws one, leaving the frames time to scroll smoothly.
+// Icons for the GPU, nearest the cursor first: one a frame, and none while
+// the cursor moves or a page has just opened (each one makes the frame
+// wait for the GPU: drawn one after another they made opening the hair
+// and eye pages, and moving through them, stutter). The CPU workers take
+// icons from the same queue meanwhile.
 void HeadRenderer::pumpGpuIcons()
 {
     const brls::Time start = brls::getCPUTimeUsec();
-    if (start - lastMove < 200000 && (++frameCount % 3) != 0)
+    if (start - lastMove < 250000)
         return;
-    const brls::Time budget = start - lastMove < 200000 ? 0 : 4000;
+    const brls::Time budget = 0;
     GpuRenderer& gpu = GpuRenderer::instance();
     for (;;) {
         Job job;
@@ -700,12 +702,14 @@ void HeadRenderer::worker(mii3d_renderer* renderer)
         Job job;
         {
             std::unique_lock<std::mutex> lock(mutex);
-            wake.wait(lock, [this] { return stopping || !high.empty() || !low.empty(); });
+            wake.wait(lock, [this] { return stopping || !high.empty() || !low.empty() || !gpuIcons.empty(); });
             if (stopping)
                 return;
-            std::deque<Job>& q = high.empty() ? low : high;
-            if (&q == &low) {
-                job = takeBest(low);
+            // previews, then icons; the GPU's icons too (it draws them only
+            // between frames, while nothing moves)
+            std::deque<Job>& q = !high.empty() ? high : !low.empty() ? low : gpuIcons;
+            if (&q != &high) {
+                job = takeBest(q);
             } else {
                 job = std::move(q.front());
                 q.pop_front();
