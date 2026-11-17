@@ -1,0 +1,32 @@
+--- a/library/include/borealis/core/application.hpp
++++ b/library/include/borealis/core/application.hpp
+@@ -82,6 +82,9 @@
+ 
+     static Platform* getPlatform();
+     static AudioPlayer* getAudioPlayer();
++    // The app's own sounds in place of the platform's (which, on some
++    // platforms, plays none); nullptr: the platform's again.
++    static void setAudioPlayer(AudioPlayer* player);
+ 
+     static NVGcontext* getNVGContext();
+     inline static float contentWidth, contentHeight;
+--- a/library/lib/core/application.cpp
++++ b/library/lib/core/application.cpp
+@@ -505,8 +505,17 @@
+     return Application::platform;
+ }
+ 
++static AudioPlayer* appAudioPlayer = nullptr;
++
++void Application::setAudioPlayer(AudioPlayer* player)
++{
++    appAudioPlayer = player;
++}
++
+ AudioPlayer* Application::getAudioPlayer()
+ {
++    if (appAudioPlayer)
++        return appAudioPlayer;
+     return Application::platform->getAudioPlayer();
+ }
+ 

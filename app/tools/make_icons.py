@@ -63,6 +63,8 @@ ICONS = {
     "none": ("ms:block-outline", 128),
     # Mii list cards: the 3DS's personal Mii
     "crown": ("mdi:crown", 64),
+    # the Mii list's view options (sort / show) button
+    "view_options": ("mdi:filter-variant", 128),
 }
 
 # app icon and LiveArea art

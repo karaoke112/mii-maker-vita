@@ -14,6 +14,9 @@
 #include "music.hpp"
 #include "mii_qr.hpp"
 #include "settings.hpp"
+#include "sound.hpp"
+
+#include <cctype>
 #include "ui_theme.hpp"
 #include "views/popup_menu.hpp"
 #include <mii/mii_editor.h>
@@ -205,10 +208,27 @@ brls::View* LibraryActivity::createContentView()
     pickLabel->setMarginLeft(30);
     pickLabel->setVisibility(brls::Visibility::GONE);
     actions->addView(pickLabel);
-    // Settings (as START): a cog at the right end
+    // View options (sort / show), then settings (as START): at the right end
     auto* spacer = new brls::Box();
     spacer->setGrow(1);
     actions->addView(spacer);
+    auto* view = new brls::Button();
+    view->setText("");
+    view->setDimensions(64, 64);
+    view->setMarginRight(14);
+    view->setPadding(0, 0, 0, 0);
+    view->setJustifyContent(brls::JustifyContent::CENTER);
+    view->setAlignItems(brls::AlignItems::CENTER);
+    view->addView(new IconView("view_options", 40, ui::text()));
+    view->registerClickAction([this](brls::View*) {
+        if (busy())
+            return true;
+        showViewOptions();
+        return true;
+    });
+    actions->addView(view);
+    topButtons.push_back(view);
+    viewButton = view;
     auto* cog = new brls::Button();
     cog->setText("");
     cog->setDimensions(64, 64);
@@ -293,7 +313,7 @@ brls::View* LibraryActivity::createContentView()
             if (cards[i] == focus) {
                 if (holding)
                     swapHeld((int)i);
-                else if (pick == Pick::NONE && store().canMove() && hasMii((int)i))
+                else if (pick == Pick::NONE && store().canMove() && !arranged() && hasMii((int)i))
                     startHold((int)i);
             }
         return true;
@@ -369,14 +389,17 @@ void LibraryActivity::openView(int index)
             if ((int)i == index)
                 start = (int)list.size();
             list.push_back(miis[i]);
-            at.push_back((int)i);
+            at.push_back(storeAt[i]);
         }
     if (list.empty())
         return;
     brls::Application::pushActivity(new MiiViewActivity(list, at, start, &store(), [this](int shown, bool changed) {
         if (changed)
             rebuild();
-        focusCard(shown);
+        // (`shown` is its index in the list: its card)
+        for (size_t k = 0; k < storeAt.size(); k++)
+            if (storeAt[k] == shown)
+                focusCard((int)k);
     }),
         brls::TransitionAnimation::NONE);
 }
@@ -425,10 +448,15 @@ void LibraryActivity::finishChoosing()
     auto* dialog = new brls::Dialog(picked.size() == 1 ? "library/delete_confirm"_i18n
                                                        : brls::getStr("library/delete_confirm_n", std::to_string(picked.size())));
     dialog->addButton("hints/cancel"_i18n, [] {});
-    dialog->addButton("library/delete"_i18n, [this, picked] {
+    // (the cards' indices in the list, from the end: the others stay right)
+    std::vector<int> inList;
+    for (int i : picked)
+        inList.push_back(storeAt[i]);
+    std::sort(inList.begin(), inList.end());
+    dialog->addButton("library/delete"_i18n, [this, picked, inList] {
         MiiStore& lib = store();
         bool ok = true, kept = false;
-        for (auto it = picked.rbegin(); it != picked.rend(); ++it) { // from the end: indices stay right
+        for (auto it = inList.rbegin(); it != inList.rend(); ++it) {
             if (!lib.canRemove(*it)) {
                 kept = true; // the 3DS's personal Mii
                 continue;
@@ -446,6 +474,7 @@ void LibraryActivity::finishChoosing()
             pick = Pick::NONE;
             pickLabel->setVisibility(brls::Visibility::GONE);
             settingsButton->setVisibility(brls::Visibility::VISIBLE);
+            viewButton->setVisibility(brls::Visibility::VISIBLE);
             chosen.clear();
             rebuild();
             if (!cards.empty())
@@ -558,13 +587,58 @@ void LibraryActivity::rebuild()
     cards.clear();
     // one card per Mii; the 3DS's list: its 100 places. Carrying a Mii from
     // the 3DS, one empty card at the end of this list to put it there.
-    int n = usable ? lib.places() : 0;
-    if (usable && copying() && !lib.fixedPlaces() && lib.count() < lib.capacity())
-        n++;
+    // View options: sorted, or only some shown (then no empty places)
+    storeAt.clear();
+    if (usable) {
+        if (!arranged()) {
+            for (int i = 0; i < lib.places(); i++)
+                storeAt.push_back(i);
+        } else {
+            const Settings& st = Settings::get();
+            struct Shown {
+                int at;
+                mii_charinfo_t mii;
+                std::string name;
+                bool favorite;
+            };
+            std::vector<Shown> list;
+            for (int i = 0; i < lib.places(); i++) {
+                Shown s { i, {}, {}, false };
+                if (!lib.get(i, &s.mii))
+                    continue;
+                s.favorite = lib.details(s.mii.create_id).favorite;
+                if ((st.showMode == SHOW_FAVORITES && !s.favorite) || (st.showMode == SHOW_MALE && s.mii.gender != 0) ||
+                    (st.showMode == SHOW_FEMALE && s.mii.gender != 1))
+                    continue;
+                char name[64];
+                mii_name_get_utf8(&s.mii, name, sizeof(name));
+                s.name = name;
+                for (char& c : s.name)
+                    c = (char)std::tolower((unsigned char)c);
+                list.push_back(std::move(s));
+            }
+            auto byName = [](const Shown& a, const Shown& b) { return a.name < b.name; };
+            if (st.sortMode == SORT_NAME)
+                std::stable_sort(list.begin(), list.end(), byName);
+            else if (st.sortMode == SORT_COLOR)
+                std::stable_sort(list.begin(), list.end(), [&](const Shown& a, const Shown& b) {
+                    return a.mii.favorite_color != b.mii.favorite_color ? a.mii.favorite_color < b.mii.favorite_color : byName(a, b);
+                });
+            else if (st.sortMode == SORT_HEIGHT)
+                std::stable_sort(list.begin(), list.end(), [](const Shown& a, const Shown& b) { return a.mii.height < b.mii.height; });
+            else if (st.sortMode == SORT_FAVORITES)
+                std::stable_sort(list.begin(), list.end(), [](const Shown& a, const Shown& b) { return a.favorite && !b.favorite; });
+            for (const Shown& s : list)
+                storeAt.push_back(s.at);
+        }
+        if (copying() && !lib.fixedPlaces() && lib.count() < lib.capacity())
+            storeAt.push_back(-1);
+    }
+    const int n = (int)storeAt.size();
     miis.assign(n, mii_charinfo_t {}); // (previews keep pointers into it: not resized until the next rebuild)
     present.assign(n, false);
     for (int i = 0; i < n; i++) {
-        present[i] = i < lib.places() && lib.get(i, &miis[i]);
+        present[i] = storeAt[i] >= 0 && lib.get(storeAt[i], &miis[i]);
         if (!present[i])
             mii_charinfo_init_default(&miis[i], 0);
     }
@@ -582,7 +656,10 @@ void LibraryActivity::rebuild()
         empty->setVisibility(lib.count() == 0 ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     }
     if (countLabel) {
-        countLabel->setText(brls::getStr("library/count", std::to_string(lib.count()), std::to_string(lib.capacity())));
+        std::string count = brls::getStr("library/count", std::to_string(lib.count()), std::to_string(lib.capacity()));
+        if (Settings::get().showMode != SHOW_ALL) // only some shown: how many
+            count = brls::getStr("library/count_shown", std::to_string(std::count(present.begin(), present.end(), true))) + "   " + count;
+        countLabel->setText(count);
         countLabel->setVisibility(usable ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     }
 
@@ -624,7 +701,7 @@ void LibraryActivity::rebuild()
         card->setHighlightCornerRadius(20);
         card->empty = !present[i];
         card->favorite = present[i] && lib.details(miis[i].create_id).favorite;
-        card->personal = present[i] && lib.isPersonal((int)i);
+        card->personal = present[i] && lib.isPersonal(storeAt[i]);
 
         const int index = (int)i;
         card->registerClickAction([this, index](brls::View*) {
@@ -633,7 +710,7 @@ void LibraryActivity::rebuild()
             } else if (!hasMii(index)) {
                 // an empty place: a new Mii there
                 if (pick == Pick::NONE) {
-                    addPlace = index;
+                    addPlace = storeAt[index];
                     showAddMenu();
                 }
             } else if (pick == Pick::EXPORT) {
@@ -808,7 +885,7 @@ void LibraryActivity::cardActions(int index)
                 });
                 return true;
             }));
-            if (store().canMove())
+            if (store().canMove() && !arranged()) // (sorted: there is no order to change)
                 ids.push_back(card->registerAction("library/pick_up"_i18n, brls::BUTTON_Y, [this, index](brls::View*) {
                     startHold(index);
                     return true;
@@ -825,6 +902,7 @@ void LibraryActivity::startHold(int index)
     holdFromTab = tab;
     holdFrom = held = index;
     heldMii = miis[index];
+    sound::play(sound::PICK_UP);
     holdLook();
     showHeldAt(index);
     allCardActions();
@@ -888,12 +966,12 @@ void LibraryActivity::refreshCards()
 {
     MiiStore& lib = store();
     for (size_t i = 0; i < miis.size(); i++) {
-        present[i] = (int)i < lib.places() && lib.get((int)i, &miis[i]);
+        present[i] = storeAt[i] >= 0 && lib.get(storeAt[i], &miis[i]);
         const bool shown = present[i] && (int)i != held;
         auto* card = static_cast<MiiCard*>(cards[i]);
         card->empty = !shown;
         card->favorite = shown && lib.details(miis[i].create_id).favorite;
-        card->personal = shown && lib.isPersonal((int)i);
+        card->personal = shown && lib.isPersonal(storeAt[i]);
     }
 }
 
@@ -905,6 +983,7 @@ void LibraryActivity::endHold(bool place)
     if (place && copying()) {
         if (to < 0 || !copyHeld(to))
             return;
+        sound::play(sound::PUT_DOWN);
         holding = false;
         held = heldAt = -1;
         for (brls::View* c : cards)
@@ -930,6 +1009,8 @@ void LibraryActivity::endHold(bool place)
         if (!store().move(from, to))
             brls::Application::notify("library/move_failed"_i18n);
     }
+    if (place)
+        sound::play(sound::PUT_DOWN);
     refreshCards();
     allCardActions();
 }
@@ -1130,6 +1211,7 @@ void LibraryActivity::setPick(Pick mode)
     // (hidden in its place: taken out of the layout and back, its icon came
     // back off center)
     settingsButton->setVisibility(mode == Pick::NONE ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
+    viewButton->setVisibility(mode == Pick::NONE ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
     // The cards stay as they are (this often runs from a card's own action,
     // which must not delete that card): only their buttons, the top
     // buttons and the routes change.
@@ -1379,6 +1461,39 @@ void LibraryActivity::showSettings(int focus)
             });
     };
 
+    // Sound Effects (off, quiet...) and Music Volume
+    static const char* const kLevels[4] = { "settings/off", "settings/quiet", "settings/medium", "settings/loud" };
+    PopupMenu::Item sounds = PopupMenu::item("settings/sounds"_i18n, nullptr);
+    sounds.keepOpen = true;
+    sounds.value = [] { return brls::getStr(kLevels[Settings::get().soundLevel]); };
+    sounds.off = [] { return Settings::get().soundLevel == 0; };
+    sounds.action = [] {
+        choose("settings/sounds"_i18n, { brls::getStr(kLevels[0]), brls::getStr(kLevels[1]), brls::getStr(kLevels[2]), brls::getStr(kLevels[3]) },
+            Settings::get().soundLevel, [](int i) {
+                if (i < 0)
+                    return;
+                Settings& s = Settings::get();
+                s.soundLevel = i;
+                s.save();
+                sound::setLevel(i);
+                sound::play(sound::CLICK); // (how loud it is now)
+            });
+    };
+    PopupMenu::Item musicVolume = PopupMenu::item("settings/music_volume"_i18n, nullptr);
+    musicVolume.keepOpen = true;
+    musicVolume.value = [] { return brls::getStr(kLevels[Settings::get().musicLevel]); };
+    musicVolume.action = [] {
+        choose("settings/music_volume"_i18n, { brls::getStr(kLevels[1]), brls::getStr(kLevels[2]), brls::getStr(kLevels[3]) },
+            Settings::get().musicLevel - 1, [](int i) {
+                if (i < 0)
+                    return;
+                Settings& s = Settings::get();
+                s.musicLevel = i + 1;
+                s.save();
+                music::Player::instance().setLevel(s.musicLevel);
+            });
+    };
+
     // a toggle: no list, pressing it switches it
     PopupMenu::Item curated = PopupMenu::item("settings/curated"_i18n, [] {
         Settings& s = Settings::get();
@@ -1406,6 +1521,43 @@ void LibraryActivity::showSettings(int focus)
         });
     });
     brls::Application::pushActivity(
-        new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, qrFormat, curated, resetCache }, focus),
+        new PopupMenu("settings/title"_i18n, { skin, theme, musicItem, musicVolume, sounds, qrFormat, curated, resetCache }, focus),
         brls::TransitionAnimation::NONE);
+}
+
+bool LibraryActivity::arranged()
+{
+    const Settings& s = Settings::get();
+    return s.sortMode != SORT_OWN || s.showMode != SHOW_ALL;
+}
+
+// View Options: the order the Miis are shown in, and which are shown. The
+// lists stay as they are kept (their own order is the first choice).
+void LibraryActivity::showViewOptions()
+{
+    static const char* const kSorts[SORT_COUNT] = { "view_options/sort_own", "view_options/sort_name",
+        "view_options/sort_color", "view_options/sort_height", "view_options/sort_favorites" };
+    static const char* const kShows[SHOW_COUNT] = { "view_options/show_all", "view_options/show_favorites",
+        "view_options/show_male", "view_options/show_female" };
+    auto pickFrom = [this](const std::string& title, const char* const* names, int count, int* value) {
+        std::vector<std::string> shown;
+        for (int i = 0; i < count; i++)
+            shown.push_back(brls::getStr(names[i]));
+        choose(title, shown, *value, [this, value](int i) {
+            if (i < 0 || i == *value)
+                return;
+            *value = i;
+            Settings::get().save();
+            stale = true; // (shown so once the menu closes)
+        });
+    };
+    PopupMenu::Item sort = PopupMenu::item("view_options/sort"_i18n, nullptr);
+    sort.keepOpen = true;
+    sort.value = [] { return brls::getStr(kSorts[Settings::get().sortMode]); };
+    sort.action = [pickFrom] { pickFrom("view_options/sort"_i18n, kSorts, SORT_COUNT, &Settings::get().sortMode); };
+    PopupMenu::Item show = PopupMenu::item("view_options/show"_i18n, nullptr);
+    show.keepOpen = true;
+    show.value = [] { return brls::getStr(kShows[Settings::get().showMode]); };
+    show.action = [pickFrom] { pickFrom("view_options/show"_i18n, kShows, SHOW_COUNT, &Settings::get().showMode); };
+    brls::Application::pushActivity(new PopupMenu("view_options/title"_i18n, { sort, show }), brls::TransitionAnimation::NONE);
 }

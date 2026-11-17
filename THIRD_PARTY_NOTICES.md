@@ -155,6 +155,10 @@ from the documented tiling rules and only *checked* against ninTexUtils
   Meyer. `app/tools/make_button_font.py` copies its PlayStation glyphs to the
   code points borealis uses, enlarges the small ones and renames the font;
   license text in `app/resources/font/PromptFont-LICENSE.txt`.
+- **Sound effects** (`app/resources/sounds/`): from **Interface Sounds**
+  by Kenney (<https://kenney.nl/assets/interface-sounds>), CC0 1.0 (public
+  domain); converted to 48 kHz mono WAV. License text in
+  `app/resources/sounds/Kenney-Interface-Sounds-LICENSE.txt`.
 - **Icons** (`app/resources/icons/`, plus the app icon and LiveArea images
   in `app/sce_sys/`): rasterized by `app/tools/make_icons.py` from
   Material Symbols (Google, Apache License 2.0), Material Design Icons

@@ -5,6 +5,7 @@
 
 #include "mii_qr.hpp"
 #include "music.hpp"
+#include "sound.hpp"
 #include "activities/library_activity.hpp"
 #include "head_renderer.hpp"
 #include "mii_library.hpp"
@@ -47,6 +48,10 @@ int main(int argc, char* argv[])
     // Miis are drawn on the GPU whenever the shader compiler (libshacccg.suprx) is
     // installed, in software otherwise
     HeadRenderer::instance().init(paths::datDir(), paths::iconCache(), paths::appDir() + "/gpu.log", true);
+    // sound effects (Settings: Sound Effects) and the music's volume
+    sound::init();
+    sound::setLevel(Settings::get().soundLevel);
+    music::Player::instance().setLevel(Settings::get().musicLevel);
     music::Player::instance().play((music::Track)Settings::get().music);
 
     // no fade-in: the first frame follows the boot splash directly

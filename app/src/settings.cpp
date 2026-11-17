@@ -44,6 +44,14 @@ void Settings::load()
             curatedLookalikes = std::strcmp(value, "random") != 0;
         else if (!std::strcmp(key, "qr"))
             qrSwitch2 = std::strcmp(value, "3ds") != 0;
+        else if (!std::strcmp(key, "sort"))
+            sortMode = std::min(4, std::max(0, std::atoi(value)));
+        else if (!std::strcmp(key, "show"))
+            showMode = std::min(3, std::max(0, std::atoi(value)));
+        else if (!std::strcmp(key, "sounds"))
+            soundLevel = std::min(3, std::max(0, std::atoi(value)));
+        else if (!std::strcmp(key, "music_volume"))
+            musicLevel = std::min(3, std::max(1, std::atoi(value)));
     }
     std::fclose(f);
 }
@@ -58,5 +66,9 @@ void Settings::save() const
     std::fprintf(f, "skin=%d\n", skinTone);
     std::fprintf(f, "music=%d\n", music);
     std::fprintf(f, "lookalikes=%s\n", curatedLookalikes ? "curated" : "random");
+    std::fprintf(f, "sort=%d\n", sortMode);
+    std::fprintf(f, "show=%d\n", showMode);
+    std::fprintf(f, "sounds=%d\n", soundLevel);
+    std::fprintf(f, "music_volume=%d\n", musicLevel);
     std::fclose(f);
 }

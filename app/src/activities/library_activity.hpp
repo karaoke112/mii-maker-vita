@@ -37,6 +37,15 @@ class LibraryActivity : public brls::Activity
     void showSendMenu();
     void showReceiveMenu();
     void showSettings(int focus = 0);
+    // View options: how the lists are shown (sorted, some only), not how
+    // they are kept
+    enum Sort { SORT_OWN, SORT_NAME, SORT_COLOR, SORT_HEIGHT, SORT_FAVORITES, SORT_COUNT };
+    enum Show { SHOW_ALL, SHOW_FAVORITES, SHOW_MALE, SHOW_FEMALE, SHOW_COUNT };
+    void showViewOptions();
+    // sorted or only some shown: no moving Miis, no empty places
+    static bool arranged();
+    brls::View* viewButton = nullptr;
+    std::vector<int> storeAt; // each card's index in the list (-1: the empty card for a copy)
     void rebuildForTheme();
     enum class Pick { NONE, EXPORT, QR, SEND, DELETE, KID, PARENT1, PARENT2 };
     // Sending and deleting choose several Miis; START goes on with them

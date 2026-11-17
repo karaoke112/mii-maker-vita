@@ -58,6 +58,8 @@ class Player
     bool play(Track t, std::string* error = nullptr);
     void stop();
     Track current() const { return track; }
+    // 1 quiet, 2 medium, 3 loud (applied while playing)
+    void setLevel(int level) { this->level = level; }
 
   private:
     void run(std::string file);
@@ -67,6 +69,7 @@ class Player
     bool started = false;
     std::atomic<bool> running { false };
     Track track = Track::NONE;
+    std::atomic<int> level { 2 };
 };
 
 } // namespace music

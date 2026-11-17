@@ -92,8 +92,12 @@ Screenshots from the desktop build with `AFLResHigh_2_3.dat` and
   chooses Miis to delete the same way (START deletes them, after asking).
   In the list, Triangle picks a Mii up to move it (Cross places it,
   Triangle swaps it with the Mii under the cursor, Circle puts it back).
+  The button beside the cog has **View Options**: sort the lists (by name,
+  favorite color, height, favorites first) and show only some (favorites,
+  male, female); the lists are kept as they are.
   Settings (START): default skin tone, theme, curated look-alikes, QR code
-  format, a cache reset, and
+  format, a cache reset, sound effects (Kenney's Interface Sounds, CC0:
+  off, quiet, medium, loud), the music's volume, and
   background music from your own Ogg Vorbis files in
   `ux0:data/mii-maker-vita/music/` (`mii_channel.ogg`, `mii_maker_3ds.ogg`,
   `mii_maker_wiiu.ogg`; loop points from `LOOPSTART` / `LOOPLENGTH` or

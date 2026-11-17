@@ -1,0 +1,14 @@
+{
+  "title": "View Options",
+  "sort": "Sort",
+  "show": "Show",
+  "sort_own": "My Order",
+  "sort_name": "Name",
+  "sort_color": "Favorite Color",
+  "sort_height": "Height",
+  "sort_favorites": "Favorites First",
+  "show_all": "All",
+  "show_favorites": "Favorites",
+  "show_male": "Male",
+  "show_female": "Female"
+}

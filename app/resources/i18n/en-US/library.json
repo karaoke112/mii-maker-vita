@@ -22,6 +22,7 @@
   "receive": "Receive Mii",
   "view": "View",
   "count": "{} / {}",
+  "count_shown": "{} shown",
   "add_scratch": "Start from Scratch",
   "add_lookalike": "Choose a Look-Alike",
   "add_kid": "Kid-o-matic",

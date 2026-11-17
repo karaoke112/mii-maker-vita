@@ -17,7 +17,8 @@ foreach (patch ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-psv-sticks.patch
                ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-crisp-text.patch
                ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-psv-time-only.patch
                ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-hint-touch.patch
-               ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-fast-views.patch)
+               ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-fast-views.patch
+               ${CMAKE_CURRENT_SOURCE_DIR}/patches/borealis-app-sounds.patch)
     execute_process(COMMAND git apply --reverse --check ${patch}
         WORKING_DIRECTORY ${BOREALIS_DIR} RESULT_VARIABLE already OUTPUT_QUIET ERROR_QUIET)
     if (NOT already EQUAL 0)

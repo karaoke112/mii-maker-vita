@@ -18,6 +18,13 @@ struct Settings {
     // look-alikes from the editor's random Miis (natural-looking); off: any
     // combination of parts, colors, height and build at all
     bool curatedLookalikes = true;
+    // the Mii lists' view options: LibraryActivity::Sort / Show (how the
+    // lists are shown, not how they are kept)
+    int sortMode = 0;
+    int showMode = 0;
+    // sound effects: 0 off, 1 quiet, 2 medium, 3 loud; music: 1-3
+    int soundLevel = 2;
+    int musicLevel = 2;
 
     static Settings& get();
     void load();

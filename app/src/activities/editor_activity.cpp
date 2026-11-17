@@ -1,5 +1,7 @@
 #include "activities/editor_activity.hpp"
 
+#include "sound.hpp"
+
 #include "mii_library.hpp"
 #include "settings.hpp"
 #include "ui_theme.hpp"
@@ -520,6 +522,7 @@ bool EditorActivity::save()
         return true;
     }
     store->setDetails(mii.create_id, session->details); // (put gave it its create id)
+    sound::play(sound::SAVE);
     session->dirty = false;
     auto cb = onSaved;
     const mii_charinfo_t saved = mii;

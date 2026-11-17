@@ -19,5 +19,10 @@
   "reset_cache_done": "Cache cleared",
   "curated": "Curated Look-Alikes",
   "on": "ON",
-  "off": "OFF"
+  "off": "OFF",
+  "sounds": "Sound Effects",
+  "music_volume": "Music Volume",
+  "quiet": "Quiet",
+  "medium": "Medium",
+  "loud": "Loud"
 }

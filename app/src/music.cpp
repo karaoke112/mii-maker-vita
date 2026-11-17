@@ -222,8 +222,15 @@ void Player::run(std::string file)
         brls::Logger::error("music: audio port for {} Hz: 0x{:08X}", stream.sampleRate(), (unsigned)port);
         return;
     }
-    int volume[2] = { SCE_AUDIO_OUT_MAX_VOL * 7 / 10, SCE_AUDIO_OUT_MAX_VOL * 7 / 10 };
-    sceAudioOutSetVolume(port, (SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH), volume);
+    // Settings > Music Volume (medium: as before)
+    auto applyLevel = [port](int l) {
+        static const int kPercent[4] = { 0, 40, 70, 100 };
+        const int v = SCE_AUDIO_OUT_MAX_VOL * kPercent[l < 1 ? 1 : l > 3 ? 3 : l] / 100;
+        int volume[2] = { v, v };
+        sceAudioOutSetVolume(port, (SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH), volume);
+    };
+    int applied = level;
+    applyLevel(applied);
     // a ring of buffers: one plays while the next is decoded
     const int kBuffers = 3;
     std::vector<int16_t> buffers[kBuffers];
@@ -231,6 +238,10 @@ void Player::run(std::string file)
         b.assign(grain * 2, 0);
     int which = 0;
     while (running) {
+        if (level != applied) {
+            applied = level;
+            applyLevel(applied);
+        }
         std::vector<int16_t>& b = buffers[which];
         if (stream.read(b.data(), grain) < grain)
             std::memset(b.data(), 0, b.size() * sizeof(int16_t));
