@@ -122,6 +122,7 @@ class MiiLibrary : public MiiStore
     std::map<std::string, MiiDetails> detailMap; // by create id (hex)
     void loadDetails();
     void saveDetails() const;
+    bool writeOut() override;
     static std::string idKey(const mii_create_id_t& id);
     void detailsFromVer3(const mii_create_id_t& id, const mii_ver3_info_t& info);
     uint8_t authorId[16];

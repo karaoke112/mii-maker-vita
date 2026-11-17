@@ -296,6 +296,21 @@ int WiiStore::pants(const mii_charinfo_t& mii) const
 // sceIoRename does not replace a file.
 bool WiiStore::save()
 {
+    return deferWrite() || writeNow();
+}
+
+// the end of a batch: the changes written at once (if that fails, the list
+// as the file has it)
+bool WiiStore::writeOut()
+{
+    const bool ok = writeNow();
+    if (!ok)
+        load();
+    return ok;
+}
+
+bool WiiStore::writeNow()
+{
     static uint8_t miis[MII_WII_DB_MAX][MII_WII_DATA_SIZE];
     for (size_t i = 0; i < entries.size(); i++)
         std::memcpy(miis[i], entries[i].data(), MII_WII_DATA_SIZE);

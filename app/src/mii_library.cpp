@@ -124,6 +124,8 @@ bool MiiLibrary::loadPart(int part, std::vector<std::array<uint8_t, MII_STOREDAT
 
 bool MiiLibrary::save()
 {
+    if (deferWrite())
+        return true; // (at the end of the batch: writeOut)
     // the first hundred where other apps read them; each next hundred
     // beside it (the files no longer needed removed)
     bool ok = savePart(0);
@@ -221,8 +223,19 @@ void MiiLibrary::loadDetails()
     }
 }
 
+bool MiiLibrary::writeOut()
+{
+    saveDetails();
+    const bool ok = save();
+    if (!ok)
+        load();
+    return ok;
+}
+
 void MiiLibrary::saveDetails() const
 {
+    if (deferWrite())
+        return;
     std::string text;
     for (const auto& kv : detailMap) {
         const MiiDetails& d = kv.second;
@@ -515,6 +528,8 @@ MiiLibrary::ImportResult MiiLibrary::importPending(const std::vector<Pending>& c
     bool changed = false;
     if (into == this)
         into = nullptr;
+    if (into)
+        into->beginBatch(); // (written once, at the end)
     for (const Pending& p : chosen) {
         if (into) {
             // another list (saved there at once)
@@ -548,6 +563,10 @@ MiiLibrary::ImportResult MiiLibrary::importPending(const std::vector<Pending>& c
         const std::string from = in + "/" + p.file, to = done + "/" + p.file;
         std::remove(to.c_str());
         std::rename(from.c_str(), to.c_str());
+    }
+    if (into && !into->endBatch()) {
+        brls::Logger::error("import: could not save the list");
+        result.imported = 0;
     }
     if (changed)
         saveDetails();

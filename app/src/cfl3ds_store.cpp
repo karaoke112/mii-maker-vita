@@ -414,6 +414,21 @@ int Cfl3dsStore::pants(const mii_charinfo_t& mii) const
 // very first as .orig). sceIoRename does not replace a file.
 bool Cfl3dsStore::save()
 {
+    return deferWrite() || writeNow();
+}
+
+// the end of a batch: the changes written at once (if that fails, the list
+// as the file has it)
+bool Cfl3dsStore::writeOut()
+{
+    const bool ok = writeNow();
+    if (!ok)
+        load();
+    return ok;
+}
+
+bool Cfl3dsStore::writeNow()
+{
     mii_cfldb_fix_checksum(data.data());
     if (mii_cfldb_check(data.data(), data.size()) != MII_OK)
         return false;

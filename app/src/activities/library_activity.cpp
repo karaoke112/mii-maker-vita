@@ -456,6 +456,7 @@ void LibraryActivity::finishChoosing()
     dialog->addButton("library/delete"_i18n, [this, picked, inList] {
         MiiStore& lib = store();
         bool ok = true, kept = false;
+        lib.beginBatch(); // (written once, at the end)
         for (auto it = inList.rbegin(); it != inList.rend(); ++it) {
             if (!lib.canRemove(*it)) {
                 kept = true; // the 3DS's personal Mii
@@ -463,6 +464,7 @@ void LibraryActivity::finishChoosing()
             }
             ok = lib.remove(*it) && ok;
         }
+        ok = lib.endBatch() && ok;
         if (kept)
             brls::Application::notify("library/personal_kept"_i18n);
         else if (!ok)
@@ -1139,6 +1141,7 @@ void LibraryActivity::importFavorites()
     }
     int added = 0, already = 0, favorites = 0;
     bool full = false;
+    into.beginBatch(); // (written once, at the end)
     for (int i = 0; i < lib.count(); i++) {
         mii_charinfo_t m;
         if (!lib.get(i, &m))
@@ -1168,6 +1171,11 @@ void LibraryActivity::importFavorites()
         into.setDetails(m.create_id, d);
         there.push_back(m);
         added++;
+    }
+    if (!into.endBatch()) {
+        brls::Application::notify("library/copy_failed"_i18n);
+        brls::sync([this] { rebuild(); });
+        return;
     }
     std::string msg = !favorites   ? "library/no_favorites"_i18n
         : !added && already ? "library/favorites_all_here"_i18n

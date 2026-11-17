@@ -82,6 +82,33 @@ class MiiStore
         return k == 1;
     }
 
+    // Several changes at once (deleting several Miis, importing): kept in
+    // memory and written once at the end (each write is the whole file:
+    // one per Mii froze the screen). endBatch: whether that write worked
+    // (if not, the list is read back as it is on the memory card).
+    void beginBatch() { batchDepth++; }
+    bool endBatch()
+    {
+        if (batchDepth == 0 || --batchDepth > 0 || !batchDirty)
+            return true;
+        batchDirty = false;
+        return writeOut();
+    }
+
+  protected:
+    // in a store's save(): true while a batch defers it
+    bool deferWrite() const
+    {
+        if (batchDepth == 0)
+            return false;
+        batchDirty = true;
+        return true;
+    }
+    // the store's real save (the end of a batch)
+    virtual bool writeOut() { return true; }
+
   private:
     mutable std::vector<int8_t> holdCache;
+    int batchDepth = 0;
+    mutable bool batchDirty = false;
 };

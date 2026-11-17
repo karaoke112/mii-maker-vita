@@ -67,7 +67,9 @@ class Cfl3dsStore : public MiiStore
   private:
     Cfl3dsStore() = default;
     void mapPlaces();
-    bool save();
+    bool save();    // (deferred during a batch)
+    bool writeNow();
+    bool writeOut() override;
     int slotOf(const mii_create_id_t& id) const;
     int placeOfSlot(int slot) const;
     static void idFor(const uint8_t* entry, mii_create_id_t* out);

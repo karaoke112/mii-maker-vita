@@ -43,7 +43,9 @@ class WiiStore : public MiiStore
   private:
     WiiStore() = default;
     using Entry = std::array<uint8_t, MII_WII_DATA_SIZE>;
-    bool save();
+    bool save();    // (deferred during a batch)
+    bool writeNow();
+    bool writeOut() override;
     int find(const mii_create_id_t& id) const;
     static void idFor(const uint8_t* entry, mii_create_id_t* out);
     bool idTaken(uint32_t miiId) const;
