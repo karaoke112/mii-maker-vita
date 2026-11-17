@@ -36,11 +36,10 @@ class Mixer : public brls::AudioPlayer
     bool mix(int16_t* stereo, int frames);
     bool loadFiles();
     std::atomic<int> level { 2 };
-    static int entry(unsigned int size, void* arg); // the Vita's mixing thread
+    void run(); // the Vita's mixing thread
 
   private:
     Mixer() = default;
-    void run();
     struct Voice {
         int effect = -1;
         size_t pos = 0;

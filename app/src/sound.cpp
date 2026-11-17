@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <thread>
 
 #if defined(__PSV__)
 #include <psp2/audioout.h>
@@ -154,12 +155,6 @@ bool Mixer::mix(int16_t* stereo, int frames)
     return any;
 }
 
-int Mixer::entry(unsigned int, void*)
-{
-    Mixer::instance().run();
-    return 0;
-}
-
 // The Vita's main port, 48 kHz: short buffers (5 ms), so a sound starts
 // as the button is pressed; between sounds the thread waits.
 void Mixer::run()
@@ -212,11 +207,14 @@ void init()
     m.loadFiles();
     brls::Application::setAudioPlayer(&m);
 #if defined(__PSV__)
-    // a native thread at a high priority, like the music's: a sound late
-    // behind icon rendering would feel like lag
-    const SceUID id = sceKernelCreateThread("sound", &Mixer::entry, 0x40, 64 * 1024, 0, 0, nullptr);
-    if (id >= 0 && sceKernelStartThread(id, 0, nullptr) < 0)
-        sceKernelDeleteThread(id);
+    // A pthread (it waits on a std::mutex / condition_variable, which need
+    // one: a thread made with sceKernelCreateThread crashed on its first
+    // wait), raised to the music's priority: a sound late behind icon
+    // rendering would feel like lag.
+    std::thread([&m] {
+        sceKernelChangeThreadPriority(0 /* this thread */, 0x40);
+        m.run();
+    }).detach();
 #endif
 }
 
