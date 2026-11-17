@@ -11,3 +11,4 @@ node_modules/
 qrkey.txt
 # music the user provides (game soundtracks)
 *.ogg
+__pycache__/
