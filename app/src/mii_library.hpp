@@ -111,6 +111,7 @@ class MiiLibrary : public MiiStore
     // database.nfdb, database2.nfdb ... database10.nfdb
     std::string dbPath(int part) const { return dir + (part ? "/database" + std::to_string(part + 1) + ".nfdb" : "/database.nfdb"); }
     std::vector<uint8_t> written[kParts]; // each file as last written (unchanged ones are not written again)
+    bool onDisk[kParts] = {}; // which files there are (or their .bak)
     bool loadPart(int part, std::vector<std::array<uint8_t, MII_STOREDATA_SIZE>>* out);
     bool savePart(int part);
     int find(const mii_create_id_t& id) const;

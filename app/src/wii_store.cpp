@@ -41,6 +41,18 @@ static bool exists(const std::string& path)
 
 static uint32_t rd32be(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
 
+
+// A file's size and time of change: reading the list again is skipped
+// while they stay the same (switching to its tab read and checked the
+// whole file every time)
+static std::pair<long long, long long> stampOf(const std::string& path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0)
+        return { -1, -1 };
+    return { (long long)st.st_size, (long long)st.st_mtime };
+}
+
 WiiStore& WiiStore::instance()
 {
     static WiiStore s;
@@ -49,8 +61,12 @@ WiiStore& WiiStore::instance()
 
 bool WiiStore::load()
 {
+    if (ok && !file.empty() && stampOf(file) == stamp)
+        return true; // (as read or written last time)
+    stamp = { -1, -1 };
     ok = false;
     entries.clear();
+    idsStale = true;
     file = paths::wiiDir() + "/RFL_DB.dat";
     // Once: the copy of the app's Miis an older version kept here is moved
     // aside; from now on this file is the Wii list's own.
@@ -95,6 +111,7 @@ bool WiiStore::load()
         entries.push_back(e);
     }
     ok = true;
+    stamp = stampOf(file);
     brls::Logger::info("Wii Mii database {}: {} Miis", file, count());
     return true;
 }
@@ -116,14 +133,22 @@ void WiiStore::idFor(const uint8_t* entry, mii_create_id_t* out)
     mii_create_id_from_random(out, h);
 }
 
+const mii_create_id_t& WiiStore::idAt(int index) const
+{
+    if (idsStale || ids.size() != entries.size()) {
+        ids.resize(entries.size());
+        for (size_t i = 0; i < entries.size(); i++)
+            idFor(entries[i].data(), &ids[i]);
+        idsStale = false;
+    }
+    return ids[index];
+}
+
 int WiiStore::find(const mii_create_id_t& id) const
 {
-    for (size_t i = 0; i < entries.size(); i++) {
-        mii_create_id_t c;
-        idFor(entries[i].data(), &c);
-        if (mii_create_id_equal(&c, &id))
+    for (size_t i = 0; i < entries.size(); i++)
+        if (mii_create_id_equal(&idAt((int)i), &id))
             return (int)i;
-    }
     return -1;
 }
 
@@ -141,7 +166,7 @@ bool WiiStore::get(int index, mii_charinfo_t* out) const
         return false;
     if (mii_wii_decode(out, nullptr, entries[index].data(), MII_WII_DATA_SIZE) != MII_OK)
         return false;
-    idFor(entries[index].data(), &out->create_id);
+    out->create_id = idAt(index);
     return true;
 }
 
@@ -193,6 +218,7 @@ int WiiStore::put(mii_charinfo_t* ci)
     }
     if (!save()) {
         entries = before;
+        idsStale = true;
         return -1;
     }
     idFor(entries[index].data(), &ci->create_id);
@@ -207,6 +233,7 @@ bool WiiStore::remove(int index)
     entries.erase(entries.begin() + index);
     if (!save()) {
         entries = before;
+        idsStale = true;
         return false;
     }
     return true;
@@ -224,6 +251,7 @@ bool WiiStore::move(int from, int to)
     entries.insert(entries.begin() + to, e);
     if (!save()) {
         entries = before;
+        idsStale = true;
         return false;
     }
     return true;
@@ -236,6 +264,7 @@ bool WiiStore::swap(int a, int b)
     std::swap(entries[a], entries[b]);
     if (!save()) {
         std::swap(entries[a], entries[b]);
+        idsStale = true;
         return false;
     }
     return true;
@@ -285,6 +314,7 @@ void WiiStore::setDetails(const mii_create_id_t& id, const MiiDetails& d)
     entries[i] = e;
     if (!save())
         entries[i] = was;
+        idsStale = true;
 }
 
 int WiiStore::pants(const mii_charinfo_t& mii) const
@@ -296,6 +326,7 @@ int WiiStore::pants(const mii_charinfo_t& mii) const
 // sceIoRename does not replace a file.
 bool WiiStore::save()
 {
+    idsStale = true; // (every change comes through here)
     return deferWrite() || writeNow();
 }
 
@@ -304,8 +335,10 @@ bool WiiStore::save()
 bool WiiStore::writeOut()
 {
     const bool ok = writeNow();
-    if (!ok)
+    if (!ok) {
+        stamp = { -1, -1 }; // (read it again for sure)
         load();
+    }
     return ok;
 }
 
@@ -332,5 +365,6 @@ bool WiiStore::writeNow()
         brls::Logger::error("Could not replace {}", file);
         return false;
     }
+    stamp = stampOf(file); // (our own change: no need to read it again)
     return true;
 }

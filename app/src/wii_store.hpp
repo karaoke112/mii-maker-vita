@@ -5,6 +5,7 @@
 
 #include <array>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The Wii Miis: a list of their own (up to 100), kept as the Wii's Mii
@@ -52,5 +53,10 @@ class WiiStore : public MiiStore
 
     std::string file;
     bool ok = false;
+    std::pair<long long, long long> stamp { -1, -1 }; // the file's size and time when read or written
     std::vector<Entry> entries;
+    // each entry's create id (made from its bytes; made again after a change)
+    mutable std::vector<mii_create_id_t> ids;
+    mutable bool idsStale = true;
+    const mii_create_id_t& idAt(int index) const;
 };

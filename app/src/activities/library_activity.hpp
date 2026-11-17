@@ -95,6 +95,9 @@ class LibraryActivity : public brls::Activity
     mii_charinfo_t heldMii {};
     std::unique_ptr<MiiPreview> floating; // the held Mii, drawn lifted
     std::vector<std::vector<brls::ActionIdentifier>> cardActionIds;
+    int focusedCard = -1; // the card the cursor is on (only it has its buttons)
+    int builtTab = -1;    // the list the cards were made for
+    bool actionsPending = false; // (allCardActions, once the input is handled)
 
     brls::Box* grid = nullptr;
     brls::View* createButton = nullptr;

@@ -107,9 +107,14 @@ bool MiiLibrary::loadPart(int part, std::vector<std::array<uint8_t, MII_STOREDAT
     for (const std::string& path : { dbPath(part), dbPath(part) + ".bak" }) {
         if (!readFile(path, &data))
             continue;
+        onDisk[part] = true;
         mii_result_t r = mii_nfdb_decode(&db, data.data(), data.size());
         if (r == MII_OK) {
             brls::Logger::info("Loaded {} Miis from {}", db.count, path);
+            // as the file is (not its .bak): a save that would write the
+            // same bytes leaves it alone
+            if (path == dbPath(part) && data.size() == MII_NFDB_SIZE && part < kParts)
+                written[part] = data;
             for (int i = 0; i < db.count; i++) {
                 std::array<uint8_t, MII_STOREDATA_SIZE> e;
                 std::memcpy(e.data(), db.entries[i], MII_STOREDATA_SIZE);
@@ -132,10 +137,11 @@ bool MiiLibrary::save()
     for (int part = 1; part < kParts; part++) {
         if (count() > part * MII_NFDB_MAX_MIIS) {
             ok = savePart(part) && ok;
-        } else {
+        } else if (onDisk[part]) { // (only files there are: each try is a memory card call)
             std::remove(dbPath(part).c_str());
             std::remove((dbPath(part) + ".bak").c_str());
             written[part].clear();
+            onDisk[part] = false;
         }
     }
     return ok;
@@ -168,6 +174,7 @@ bool MiiLibrary::savePart(int part)
         return false;
     }
     written[part].assign(buf, buf + sizeof(buf));
+    onDisk[part] = true;
     return true;
 }
 

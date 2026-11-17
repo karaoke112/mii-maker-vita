@@ -44,6 +44,18 @@ static bool exists(const std::string& path)
     return stat(path.c_str(), &st) == 0;
 }
 
+
+// A file's size and time of change: reading the list again is skipped
+// while they stay the same (switching to its tab read and checked the
+// whole file every time)
+static std::pair<long long, long long> stampOf(const std::string& path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0)
+        return { -1, -1 };
+    return { (long long)st.st_size, (long long)st.st_mtime };
+}
+
 Cfl3dsStore& Cfl3dsStore::instance()
 {
     static Cfl3dsStore s;
@@ -53,6 +65,10 @@ Cfl3dsStore& Cfl3dsStore::instance()
 // The database is in the shared extdata F000000B (3dbrew)
 bool Cfl3dsStore::load()
 {
+    const std::string want = std::string(kAzahar) + "/F000000B/user/CFL_DB.dat";
+    if (ok && want == file && stampOf(file) == stamp)
+        return true; // (as read last time: Azahar has not changed it)
+    stamp = { -1, -1 };
     ok = false;
     why.clear();
     used = 0;
@@ -84,6 +100,7 @@ bool Cfl3dsStore::load()
     }
     mapPlaces();
     ok = true;
+    stamp = stampOf(file);
     brls::Logger::info("3DS Mii database {}: {} Miis", file, count());
     return true;
 }
@@ -120,6 +137,7 @@ void Cfl3dsStore::mapPlaces()
         if (p >= 0)
             slotAt[p] = s;
     }
+    reid();
 }
 
 int Cfl3dsStore::firstFree() const
@@ -165,16 +183,18 @@ void Cfl3dsStore::idFor(const uint8_t* entry, mii_create_id_t* out)
     mii_create_id_from_random(out, h);
 }
 
+void Cfl3dsStore::reid()
+{
+    for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++)
+        if (mii_cfldb_slot_used(data.data(), s))
+            idFor(mii_cfldb_slot(data.data(), s), &ids[s]);
+}
+
 int Cfl3dsStore::slotOf(const mii_create_id_t& id) const
 {
-    for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++) {
-        if (!mii_cfldb_slot_used(const_cast<uint8_t*>(data.data()), s))
-            continue;
-        mii_create_id_t c;
-        idFor(mii_cfldb_slot(const_cast<uint8_t*>(data.data()), s), &c);
-        if (mii_create_id_equal(&c, &id))
+    for (int s = 0; s < MII_CFLDB_MAX_MIIS; s++)
+        if (mii_cfldb_slot_used(const_cast<uint8_t*>(data.data()), s) && mii_create_id_equal(&ids[s], &id))
             return s;
-    }
     return -1;
 }
 
@@ -183,9 +203,7 @@ bool Cfl3dsStore::get(int place, mii_charinfo_t* out) const
     if (!ok || place < 0 || place >= MII_CFLDB_MAX_MIIS || slotAt[place] < 0)
         return false;
     const uint8_t* e = mii_cfldb_slot(const_cast<uint8_t*>(data.data()), slotAt[place]);
-    mii_create_id_t id;
-    idFor(e, &id);
-    return mii_ver3_decode(out, nullptr, e, MII_CFLDB_ENTRY_SIZE, &id) == MII_OK;
+    return mii_ver3_decode(out, nullptr, e, MII_CFLDB_ENTRY_SIZE, &ids[slotAt[place]]) == MII_OK;
 }
 
 bool Cfl3dsStore::info(const mii_create_id_t& id, mii_ver3_info_t* out) const
@@ -310,6 +328,7 @@ bool Cfl3dsStore::remove(int place)
         else if (s > slot)
             s--;
     used--;
+    reid(); // (the slots after it moved up)
     return true;
 }
 
@@ -422,8 +441,10 @@ bool Cfl3dsStore::save()
 bool Cfl3dsStore::writeOut()
 {
     const bool ok = writeNow();
-    if (!ok)
+    if (!ok) {
+        stamp = { -1, -1 }; // (read it again for sure)
         load();
+    }
     return ok;
 }
 
@@ -452,5 +473,6 @@ bool Cfl3dsStore::writeNow()
         brls::Logger::error("Could not replace {}", file);
         return false;
     }
+    stamp = stampOf(file); // (our own change: no need to read it again)
     return true;
 }

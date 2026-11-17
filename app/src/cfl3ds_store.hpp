@@ -4,6 +4,7 @@
 #include "mii_store.hpp"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 // The 3DS's Mii database as Azahar keeps it on the memory card
@@ -78,6 +79,11 @@ class Cfl3dsStore : public MiiStore
     bool ok = false;
     std::vector<uint8_t> data;
     int slotAt[MII_CFLDB_MAX_MIIS]; // the file slot shown in each place, or -1
+    // each used slot's create id (made from its bytes: kept, as the list
+    // asks for a Mii by its id for every card)
+    mii_create_id_t ids[MII_CFLDB_MAX_MIIS];
+    void reid();
     int used = 0;
     int nextPlace = -1;
+    std::pair<long long, long long> stamp { -1, -1 }; // the file's size and time when read or written
 };

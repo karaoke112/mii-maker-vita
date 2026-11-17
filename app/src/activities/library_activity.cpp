@@ -62,8 +62,7 @@ class MiiCard : public brls::Box
                 brls::View::NoXMLAttributes noXml; // (see rebuild)
                 thumb.reset(new MiiPreview(mii, 160));
                 thumb->setDimensions(width, height);
-                if (priority)
-                    HeadRenderer::instance().setPriority(thumb.get(), *priority);
+                HeadRenderer::instance().setPriority(thumb.get(), priority());
             }
             thumb->draw(vg, x, y, width, height, style, ctx);
         }
@@ -111,8 +110,15 @@ class MiiCard : public brls::Box
         if (overlay)
             overlay(vg, x, y, width, height, style, ctx);
     }
-    // where its thumbnail comes in the renderer's queue (nearest the cursor first)
-    std::unique_ptr<int> priority;
+    // where its thumbnail comes in the renderer's queue: nearest the cursor
+    // first
+    int index = 0;
+    inline static int cursorAt = 0;
+    int priority() const
+    {
+        const int r = index / kColumns, c = index % kColumns, fr = cursorAt / kColumns, fc = cursorAt % kColumns;
+        return 2 * std::abs(r - fr) + std::abs(c - fc);
+    }
 
   private:
     const mii_charinfo_t* mii;
@@ -356,6 +362,10 @@ void LibraryActivity::rebuildForTheme()
     brls::View* fresh = createContentView();
     brls::Application::giveFocus(createButton);
     setContentView(fresh);
+    // (the old screen's cards are gone with it: all made again)
+    cards.clear();
+    builtTab = -1;
+    focusedCard = -1;
     rebuild();
 }
 
@@ -580,13 +590,6 @@ void LibraryActivity::rebuild()
     MiiStore& lib = store();
     const bool usable = lib.usable();
 
-    // The cards are about to be freed; never leave focus on one of them
-    // (Add Mii takes it for now, even while it is off limits in a mode;
-    // the mode puts the cursor back on a Mii below).
-    createButton->setFocusable(true);
-    brls::Application::giveFocus(createButton);
-    grid->clearViews();
-    cards.clear();
     // one card per Mii; the 3DS's list: its 100 places. Carrying a Mii from
     // the 3DS, one empty card at the end of this list to put it there.
     // View options: sorted, or only some shown (then no empty places)
@@ -637,7 +640,22 @@ void LibraryActivity::rebuild()
             storeAt.push_back(-1);
     }
     const int n = (int)storeAt.size();
-    miis.assign(n, mii_charinfo_t {}); // (previews keep pointers into it: not resized until the next rebuild)
+    // As many cards as before in the same list (a Mii saved, edited,
+    // looked at): the cards stay and show the Miis again, and the cursor
+    // stays where it is; otherwise they are made anew.
+    const bool reuse = n > 0 && n == (int)cards.size() && builtTab == tab;
+    if (!reuse) {
+        // The cards are about to be freed; never leave focus on one of them
+        // (Add Mii takes it for now, even while it is off limits in a mode;
+        // the mode puts the cursor back on a Mii below).
+        createButton->setFocusable(true);
+        brls::Application::giveFocus(createButton);
+        grid->clearViews();
+        cards.clear();
+        focusedCard = -1;
+    }
+    builtTab = tab;
+    miis.assign(n, mii_charinfo_t {}); // (previews keep pointers into it: same size, same place)
     present.assign(n, false);
     for (int i = 0; i < n; i++) {
         present[i] = storeAt[i] >= 0 && lib.get(storeAt[i], &miis[i]);
@@ -677,6 +695,27 @@ void LibraryActivity::rebuild()
     }
     if (rootFrame)
         updateSettingsAction(); // in case a Mii was held, or the mode changed
+    if (reuse) {
+        for (int i = 0; i < n; i++) {
+            auto* card = static_cast<MiiCard*>(cards[i]);
+            card->empty = !present[i];
+            card->favorite = present[i] && lib.details(miis[i].create_id).favorite;
+            card->personal = present[i] && lib.isPersonal(storeAt[i]);
+            card->checked = false;
+            card->overlay = nullptr;
+            card->setHideHighlight(false);
+        }
+        upRoutes();
+        buttonRoutes();
+        if (holding)
+            holdLook();
+        allCardActions();
+        if ((pick != Pick::NONE || holding) && !cards.empty())
+            brls::Application::giveFocus(cards[0]);
+        else if (!usable && settingsButton)
+            brls::Application::giveFocus(settingsButton);
+        return;
+    }
     cardActionIds.assign(miis.size(), {});
     // (rows and cards are made here in their hundreds and never given XML
     // attributes: made without them, they are made several times faster)
@@ -695,6 +734,7 @@ void LibraryActivity::rebuild()
             rowsMade.push_back(row);
         }
         auto* card = new MiiCard(&miis[i]);
+        card->index = (int)i;
         cards.push_back(card);
         card->setDimensions(200, 250);
         card->setMarginRight(20);
@@ -748,6 +788,8 @@ void LibraryActivity::rebuild()
         });
         card->addGestureRecognizer(new brls::TapGestureRecognizer(card));
         card->getFocusEvent()->subscribe([this, index](brls::View*) {
+            focusedCard = index;
+            cardActions(index); // (its buttons as things are now)
             thumbPriorities(index);
             if (holding)
                 showHeldAt(index);
@@ -785,13 +827,26 @@ void LibraryActivity::rebuild()
 
 // Every card's buttons, then one hints update (one per card made picking a
 // Mii up and putting it down stutter).
+// The buttons of the card under the cursor for the current state (only it
+// can use them: each card gets its own as the cursor comes to it; doing
+// all of them at every change was up to 1000 cards' worth).
+//
+// Done once the input being handled is over: this often runs from one of
+// that card's own actions (Cross on it), and borealis still reads the
+// action after it returns: changing that card's actions under it crashed.
 void LibraryActivity::allCardActions()
 {
-    batchingHints = true;
-    for (size_t i = 0; i < cards.size(); i++)
-        cardActions((int)i);
-    batchingHints = false;
-    brls::Application::getGlobalHintsUpdateEvent()->fire();
+    if (actionsPending)
+        return;
+    actionsPending = true;
+    brls::sync([this] {
+        actionsPending = false;
+        brls::View* focus = brls::Application::getCurrentFocus();
+        if (focusedCard >= 0 && focusedCard < (int)cards.size() && cards[focusedCard] == focus)
+            cardActions(focusedCard);
+        else
+            brls::Application::getGlobalHintsUpdateEvent()->fire();
+    });
 }
 
 // START (settings) is there only in the plain list: not while a Mii is held
@@ -809,16 +864,13 @@ void LibraryActivity::updateSettingsAction()
 // Thumbnails nearest the cursor are drawn first.
 void LibraryActivity::thumbPriorities(int focus)
 {
-    const int fr = focus / kColumns, fc = focus % kColumns;
-    for (size_t i = 0; i < cards.size(); i++) {
-        const int r = (int)i / kColumns, c = (int)i % kColumns;
-        auto* card = static_cast<MiiCard*>(cards[i]);
-        const int p = 2 * std::abs(r - fr) + std::abs(c - fc);
-        if (!card->priority)
-            card->priority.reset(new int(p));
-        *card->priority = p;
-        if (MiiPreview* t = card->thumbnail()) // (the others take it when made)
-            HeadRenderer::instance().setPriority(t, p);
+    MiiCard::cursorAt = focus;
+    // (only cards holding a thumbnail, a screenful or so: the others work
+    // theirs out when they make one)
+    for (brls::View* v : cards) {
+        auto* card = static_cast<MiiCard*>(v);
+        if (MiiPreview* t = card->thumbnail())
+            HeadRenderer::instance().setPriority(t, card->priority());
     }
 }
 
@@ -1035,11 +1087,14 @@ bool LibraryActivity::copyHeld(int to)
     const MiiDetails d = from.details(m.create_id);
     MiiLibrary::instance().newCreateId(&m.create_id);
     into.snap(&m); // (the 3DS's or Wii's parts and colors)
-    if (into.putAt(&m, to) < 0) {
+    into.beginBatch(); // (the Mii and its details: written once)
+    const bool put = into.putAt(&m, to) >= 0;
+    if (put)
+        into.setDetails(m.create_id, d);
+    if (!into.endBatch() || !put) {
         brls::Application::notify("library/copy_failed"_i18n);
         return false;
     }
-    into.setDetails(m.create_id, d);
     char name[64];
     mii_name_get_utf8(&m, name, sizeof(name));
     brls::Application::notify(brls::getStr("library/copied", std::string(name), tabName(tab)));
@@ -1109,12 +1164,16 @@ void LibraryActivity::addScanned(const mii_charinfo_t& scanned, const mii_ver3_i
     char name[64];
     mii_name_get_utf8(&mii, name, sizeof(name));
     store().snap(&mii);
-    if (store().put(&mii) < 0) {
+    // the Mii and the profile its code carried (favorite, birthday,
+    // creator...): written once
+    store().beginBatch();
+    const bool put = store().put(&mii) >= 0;
+    if (put)
+        store().setDetails(mii.create_id, MiiLibrary::detailsOf(info));
+    if (!store().endBatch() || !put) {
         brls::Application::notify(fullMessage());
         return;
     }
-    // the profile the code carried (favorite, birthday, creator...)
-    store().setDetails(mii.create_id, MiiLibrary::detailsOf(info));
     brls::Application::notify("qr/added"_i18n + " " + name);
     brls::sync([this] { rebuild(); });
 }
@@ -1521,6 +1580,7 @@ void LibraryActivity::showSettings(int focus)
             dialog->addButton("settings/reset_cache"_i18n, [this] {
                 HeadRenderer::instance().clearCache();
                 brls::sync([this] {
+                    builtTab = -1; // (every card made again: thumbnails drawn anew)
                     rebuild();
                     brls::Application::notify("settings/reset_cache_done"_i18n);
                 });

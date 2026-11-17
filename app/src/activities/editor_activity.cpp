@@ -517,11 +517,16 @@ bool EditorActivity::save()
         brls::Application::notify("editor/invalid"_i18n);
         return true;
     }
-    if (store->put(&mii) < 0) {
+    // the Mii and its profile, written once (the 3DS's and Wii's lists keep
+    // the profile in the Mii: two writes of the whole file otherwise)
+    store->beginBatch();
+    const bool put = store->put(&mii) >= 0;
+    if (put)
+        store->setDetails(mii.create_id, session->details); // (put gave it its create id)
+    if (!store->endBatch() || !put) {
         brls::Application::notify("editor/save_failed"_i18n);
         return true;
     }
-    store->setDetails(mii.create_id, session->details); // (put gave it its create id)
     sound::play(sound::SAVE);
     session->dirty = false;
     auto cb = onSaved;
