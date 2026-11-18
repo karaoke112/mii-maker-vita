@@ -13,7 +13,8 @@
 
 namespace sound {
 
-static const char* const kFiles[EFFECT_COUNT] = { "focus", "click", "back", "error", "tick", "save", "pick_up", "put_down" };
+static const char* const kFiles[EFFECT_COUNT] = { "focus", "click", "back", "error", "tick", "save", "pick_up", "put_down",
+    "click_001", "confirmation_002", "select_005" };
 
 // A 16-bit mono 48 kHz PCM WAV's samples (the files are made that way).
 static bool readWav(const std::string& path, std::vector<int16_t>* out)
@@ -71,32 +72,15 @@ bool Mixer::loadFiles()
 
 bool Mixer::load(enum brls::Sound) { return true; }
 
-// borealis's sounds (the ones it has no use for here stay silent)
+// borealis's sounds: only the cursor moving plays one (the others stay
+// silent until a sound is chosen for them)
 bool Mixer::play(enum brls::Sound s, float)
 {
-    switch (s) {
-    case brls::SOUND_FOCUS_CHANGE:
-    case brls::SOUND_FOCUS_SIDEBAR:
-        start(FOCUS);
+    if (s == brls::SOUND_FOCUS_CHANGE || s == brls::SOUND_FOCUS_SIDEBAR) {
+        start(CLICK_001);
         return true;
-    case brls::SOUND_CLICK:
-    case brls::SOUND_CLICK_SIDEBAR:
-    case brls::SOUND_TOUCH:
-        start(CLICK);
-        return true;
-    case brls::SOUND_BACK:
-        start(BACK);
-        return true;
-    case brls::SOUND_FOCUS_ERROR:
-    case brls::SOUND_CLICK_ERROR:
-        start(ERROR);
-        return true;
-    case brls::SOUND_SLIDER_TICK:
-        start(TICK);
-        return true;
-    default:
-        return false;
     }
+    return false;
 }
 
 // Starts a sound: again from its start if it is playing, else in a free

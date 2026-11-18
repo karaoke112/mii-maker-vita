@@ -44,8 +44,14 @@ void Settings::load()
             curatedLookalikes = std::strcmp(value, "random") != 0;
         else if (!std::strcmp(key, "qr"))
             qrSwitch2 = std::strcmp(value, "3ds") != 0;
-        else if (!std::strcmp(key, "sort"))
+        else if (!std::strcmp(key, "sort")) {
             sortMode = std::min(4, std::max(0, std::atoi(value)));
+            if (sortMode == 4) { // (Favorites First was an order: now a switch of its own)
+                sortMode = 0;
+                favoritesFirst = true;
+            }
+        } else if (!std::strcmp(key, "favorites_first"))
+            favoritesFirst = std::atoi(value) != 0;
         else if (!std::strcmp(key, "show"))
             showMode = std::min(3, std::max(0, std::atoi(value)));
         else if (!std::strcmp(key, "sounds"))
@@ -68,6 +74,7 @@ void Settings::save() const
     std::fprintf(f, "lookalikes=%s\n", curatedLookalikes ? "curated" : "random");
     std::fprintf(f, "sort=%d\n", sortMode);
     std::fprintf(f, "show=%d\n", showMode);
+    std::fprintf(f, "favorites_first=%d\n", favoritesFirst ? 1 : 0);
     std::fprintf(f, "sounds=%d\n", soundLevel);
     std::fprintf(f, "music_volume=%d\n", musicLevel);
     std::fclose(f);

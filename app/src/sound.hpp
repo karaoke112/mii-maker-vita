@@ -8,14 +8,21 @@
 #include <mutex>
 #include <vector>
 
-// Sound effects: the cursor moving, clicks, going back, errors, slider
-// steps (borealis asks for those), and the app's own (saving a Mii,
-// picking one up, putting it down). Kenney's Interface Sounds (CC0), in
-// app resources/sounds/ as 48 kHz mono WAV. Mixed on the Vita's main audio
-// port, beside the music; desktop builds stay silent.
+// Sound effects: Kenney's Interface Sounds (CC0), in app resources/sounds/
+// as 48 kHz mono WAV (the newer ones named as in Kenney's pack). Mixed on
+// the Vita's main audio port, beside the music; desktop builds stay silent.
+// Where each plays is chosen one at a time:
+//   CLICK_001         the cursor moving (borealis's focus sound)
+//   CONFIRMATION_002  Done on a Mii (saving it in the editor)
+//   SELECT_005        choosing a part (a tile in the editor's grids)
+// The first ones (FOCUS ... PUT_DOWN) are loaded but play nowhere for now.
 namespace sound {
 
-enum Effect { FOCUS, CLICK, BACK, ERROR, TICK, SAVE, PICK_UP, PUT_DOWN, EFFECT_COUNT };
+enum Effect {
+    FOCUS, CLICK, BACK, ERROR, TICK, SAVE, PICK_UP, PUT_DOWN,
+    CLICK_001, CONFIRMATION_002, SELECT_005,
+    EFFECT_COUNT
+};
 
 // Settings > Sound Effects: 0 off, 1 quiet, 2 medium, 3 loud
 void setLevel(int level);

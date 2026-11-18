@@ -527,7 +527,7 @@ bool EditorActivity::save()
         brls::Application::notify("editor/save_failed"_i18n);
         return true;
     }
-    sound::play(sound::SAVE);
+    sound::play(sound::CONFIRMATION_002); // (Done)
     session->dirty = false;
     auto cb = onSaved;
     const mii_charinfo_t saved = mii;

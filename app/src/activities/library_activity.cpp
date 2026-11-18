@@ -631,8 +631,9 @@ void LibraryActivity::rebuild()
                 });
             else if (st.sortMode == SORT_HEIGHT)
                 std::stable_sort(list.begin(), list.end(), [](const Shown& a, const Shown& b) { return a.mii.height < b.mii.height; });
-            else if (st.sortMode == SORT_FAVORITES)
-                std::stable_sort(list.begin(), list.end(), [](const Shown& a, const Shown& b) { return a.favorite && !b.favorite; });
+            // Favorites First: on top of the order chosen
+            if (st.favoritesFirst)
+                std::stable_partition(list.begin(), list.end(), [](const Shown& s) { return s.favorite; });
             for (const Shown& s : list)
                 storeAt.push_back(s.at);
         }
@@ -956,7 +957,6 @@ void LibraryActivity::startHold(int index)
     holdFromTab = tab;
     holdFrom = held = index;
     heldMii = miis[index];
-    sound::play(sound::PICK_UP);
     holdLook();
     showHeldAt(index);
     allCardActions();
@@ -1037,7 +1037,6 @@ void LibraryActivity::endHold(bool place)
     if (place && copying()) {
         if (to < 0 || !copyHeld(to))
             return;
-        sound::play(sound::PUT_DOWN);
         holding = false;
         held = heldAt = -1;
         for (brls::View* c : cards)
@@ -1063,8 +1062,6 @@ void LibraryActivity::endHold(bool place)
         if (!store().move(from, to))
             brls::Application::notify("library/move_failed"_i18n);
     }
-    if (place)
-        sound::play(sound::PUT_DOWN);
     refreshCards();
     allCardActions();
 }
@@ -1543,7 +1540,6 @@ void LibraryActivity::showSettings(int focus)
                 s.soundLevel = i;
                 s.save();
                 sound::setLevel(i);
-                sound::play(sound::CLICK); // (how loud it is now)
             });
     };
     PopupMenu::Item musicVolume = PopupMenu::item("settings/music_volume"_i18n, nullptr);
@@ -1596,7 +1592,7 @@ void LibraryActivity::showSettings(int focus)
 bool LibraryActivity::arranged()
 {
     const Settings& s = Settings::get();
-    return s.sortMode != SORT_OWN || s.showMode != SHOW_ALL;
+    return s.sortMode != SORT_OWN || s.showMode != SHOW_ALL || s.favoritesFirst;
 }
 
 // View Options: the order the Miis are shown in, and which are shown. The
@@ -1604,7 +1600,7 @@ bool LibraryActivity::arranged()
 void LibraryActivity::showViewOptions()
 {
     static const char* const kSorts[SORT_COUNT] = { "view_options/sort_own", "view_options/sort_name",
-        "view_options/sort_color", "view_options/sort_height", "view_options/sort_favorites" };
+        "view_options/sort_color", "view_options/sort_height" };
     static const char* const kShows[SHOW_COUNT] = { "view_options/show_all", "view_options/show_favorites",
         "view_options/show_male", "view_options/show_female" };
     auto pickFrom = [this](const std::string& title, const char* const* names, int count, int* value) {
@@ -1627,5 +1623,16 @@ void LibraryActivity::showViewOptions()
     show.keepOpen = true;
     show.value = [] { return brls::getStr(kShows[Settings::get().showMode]); };
     show.action = [pickFrom] { pickFrom("view_options/show"_i18n, kShows, SHOW_COUNT, &Settings::get().showMode); };
-    brls::Application::pushActivity(new PopupMenu("view_options/title"_i18n, { sort, show }), brls::TransitionAnimation::NONE);
+    // a switch: pressing it turns it on or off
+    PopupMenu::Item favorites = PopupMenu::item("view_options/sort_favorites"_i18n, [this] {
+        Settings& s = Settings::get();
+        s.favoritesFirst = !s.favoritesFirst;
+        s.save();
+        stale = true; // (shown so once the menu closes)
+    });
+    favorites.keepOpen = true;
+    favorites.value = [] { return Settings::get().favoritesFirst ? "settings/on"_i18n : "settings/off"_i18n; };
+    favorites.off = [] { return !Settings::get().favoritesFirst; };
+    brls::Application::pushActivity(new PopupMenu("view_options/title"_i18n, { sort, favorites, show }),
+        brls::TransitionAnimation::NONE);
 }

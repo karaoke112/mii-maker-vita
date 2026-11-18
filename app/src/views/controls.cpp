@@ -1,6 +1,7 @@
 #include "views/controls.hpp"
 
 #include "views/cull.hpp"
+#include "sound.hpp"
 
 #include <cstdio>
 
@@ -244,6 +245,7 @@ OptionGrid::OptionGrid(mii_charinfo_t* mii, mii_field_t field, std::vector<uint8
                 return true;
             }
             mii_field_set(this->mii, this->field, value);
+            sound::play(sound::SELECT_005); // (a part chosen)
             this->refresh();
             if (this->onChange)
                 this->onChange();

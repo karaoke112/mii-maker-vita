@@ -167,6 +167,25 @@ int MiiPreview::gpuSize() const
     return std::max(2, std::min(8, steps)) * 64;
 }
 
+// The whole Mii in view: the framing at `baseZoom` around 90, unless the
+// Mii's top (its tallest possible hair, measured: about 126 model units at
+// height 0, 199 at 127) would be above it; then wider, with the feet where
+// they were (the camera's lens: 720 units back, 8.4 degrees each way).
+static void wholeBody(int height, float baseZoom, float* pivot, float* zoom)
+{
+    const float lens = 720.0f * 0.14767f; // 720 * tan(8.4 degrees)
+    const float half0 = lens / baseZoom, bottom = 90.0f - half0;
+    const float top = 126.0f + 0.572f * (float)height + 6.0f; // (and a little room)
+    if (top <= 90.0f + half0) {
+        *pivot = 90.0f;
+        *zoom = baseZoom;
+        return;
+    }
+    const float half = (top - bottom) * 0.5f;
+    *pivot = bottom + half;
+    *zoom = lens / half;
+}
+
 // Where the stage camera looks and how close: the bust centers on the head
 // (which sits higher on a taller Mii: the neck is at 93.9 x the height
 // scale, as in libmii3d); the whole body keeps one framing, so height shows.
@@ -177,8 +196,12 @@ void MiiPreview::stageTarget(float* pivot, float* zoom) const
         // height scale, as for the editor's bust), so any Mii's head sits in
         // the middle of the tile; a Mii of middle height (64) keeps 104
         const float heightScale = mii->height * 0.006015625f + 0.5f;
-        *pivot = framing == Framing::BUST ? 104.0f + 10.7766f * 8.715f * (heightScale - (64 * 0.006015625f + 0.5f)) : 90.0f;
-        *zoom = framing == Framing::BUST ? 1.8f : 1.0f; // (whole Miis: head to shoes in the tile)
+        if (framing == Framing::BUST) {
+            *pivot = 104.0f + 10.7766f * 8.715f * (heightScale - (64 * 0.006015625f + 0.5f));
+            *zoom = 1.8f;
+        } else {
+            wholeBody(mii->height, 1.0f, pivot, zoom); // (whole Miis: head to shoes in the tile)
+        }
     } else if (framing == Framing::BUST) {
         // (in a pose, the head where the pose has it)
         const float heightScale = mii->height * 0.006015625f + 0.5f;
@@ -186,8 +209,7 @@ void MiiPreview::stageTarget(float* pivot, float* zoom) const
         *pivot = 10.7766f * 8.715f * heightScale * neck + 26.0f;
         *zoom = 1.5f;
     } else {
-        *pivot = 90.0f;
-        *zoom = 1.1f;
+        wholeBody(mii->height, 1.1f, pivot, zoom);
     }
 }
 

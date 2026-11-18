@@ -39,7 +39,7 @@ class LibraryActivity : public brls::Activity
     void showSettings(int focus = 0);
     // View options: how the lists are shown (sorted, some only), not how
     // they are kept
-    enum Sort { SORT_OWN, SORT_NAME, SORT_COLOR, SORT_HEIGHT, SORT_FAVORITES, SORT_COUNT };
+    enum Sort { SORT_OWN, SORT_NAME, SORT_COLOR, SORT_HEIGHT, SORT_COUNT };
     enum Show { SHOW_ALL, SHOW_FAVORITES, SHOW_MALE, SHOW_FEMALE, SHOW_COUNT };
     void showViewOptions();
     // sorted or only some shown: no moving Miis, no empty places

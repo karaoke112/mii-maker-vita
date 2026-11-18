@@ -22,6 +22,7 @@ struct Settings {
     // lists are shown, not how they are kept)
     int sortMode = 0;
     int showMode = 0;
+    bool favoritesFirst = false; // (on top of any order)
     // sound effects: 0 off, 1 quiet, 2 medium, 3 loud; music: 1-3
     int soundLevel = 2;
     int musicLevel = 2;
